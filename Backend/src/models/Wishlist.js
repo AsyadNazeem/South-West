@@ -34,16 +34,6 @@ module.exports = (sequelize, DataTypes) => {
             item_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: false
-            },
-
-            created_at: {
-                type: DataTypes.DATE,
-                allowNull: false
-            },
-
-            updated_at: {
-                type: DataTypes.DATE,
-                allowNull: false
             }
         },
         {

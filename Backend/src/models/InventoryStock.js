@@ -82,7 +82,13 @@ module.exports = (sequelize, DataTypes) => {
             tableName: 'inventory_stock',
             timestamps: true,
             createdAt: 'created_at',
-            updatedAt: 'updated_at'
+            updatedAt: 'updated_at',
+            indexes: [
+                {
+                    unique: true,
+                    fields: ['item_id', 'location_id']
+                }
+            ]
         }
     );
 

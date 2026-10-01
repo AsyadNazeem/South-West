@@ -1,7 +1,7 @@
 const express = require('express');
 const customerAddressController = require('../controllers/customerAddressController');
 const authenticate = require('../middleware/authMiddleware');
-const requirePermission = require('../middleware/permissionMiddleware');
+const { requirePermission } = require('../middleware/requirePermission');
 
 const router = express.Router();
 

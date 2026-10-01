@@ -28,6 +28,7 @@ module.exports = {
       { role_id: 1, permission_id: 19, created_at: now, updated_at: now },
       { role_id: 1, permission_id: 20, created_at: now, updated_at: now },
       { role_id: 1, permission_id: 21, created_at: now, updated_at: now },
+      { role_id: 1, permission_id: 22, created_at: now, updated_at: now },
 
       // MANAGER
       { role_id: 2, permission_id: 1, created_at: now, updated_at: now },

@@ -151,6 +151,13 @@ module.exports = {
         description: 'View reports',
         created_at: now,
         updated_at: now
+      },
+      {
+        name: 'admin.dashboard.view',
+        module: 'admin',
+        description: 'View admin dashboard',
+        created_at: now,
+        updated_at: now
       }
     ]);
   },
@@ -178,7 +185,8 @@ module.exports = {
         'customers.view',
         'customers.create',
         'customers.update',
-        'reports.view'
+        'reports.view',
+        'admin.dashboard.view'
       ]
     });
   }

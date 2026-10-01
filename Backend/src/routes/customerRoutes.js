@@ -1,7 +1,7 @@
 const express = require('express');
 const customerController = require('../controllers/customerController');
 const authenticate = require('../middleware/authMiddleware');
-const requirePermission = require('../middleware/permissionMiddleware');
+const { requirePermission } = require('../middleware/requirePermission');
 
 const router = express.Router();
 
@@ -36,8 +36,9 @@ router.put(
 router.delete(
     '/:id',
     authenticate,
-    requirePermission('customers.update'),
+    requirePermission('customers.delete'),
     customerController.deleteCustomer
 );
+
 
 module.exports = router;

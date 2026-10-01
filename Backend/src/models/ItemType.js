@@ -21,6 +21,8 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'item_type_id',
                 as: 'itemTypeSpecifications'
             });
+
+
         }
     }
 
