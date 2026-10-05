@@ -316,11 +316,105 @@ const deleteItemSpecificationValue = async (req, res) => {
     }
 };
 
+const upsertSpecificationValue = async (req, res) => {
+
+    try {
+
+        const {
+            item_id,
+            specification_id,
+            value
+        } = req.body;
+
+
+        if (
+            !item_id ||
+            !specification_id
+        ) {
+
+            return res.status(400).json({
+                message:
+                    'item_id and specification_id are required'
+            });
+
+        }
+
+
+        const existingValue =
+            await ItemSpecificationValue.findOne({
+                where: {
+                    item_id,
+                    specification_id
+                }
+            });
+
+
+        if (existingValue) {
+
+            existingValue.value =
+                value ?? null;
+
+            await existingValue.save();
+
+
+            return res.status(200).json({
+
+                message:
+                    'Specification value updated successfully',
+
+                data: existingValue
+
+            });
+
+        }
+
+
+        const newValue =
+            await ItemSpecificationValue.create({
+
+                item_id,
+
+                specification_id,
+
+                value: value ?? null
+
+            });
+
+
+        return res.status(201).json({
+
+            message:
+                'Specification value created successfully',
+
+            data: newValue
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            'Save specification value error:',
+            error
+        );
+
+
+        return res.status(500).json({
+
+            message:
+                'Failed to save specification value'
+
+        });
+
+    }
+
+};
 
 module.exports = {
     getItemSpecificationValues,
     getItemSpecificationValueById,
     createItemSpecificationValue,
     updateItemSpecificationValue,
-    deleteItemSpecificationValue
+    deleteItemSpecificationValue,
+    upsertSpecificationValue
 };

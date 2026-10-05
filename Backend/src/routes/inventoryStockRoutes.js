@@ -17,7 +17,7 @@ const {
 router.get(
     '/',
     authenticate,
-    requirePermission('products.view'),
+    requirePermission('inventory.view'),
     getInventoryStocks
 );
 
@@ -25,7 +25,7 @@ router.get(
 router.get(
     '/:id',
     authenticate,
-    requirePermission('products.view'),
+    requirePermission('inventory.view'),
     getInventoryStockById
 );
 
@@ -33,7 +33,7 @@ router.get(
 router.post(
     '/',
     authenticate,
-    requirePermission('products.create'),
+    requirePermission('inventory.create'),
     createInventoryStock
 );
 
@@ -41,7 +41,7 @@ router.post(
 router.put(
     '/:id',
     authenticate,
-    requirePermission('products.update'),
+    requirePermission('inventory.update'),
     updateInventoryStock
 );
 
@@ -49,7 +49,7 @@ router.put(
 router.delete(
     '/:id',
     authenticate,
-    requirePermission('products.delete'),
+    requirePermission('inventory.delete'),
     deleteInventoryStock
 );
 

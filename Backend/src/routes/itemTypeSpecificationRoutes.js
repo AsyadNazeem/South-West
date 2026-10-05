@@ -10,7 +10,8 @@ const {
     getItemTypeSpecificationById,
     createItemTypeSpecification,
     updateItemTypeSpecification,
-    deleteItemTypeSpecification
+    deleteItemTypeSpecification,
+    getSpecificationsByItemType
 } = require('../controllers/itemTypeSpecificationController');
 
 
@@ -29,6 +30,10 @@ router.get(
     getItemTypeSpecificationById
 );
 
+router.get(
+    '/item-type/:itemTypeId',
+    getSpecificationsByItemType
+);
 
 router.post(
     '/',

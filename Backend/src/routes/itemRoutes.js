@@ -7,8 +7,9 @@ const { requirePermission } = require('../middleware/requirePermission');
 const {
     getItems,
     getItemById,
-    createItem
-} = require('../controllers/itemController');
+    createItem,
+    updateItem
+} = require('../controllers/itemController')
 
 // GET all items
 router.get(
@@ -25,6 +26,14 @@ router.get(
     requirePermission('products.view'),
     getItemById
 );
+
+// UPDATE item
+router.put(
+    '/:id',
+    authenticate,
+    requirePermission('products.update'),
+    updateItem
+)
 
 // CREATE item
 router.post(

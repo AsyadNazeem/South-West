@@ -21,6 +21,7 @@ router.put(
     '/roles/:id/permissions',
     authenticate,
     requirePermission('roles.manage'),
+    requirePermission('permissions.manage'),
     updateRolePermissions
 );
 

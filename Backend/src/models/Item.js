@@ -25,6 +25,11 @@ module.exports = (sequelize, DataTypes) => {
                 as: 'itemType'
             });
 
+            Item.belongsTo(models.Warranty, {
+                foreignKey: 'warranty_id',
+                as: 'warranty'
+            });
+
             Item.hasMany(models.ItemPrice, {
                 foreignKey: 'item_id',
                 as: 'prices'
@@ -86,6 +91,7 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'item_id',
                 as: 'reviews'
             });
+
         }
     }
 
@@ -138,6 +144,11 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(30),
                 allowNull: false,
                 defaultValue: 'new'
+            },
+
+            warranty_id: {
+                type: DataTypes.BIGINT.UNSIGNED,
+                allowNull: true
             },
 
             is_serialized: {

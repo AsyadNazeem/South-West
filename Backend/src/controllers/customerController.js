@@ -53,21 +53,41 @@ async function getCustomers(req, res) {
             include: [
                 {
                     model: CustomerAddress,
-                    as: 'addresses'
+                    as: "addresses"
                 }
             ],
-            order: [['id', 'DESC']]
+            order: [["id", "DESC"]]
+        });
+
+        const data = customers.map((customer) => {
+            const customerData = customer.toJSON();
+
+            return {
+                ...customerData,
+
+                // Frontend-friendly fields
+                mobile: customerData.phone || "",
+
+                // Temporary values until Order integration
+                orders: customerData.orders || 0,
+                total_spent: customerData.total_spent || 0,
+
+                status: customerData.is_active
+                    ? "active"
+                    : "inactive"
+            };
         });
 
         return res.status(200).json({
-            message: 'Customers retrieved successfully',
-            data: customers
+            message: "Customers retrieved successfully",
+            data
         });
+
     } catch (error) {
-        console.error(error);
+        console.error("Get customers error:", error);
 
         return res.status(500).json({
-            message: 'Unable to retrieve customers'
+            message: "Unable to retrieve customers"
         });
     }
 }
@@ -78,26 +98,32 @@ async function getCustomer(req, res) {
             include: [
                 {
                     model: CustomerAddress,
-                    as: 'addresses'
+                    as: "addresses"
                 }
             ]
         });
 
         if (!customer) {
             return res.status(404).json({
-                message: 'Customer not found'
+                message: "Customer not found"
             });
         }
 
+        const customerData = customer.toJSON();
+
         return res.status(200).json({
-            message: 'Customer retrieved successfully',
-            data: customer
+            message: "Customer retrieved successfully",
+            data: {
+                ...customerData,
+                mobile: customerData.phone || "",
+                status: customerData.is_active ? "active" : "inactive"
+            }
         });
     } catch (error) {
-        console.error(error);
+        console.error("Get customer error:", error);
 
         return res.status(500).json({
-            message: 'Unable to retrieve customer'
+            message: "Unable to retrieve customer"
         });
     }
 }

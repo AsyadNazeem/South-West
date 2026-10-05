@@ -13,9 +13,9 @@ const {
 
 const authenticate = require('../middleware/authMiddleware');
 const requirePermission = require('../middleware/permissionMiddleware');
+const { uploadItemImage } = require('../middleware/uploadMiddleware');
 
 
-// GET all item images
 router.get(
     '/',
     authenticate,
@@ -24,7 +24,6 @@ router.get(
 );
 
 
-// GET item image by ID
 router.get(
     '/:id',
     authenticate,
@@ -33,16 +32,16 @@ router.get(
 );
 
 
-// CREATE item image
+// Auth + permission first, so unauthorised users can't write files to disk
 router.post(
     '/',
     authenticate,
     requirePermission('item_images.create'),
+    uploadItemImage,
     createItemImage
 );
 
 
-// UPDATE item image
 router.put(
     '/:id',
     authenticate,
@@ -51,7 +50,6 @@ router.put(
 );
 
 
-// DELETE item image
 router.delete(
     '/:id',
     authenticate,

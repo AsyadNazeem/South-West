@@ -1,6 +1,62 @@
 const bcrypt = require('bcryptjs');
-const { User, UserSession } = require('../models');
-const { generateToken } = require('../utils/jwt');
+const crypto = require('crypto');
+const { User, UserSession, Role, Permission } = require('../models');
+const { generateToken, verifyToken } = require('../utils/jwt');
+
+const authorizationInclude = [
+    {
+        model: Role,
+        as: 'roles',
+        attributes: ['id', 'name'],
+        through: { attributes: [] },
+        include: [
+            {
+                model: Permission,
+                as: 'permissions',
+                attributes: ['id', 'name', 'module'],
+                through: { attributes: [] }
+            }
+        ]
+    }
+];
+
+function hashSessionToken(token) {
+    return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function serializeAuthorizedUser(user) {
+    const permissionNames = new Set();
+    const roles = (user.roles || []).map((role) => {
+        (role.permissions || []).forEach((permission) => {
+            permissionNames.add(permission.name);
+        });
+
+        return {
+            id: role.id,
+            name: role.name
+        };
+    });
+
+    return {
+        id: user.id,
+        email: user.email,
+        is_active: user.is_active,
+        roles,
+        permissions: [...permissionNames].sort()
+    };
+}
+
+async function getUserAuthorization(userId) {
+    const user = await User.findByPk(userId, {
+        include: authorizationInclude
+    });
+
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    return serializeAuthorizedUser(user);
+}
 
 async function register(email, password) {
     const existingUser = await User.findOne({
@@ -58,31 +114,30 @@ async function login(email, password) {
     const token = generateToken({
         userId: user.id
     });
+    const decodedToken = verifyToken(token);
 
     await UserSession.create({
         user_id: user.id,
-        refresh_token_hash: token,
-        expires_at: new Date(
-            Date.now() +
-            24 * 60 * 60 * 1000
-        )
+        refresh_token_hash: hashSessionToken(token),
+        expires_at: new Date(decodedToken.exp * 1000)
     });
 
     return {
         token,
-        user: {
-            id: user.id,
-            email: user.email
-        }
+        user: await getUserAuthorization(user.id)
     };
 }
 
 async function logout(token) {
-    await UserSession.destroy({
-        where: {
-            refresh_token_hash: token
+    await UserSession.update(
+        { revoked_at: new Date() },
+        {
+            where: {
+                refresh_token_hash: hashSessionToken(token),
+                revoked_at: null
+            }
         }
-    });
+    );
 }
 
 async function hashPassword(password) {
@@ -90,6 +145,8 @@ async function hashPassword(password) {
 }
 
 module.exports = {
+    getUserAuthorization,
+    hashSessionToken,
     register,
     login,
     logout,

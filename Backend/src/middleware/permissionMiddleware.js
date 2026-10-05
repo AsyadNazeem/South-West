@@ -30,14 +30,17 @@ function requirePermission(permissionName) {
                 });
             }
 
-            const hasPermission = user.roles.some(role =>
-                role.permissions.some(
-                    permission => permission.name === permissionName
+            const permissions = new Set(
+                user.roles.flatMap((role) =>
+                    role.permissions.map((permission) => permission.name)
                 )
             );
 
-            if (!hasPermission) {
+            req.permissions = permissions;
+
+            if (!permissions.has(permissionName)) {
                 return res.status(403).json({
+                    code: 'PERMISSION_DENIED',
                     message: 'Permission denied'
                 });
             }

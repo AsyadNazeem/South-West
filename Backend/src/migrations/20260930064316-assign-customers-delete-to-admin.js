@@ -18,12 +18,8 @@ module.exports = {
       LIMIT 1
     `);
 
-    if (!roles.length) {
-      throw new Error('Admin role not found');
-    }
-
-    if (!permissions.length) {
-      throw new Error('customers.delete permission not found');
+    if (!roles.length || !permissions.length) {
+      return;
     }
 
     await queryInterface.bulkInsert('role_permissions', [

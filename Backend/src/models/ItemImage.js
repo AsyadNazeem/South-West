@@ -1,6 +1,7 @@
 'use strict';
 
 const { Model } = require('sequelize');
+const { buildFileUrl } = require('../utils/fileStorage');
 
 module.exports = (sequelize, DataTypes) => {
     class ItemImage extends Model {
@@ -26,9 +27,25 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false
             },
 
-            image_url: {
+            file_name: {
+                type: DataTypes.STRING(255),
+                allowNull: false
+            },
+
+            // Relative to the uploads folder, e.g. items/images/<uuid>.jpg
+            file_path: {
                 type: DataTypes.STRING(500),
                 allowNull: false
+            },
+
+            mime_type: {
+                type: DataTypes.STRING(100),
+                allowNull: true
+            },
+
+            file_size: {
+                type: DataTypes.INTEGER.UNSIGNED,
+                allowNull: true
             },
 
             alt_text: {
@@ -52,6 +69,14 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.BOOLEAN,
                 allowNull: false,
                 defaultValue: true
+            },
+
+            // Not a column: public URL built from file_path
+            url: {
+                type: DataTypes.VIRTUAL,
+                get() {
+                    return buildFileUrl(this.getDataValue('file_path'));
+                }
             },
 
             created_at: {

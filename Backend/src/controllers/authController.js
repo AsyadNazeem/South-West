@@ -77,14 +77,18 @@ async function logout(req, res) {
 }
 
 async function me(req, res) {
-    return res.status(200).json({
-        message: 'Authenticated user',
-        data: {
-            id: req.user.id,
-            email: req.user.email,
-            is_active: req.user.is_active
-        }
-    });
+    try {
+        const user = await authService.getUserAuthorization(req.user.id);
+
+        return res.status(200).json({
+            message: 'Authenticated user',
+            data: user
+        });
+    } catch (error) {
+        return res.status(401).json({
+            message: 'User not found'
+        });
+    }
 }
 
 module.exports = {

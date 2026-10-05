@@ -1,5 +1,7 @@
+const { Op } = require('sequelize');
 const { verifyToken } = require('../utils/jwt');
-const { User } = require('../models');
+const { User, UserSession } = require('../models');
+const { hashSessionToken } = require('../services/authService');
 
 async function authenticate(req, res, next) {
     try {
@@ -11,9 +13,31 @@ async function authenticate(req, res, next) {
             });
         }
 
-        const token = authHeader.split(' ')[1];
+        const token = authHeader.slice('Bearer '.length).trim();
+
+        if (!token) {
+            return res.status(401).json({
+                message: 'Authentication token required'
+            });
+        }
 
         const decoded = verifyToken(token);
+        const session = await UserSession.findOne({
+            where: {
+                user_id: decoded.userId,
+                refresh_token_hash: hashSessionToken(token),
+                revoked_at: null,
+                expires_at: {
+                    [Op.gt]: new Date()
+                }
+            }
+        });
+
+        if (!session) {
+            return res.status(401).json({
+                message: 'Session is expired or has been revoked'
+            });
+        }
 
         const user = await User.findByPk(decoded.userId);
 
@@ -30,6 +54,7 @@ async function authenticate(req, res, next) {
         }
 
         req.user = user;
+        req.session = session;
 
         next();
     } catch (error) {

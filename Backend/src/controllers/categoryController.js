@@ -1,4 +1,4 @@
-const { Category } = require('../models');
+const { Category, Item } = require('../models');
 
 const getCategories = async (req, res) => {
     try {
@@ -8,19 +8,40 @@ const getCategories = async (req, res) => {
                     model: Category,
                     as: 'parent',
                     attributes: ['id', 'name', 'code']
-                },
-                {
-                    model: Category,
-                    as: 'children',
-                    attributes: ['id', 'name', 'code', 'parent_id']
                 }
             ],
             order: [['id', 'ASC']]
         });
 
+        // Product count per category
+        const counts = await Item.count({
+            group: ['category_id']
+        });
+
+        const countMap = {};
+
+        counts.forEach((row) => {
+            countMap[row.category_id] = row.count;
+        });
+
+        const data = categories.map((category) => {
+            const row = category.toJSON();
+
+            return {
+                ...row,
+
+                // Frontend-friendly fields
+                category_code: row.code,
+                category_name: row.name,
+                parent_category_name: row.parent ? row.parent.name : '',
+                product_count: countMap[row.id] || 0,
+                status: row.is_active ? 'active' : 'inactive'
+            };
+        });
+
         res.status(200).json({
             message: 'Categories retrieved successfully',
-            data: categories
+            data
         });
     } catch (error) {
         console.error('Get categories error:', error);

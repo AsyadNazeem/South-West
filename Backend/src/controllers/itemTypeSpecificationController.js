@@ -210,10 +210,17 @@ const updateItemTypeSpecification = async (req, res) => {
             sort_order
         } = req.body;
 
-        await record.update({
-            is_required,
-            sort_order
-        });
+        const updateData = {}
+
+        if (typeof is_required !== 'undefined') {
+            updateData.is_required = is_required
+        }
+
+        if (typeof sort_order !== 'undefined') {
+            updateData.sort_order = sort_order
+        }
+
+        await record.update(updateData)
 
         const updatedRecord = await ItemTypeSpecification.findByPk(
             id,
@@ -286,11 +293,55 @@ const deleteItemTypeSpecification = async (req, res) => {
     }
 };
 
+const getSpecificationsByItemType = async (req, res) => {
+    try {
+        const { itemTypeId } = req.params;
+
+        const records = await ItemTypeSpecification.findAll({
+            where: {
+                item_type_id: itemTypeId
+            },
+            include: [
+                {
+                    model: ItemSpecification,
+                    as: 'specification',
+                    attributes: [
+                        'id',
+                        'name',
+                        'code',
+                        'data_type',
+                        'unit'
+                    ]
+                }
+            ],
+            order: [
+                ['sort_order', 'ASC']
+            ]
+        });
+
+        return res.status(200).json({
+            message: 'Specifications for item type retrieved successfully',
+            data: records
+        });
+
+    } catch (error) {
+        console.error(
+            'Get specifications by item type error:',
+            error
+        );
+
+        return res.status(500).json({
+            message: 'Failed to retrieve specifications for item type'
+        });
+    }
+};
+
 
 module.exports = {
     getItemTypeSpecifications,
     getItemTypeSpecificationById,
     createItemTypeSpecification,
     updateItemTypeSpecification,
-    deleteItemTypeSpecification
+    deleteItemTypeSpecification,
+    getSpecificationsByItemType
 };

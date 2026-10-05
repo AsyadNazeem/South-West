@@ -19,7 +19,7 @@ module.exports = (sequelize) => {
             address_type: {
                 type: DataTypes.STRING(30),
                 allowNull: false,
-                defaultValue: 'home'
+                defaultValue: 'shipping'
             },
 
             recipient_name: {

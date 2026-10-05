@@ -10,7 +10,8 @@ const {
     getItemSpecificationValueById,
     createItemSpecificationValue,
     updateItemSpecificationValue,
-    deleteItemSpecificationValue
+    deleteItemSpecificationValue,
+    upsertSpecificationValue
 } = require('../controllers/itemSpecificationValueController');
 
 
@@ -45,6 +46,10 @@ router.put(
     updateItemSpecificationValue
 );
 
+router.post(
+    '/',
+    upsertSpecificationValue
+);
 
 router.delete(
     '/:id',
