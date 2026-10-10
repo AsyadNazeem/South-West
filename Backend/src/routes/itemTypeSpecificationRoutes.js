@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 const authenticate = require('../middleware/authMiddleware');
-const requirePermission = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
 
 const {
     getItemTypeSpecifications,

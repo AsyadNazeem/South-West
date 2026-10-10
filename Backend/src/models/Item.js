@@ -140,6 +140,17 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true
             },
 
+            shipping_weight: {
+                type: DataTypes.DECIMAL(10, 3),
+                allowNull: true
+            },
+
+            shipping_weight_unit: {
+                type: DataTypes.ENUM('g', 'kg'),
+                allowNull: false,
+                defaultValue: 'kg'
+            },
+
             condition: {
                 type: DataTypes.STRING(30),
                 allowNull: false,

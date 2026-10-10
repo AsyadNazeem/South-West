@@ -183,6 +183,7 @@ onMounted(loadReviews)
 
           <thead>
           <tr>
+            <th>#</th>
             <th>Customer</th>
             <th>Product</th>
             <th>Rating</th>
@@ -196,9 +197,13 @@ onMounted(loadReviews)
           <tbody>
 
           <tr
-              v-for="review in filteredReviews"
+              v-for="(review, index) in filteredReviews"
               :key="review.id"
           >
+
+            <td>
+              {{ index + 1 }}
+            </td>
 
             <!-- Customer -->
             <td>
@@ -214,16 +219,8 @@ onMounted(loadReviews)
 
             <!-- Rating -->
             <td>
-              <td>
-  <span class="rating">
-    {{ "★".repeat(stars(review.rating)) }}<span class="rating-empty">{{ "★".repeat(5 - stars(review.rating)) }}</span>
-  </span>
-                <small>{{ Number(review.rating) || 0 }}/5</small>
-              </td>
-
-              <small>
-                {{ review.rating }}/5
-              </small>
+              <span class="rating">{{ "★".repeat(stars(review.rating)) }}<span class="rating-empty">{{ "★".repeat(5 - stars(review.rating)) }}</span></span>
+              <small>{{ Number(review.rating) || 0 }}/5</small>
             </td>
 
             <!-- Title -->
@@ -233,7 +230,7 @@ onMounted(loadReviews)
 
             <!-- Review -->
             <td class="review-column">
-              {{ review.review_text || "-" }}
+              <span>{{ review.review_text || "-" }}</span>
             </td>
 
             <!-- Date -->

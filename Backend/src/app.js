@@ -8,6 +8,8 @@ const customerRoutes = require("./routes/customerRoutes");
 const userRoutes = require('./routes/userRoutes');
 const roleRoutes = require('./routes/roleRoutes');
 const customerAddressRoutes = require("./routes/customerAddressRoutes");
+const deliveryDistrictRoutes = require("./routes/deliveryDistrictRoutes");
+const deliveryAreaRoutes = require("./routes/deliveryAreaRoutes");
 const permissionRoutes = require('./routes/permissionRoutes');
 const rolePermissionRoutes = require('./routes/rolePermissionRoutes');
 const itemRoutes = require('./routes/itemRoutes');
@@ -51,6 +53,10 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const customerAddressListRoutes = require('./routes/customerAddressListRoutes');
 const itemTypeRoutes = require('./routes/itemTypeRoutes');
 const warrantyRoutes = require('./routes/warrantyRoutes');
+const customerAuthRoutes = require("./routes/customerAuthRoutes");
+const customerCartRoutes = require('./routes/customerCartRoutes');
+const customerCheckoutRoutes = require('./routes/customerCheckoutRoutes');
+
 
 const app = express();
 
@@ -78,6 +84,8 @@ app.use("/api/customers", customerRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/roles', roleRoutes);
 app.use("/api/customers", customerAddressRoutes);
+app.use("/api/delivery-districts", deliveryDistrictRoutes);
+app.use("/api/delivery-areas", deliveryAreaRoutes);
 app.use('/api/permissions', permissionRoutes);
 app.use('/api', rolePermissionRoutes);
 app.use('/api/items', itemRoutes);
@@ -86,7 +94,7 @@ app.use('/api/item-specifications', itemSpecificationRoutes);
 app.use('/api/item-type-specifications', itemTypeSpecificationRoutes);
 app.use('/api/item-specification-values', itemSpecificationValueRoutes);
 app.use('/api/inventory-locations', inventoryLocationRoutes);
-app.use('/api/inventory-stocks', inventoryStockRoutes);
+app.use('/api/inventory-stock', inventoryStockRoutes);
 app.use('/api/inventory-stock-movements', inventoryStockMovementRoutes);
 app.use('/api/goods-receipts', goodsReceiptRoutes);
 app.use('/api/goods-receipt-items', goodsReceiptItemRoutes);
@@ -121,6 +129,9 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/customer-addresses', customerAddressListRoutes);
 app.use('/api/item-types', itemTypeRoutes);
 app.use('/api/warranties', warrantyRoutes);
+app.use("/api/customer-auth", customerAuthRoutes);
+app.use('/api/customer-cart', customerCartRoutes);
+app.use('/api/customer-checkout', customerCheckoutRoutes);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/item-videos', require('./routes/itemVideoRoutes'));
@@ -176,4 +187,12 @@ startServer();
 // "email": "sales@southwest.lk",
 //     "password": "Sales@2026!",
 //     "role_id": 4
+// }'
+
+
+// curl -i -X POST http://localhost:5001/api/customer-auth/login \
+//     -H "Content-Type: application/json" \
+//   -d '{
+// "identifier": "asyad.test001@example.com",
+//     "password": "SouthWestTest@2026"
 // }'

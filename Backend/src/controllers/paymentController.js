@@ -139,52 +139,51 @@ const createPayment = async (req, res) => {
             transaction_reference,
             payment_date,
             notes
-        } = req.body;
+        } = req.body
 
         if (
             !payment_reference ||
             !order_id ||
             !payment_method ||
-            amount === undefined
+            amount === undefined ||
+            amount === null
         ) {
             return res.status(400).json({
                 message: 'payment_reference, order_id, payment_method and amount are required'
-            });
+            })
         }
 
-        const order = await Order.findByPk(order_id);
+        const order = await Order.findByPk(order_id)
 
         if (!order) {
             return res.status(404).json({
                 message: 'Order not found'
-            });
+            })
         }
 
         const existingPayment = await Payment.findOne({
             where: {
                 payment_reference
             }
-        });
+        })
 
         if (existingPayment) {
             return res.status(409).json({
                 message: 'Payment reference already exists'
-            });
+            })
         }
 
         const payment = await Payment.create({
             payment_reference,
             order_id,
             payment_method,
-            payment_status: payment_status || 'pending',
+            payment_status: payment_status || 'unpaid',
             amount,
             transaction_reference: transaction_reference || null,
             payment_date: payment_date || null,
             notes: notes || null,
-            processed_by: req.user.userId
-        });
-
-        await updateOrderPaymentStatus(payment.order_id);
+            processed_by: req.user.id
+        })
 
         const createdPayment = await Payment.findByPk(payment.id, {
             include: [
@@ -200,21 +199,22 @@ const createPayment = async (req, res) => {
                     }
                 }
             ]
-        });
+        })
 
-        res.status(201).json({
+        return res.status(201).json({
             message: 'Payment created successfully',
             data: createdPayment
-        });
-    } catch (error) {
-        console.error('Create payment error:', error);
+        })
 
-        res.status(500).json({
+    } catch (error) {
+        console.error('Create payment error:', error)
+
+        return res.status(500).json({
             message: 'Failed to create payment',
             error: error.message
-        });
+        })
     }
-};
+}
 
 
 const updatePayment = async (req, res) => {

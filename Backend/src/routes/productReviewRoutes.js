@@ -6,13 +6,13 @@ const router = express.Router();
 const productReviewController = require('../controllers/productReviewController');
 
 const authMiddleware = require('../middleware/authMiddleware');
-const permissionMiddleware = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
 
 // Get all reviews
 router.get(
     '/',
     authMiddleware,
-    permissionMiddleware('product_reviews.view'),
+    requirePermission('product_reviews.view'),
     productReviewController.getAllProductReviews
 );
 
@@ -20,7 +20,7 @@ router.get(
 router.get(
     '/:id',
     authMiddleware,
-    permissionMiddleware('product_reviews.view'),
+    requirePermission('product_reviews.view'),
     productReviewController.getProductReviewById
 );
 
@@ -28,7 +28,7 @@ router.get(
 router.post(
     '/',
     authMiddleware,
-    permissionMiddleware('product_reviews.create'),
+    requirePermission('product_reviews.create'),
     productReviewController.createProductReview
 );
 
@@ -36,7 +36,7 @@ router.post(
 router.put(
     '/:id',
     authMiddleware,
-    permissionMiddleware('product_reviews.update'),
+    requirePermission('product_reviews.update'),
     productReviewController.updateProductReview
 );
 
@@ -44,7 +44,7 @@ router.put(
 router.delete(
     '/:id',
     authMiddleware,
-    permissionMiddleware('product_reviews.delete'),
+    requirePermission('product_reviews.delete'),
     productReviewController.deleteProductReview
 );
 

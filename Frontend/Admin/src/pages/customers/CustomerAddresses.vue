@@ -161,6 +161,7 @@ onMounted(loadAddresses)
 
           <thead>
           <tr>
+            <th>#</th>
             <th>Customer</th>
             <th>Recipient</th>
             <th>Type</th>
@@ -174,9 +175,13 @@ onMounted(loadAddresses)
           <tbody>
 
           <tr
-              v-for="address in filteredAddresses"
+              v-for="(address, index) in filteredAddresses"
               :key="address.id"
           >
+
+            <td>
+              {{ index + 1 }}
+            </td>
 
             <!-- Customer -->
             <td>

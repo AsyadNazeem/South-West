@@ -305,7 +305,6 @@
       </section>
 
       <!-- Specifications -->
-      <!-- Specifications -->
       <section
           v-if="form.item_type_id && form.specifications.length > 0"
           class="form-section"
@@ -424,6 +423,52 @@
         </div>
       </section>
 
+      <!-- Shipping Weight -->
+      <section class="form-section">
+        <div class="section-header">
+          <h2>Shipping Information</h2>
+          <p>Enter the item's shipping weight for delivery charge calculation.</p>
+        </div>
+
+        <div class="form-grid">
+
+          <div class="form-group">
+            <label for="shipping_weight">
+              Shipping Weight <span>*</span>
+            </label>
+
+            <input
+                id="shipping_weight"
+                v-model="form.shipping_weight"
+                type="number"
+                min="0"
+                step="0.001"
+                placeholder="e.g. 2.500"
+                required
+            />
+
+            <small>
+              Enter the approximate packed/shipping weight of the item.
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label for="shipping_weight_unit">
+              Weight Unit <span>*</span>
+            </label>
+
+            <select
+                id="shipping_weight_unit"
+                v-model="form.shipping_weight_unit"
+                required
+            >
+              <option value="kg">Kilograms (kg)</option>
+              <option value="g">Grams (g)</option>
+            </select>
+          </div>
+
+        </div>
+      </section>
 
       <!-- Item Condition -->
       <section class="form-section">
@@ -948,6 +993,9 @@ const form = ref({
   item_name: "",
   description: "",
 
+  shipping_weight: "",
+  shipping_weight_unit: "kg",
+
   condition: "new",
   is_serialized: false,
   is_active: true,
@@ -1455,6 +1503,12 @@ const loadItem = async () => {
   form.value.description =
       item.description ?? ""
 
+  form.value.shipping_weight =
+      item.shipping_weight ?? ""
+
+  form.value.shipping_weight_unit =
+      item.shipping_weight_unit ?? "kg"
+
   form.value.condition =
       item.condition ?? "new"
 
@@ -1585,6 +1639,14 @@ const submitForm = async () => {
       description:
           (form.value.description || "").trim() || null,
 
+      shipping_weight:
+          form.value.shipping_weight
+              ? Number(form.value.shipping_weight)
+              : null,
+
+      shipping_weight_unit:
+      form.value.shipping_weight_unit,
+
       condition:
       form.value.condition,
 
@@ -1658,12 +1720,13 @@ const submitForm = async () => {
     if (specificationValues.length > 0) {
 
       await Promise.all(
-          specificationValues.map(spec =>
-              api.post(
-                  "/item-specification-values",
-                  spec
-              )
-          )
+          form.value.specifications.map(async (spec) => {
+            await api.post('/item-specification-values/upsert', {
+              item_id: Number(savedItemId),
+              specification_id: spec.specification_id,
+              value: spec.value
+            })
+          })
       )
 
     }

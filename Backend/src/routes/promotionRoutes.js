@@ -7,14 +7,14 @@ const router = express.Router();
 const promotionController = require('../controllers/promotionController');
 
 const authMiddleware = require('../middleware/authMiddleware');
-const permissionMiddleware = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
 
 
 // GET ALL
 router.get(
     '/',
     authMiddleware,
-    permissionMiddleware('promotions.view'),
+    requirePermission('promotions.view'),
     promotionController.getAllPromotions
 );
 
@@ -23,7 +23,7 @@ router.get(
 router.get(
     '/:id',
     authMiddleware,
-    permissionMiddleware('promotions.view'),
+    requirePermission('promotions.view'),
     promotionController.getPromotionById
 );
 
@@ -32,7 +32,7 @@ router.get(
 router.post(
     '/',
     authMiddleware,
-    permissionMiddleware('promotions.create'),
+    requirePermission('promotions.create'),
     promotionController.createPromotion
 );
 
@@ -41,7 +41,7 @@ router.post(
 router.put(
     '/:id',
     authMiddleware,
-    permissionMiddleware('promotions.update'),
+    requirePermission('promotions.update'),
     promotionController.updatePromotion
 );
 
@@ -50,7 +50,7 @@ router.put(
 router.patch(
     '/:id/status',
     authMiddleware,
-    permissionMiddleware('promotions.update'),
+    requirePermission('promotions.update'),
     promotionController.updatePromotionStatus
 );
 
@@ -59,7 +59,7 @@ router.patch(
 router.delete(
     '/:id',
     authMiddleware,
-    permissionMiddleware('promotions.delete'),
+    requirePermission('promotions.delete'),
     promotionController.deletePromotion
 );
 

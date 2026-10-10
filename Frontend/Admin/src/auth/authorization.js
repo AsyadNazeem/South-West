@@ -15,21 +15,48 @@ export const authorizationState = reactive({
 
 let authorizationRequest = null
 
-const normalizeUser = (user) => ({
-    id: user.id,
-    email: user.email,
-    is_active: user.is_active,
-    roles: Array.isArray(user.roles) ? user.roles : [],
-    permissions: [...new Set(Array.isArray(user.permissions) ? user.permissions : [])]
-})
+const normalizeUser = (user) => {
+    const roles = Array.isArray(user?.roles)
+        ? user.roles
+        : []
 
-export const getAccessToken = () => localStorage.getItem(TOKEN_KEY)
+    const permissions = [
+        ...(Array.isArray(user?.permissions)
+            ? user.permissions
+            : []),
+
+        ...roles.flatMap((role) =>
+            Array.isArray(role?.permissions)
+                ? role.permissions.map((permission) =>
+                    typeof permission === 'string'
+                        ? permission
+                        : permission?.name
+                )
+                : []
+        )
+    ].filter(Boolean)
+
+    return {
+        id: user?.id ?? null,
+        email: user?.email ?? null,
+        is_active: user?.is_active ?? false,
+        roles,
+        permissions: [...new Set(permissions)]
+    }
+}
+
+export const getAccessToken = () => {
+    return localStorage.getItem(TOKEN_KEY)
+}
 
 export const setAuthenticatedSession = ({ token, user }) => {
     const authorizedUser = normalizeUser(user)
 
     localStorage.setItem(TOKEN_KEY, token)
-    localStorage.setItem(USER_KEY, JSON.stringify(authorizedUser))
+    localStorage.setItem(
+        USER_KEY,
+        JSON.stringify(authorizedUser)
+    )
 
     authorizationState.user = authorizedUser
     authorizationState.initialized = true
@@ -47,6 +74,7 @@ export const refreshAuthorization = async () => {
     if (!getAccessToken()) {
         authorizationState.user = null
         authorizationState.initialized = true
+
         return null
     }
 
@@ -60,7 +88,11 @@ export const refreshAuthorization = async () => {
         .then((user) => {
             const authorizedUser = normalizeUser(user)
 
-            localStorage.setItem(USER_KEY, JSON.stringify(authorizedUser))
+            localStorage.setItem(
+                USER_KEY,
+                JSON.stringify(authorizedUser)
+            )
+
             authorizationState.user = authorizedUser
             authorizationState.initialized = true
 
@@ -95,11 +127,23 @@ export const hasPermission = (permission) => {
 }
 
 export const hasAnyPermission = (permissions) => {
-    return permissions.some((permission) => hasPermission(permission))
+    if (!Array.isArray(permissions)) {
+        return false
+    }
+
+    return permissions.some((permission) =>
+        hasPermission(permission)
+    )
 }
 
 export const hasAllPermissions = (permissions) => {
-    return permissions.every((permission) => hasPermission(permission))
+    if (!Array.isArray(permissions)) {
+        return false
+    }
+
+    return permissions.every((permission) =>
+        hasPermission(permission)
+    )
 }
 
 export const logout = async () => {

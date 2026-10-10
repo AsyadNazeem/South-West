@@ -6,14 +6,14 @@ const router = express.Router();
 const orderPromotionController = require('../controllers/orderPromotionController');
 
 const authMiddleware = require('../middleware/authMiddleware');
-const permissionMiddleware = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
 
 
 // GET all
 router.get(
     '/',
     authMiddleware,
-    permissionMiddleware('order_promotions.view'),
+    requirePermission('order_promotions.view'),
     orderPromotionController.getAllOrderPromotions
 );
 
@@ -22,7 +22,7 @@ router.get(
 router.get(
     '/:id',
     authMiddleware,
-    permissionMiddleware('order_promotions.view'),
+    requirePermission('order_promotions.view'),
     orderPromotionController.getOrderPromotionById
 );
 
@@ -31,7 +31,7 @@ router.get(
 router.post(
     '/',
     authMiddleware,
-    permissionMiddleware('order_promotions.create'),
+    requirePermission('order_promotions.create'),
     orderPromotionController.createOrderPromotion
 );
 
@@ -40,7 +40,7 @@ router.post(
 router.put(
     '/:id',
     authMiddleware,
-    permissionMiddleware('order_promotions.update'),
+    requirePermission('order_promotions.update'),
     orderPromotionController.updateOrderPromotion
 );
 
@@ -49,7 +49,7 @@ router.put(
 router.delete(
     '/:id',
     authMiddleware,
-    permissionMiddleware('order_promotions.delete'),
+    requirePermission('order_promotions.delete'),
     orderPromotionController.deleteOrderPromotion
 );
 

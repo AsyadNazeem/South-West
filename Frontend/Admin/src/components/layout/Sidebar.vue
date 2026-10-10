@@ -68,19 +68,19 @@ const menuDefinitions = [
     label: 'Inventory',
     icon: Warehouse,
     children: [
-      { label: 'Locations', to: '/inventory/locations', permissions: ['inventory.view'] },
-      { label: 'Stock', to: '/inventory/stock', permissions: ['inventory.view'] },
-      { label: 'Stock Movements', to: '/inventory/movements', permissions: ['inventory.view'] }
+      { label: 'Locations', to: '/admin/inventory/locations', permissions: ['inventory.view'] },
+      { label: 'Stock', to: '/admin/inventory/stock', permissions: ['inventory.view'] },
+      { label: 'Stock Movements', to: '/admin/inventory/movements', permissions: ['inventory.view'] },
     ]
   },
   {
     key: 'purchasing',
-    label: 'Purchasing',
+    label: 'purchasing',
     icon: ShoppingCart,
     children: [
-      { label: 'Suppliers', to: '/purchasing/suppliers', permissions: ['products.view'] },
-      { label: 'Purchase Orders', to: '/purchasing/purchase-orders', permissions: ['products.view'] },
-      { label: 'Goods Receipts', to: '/purchasing/goods-receipts', permissions: ['products.view'] }
+      { label: 'Suppliers', to: '/admin/purchasing/suppliers', permissions: ['products.view'] },
+      { label: 'Goods Receipts', to: '/admin/purchasing/goods-receipts', permissions: ['products.view'] },
+      { label: 'Purchase Orders', to: '/admin/purchasing/purchase-order', permissions: ['products.view'] }
     ]
   },
   {
@@ -88,10 +88,11 @@ const menuDefinitions = [
     label: 'Sales',
     icon: Banknote,
     children: [
-      { label: 'Orders', to: '/sales/orders', permissions: ['orders.view'] },
-      { label: 'Payments', to: '/sales/payments', permissions: ['payments.view'] },
-      { label: 'Invoices', to: '/sales/invoices', permissions: ['invoices.view'] },
-      { label: 'Deliveries', to: '/sales/deliveries', permissions: ['deliveries.view'] }
+      { label: 'Orders', to: '/admin/sales/orders', permissions: ['orders.view'] },
+      { label: 'Payments', to: '/admin/sales/payments', permissions: ['payments.view'] },
+      { label: 'Invoices', to: '/admin/sales/invoices', permissions: ['invoices.view'] },
+      { label: 'Deliveries', to: '/admin/sales/deliveries', permissions: ['deliveries.view'] },
+      { label: 'Delivery Charges', to: '/admin/sales/delivery-chargers', permissions: ['delivery_charges.view'] }
     ]
   },
   {
@@ -99,9 +100,9 @@ const menuDefinitions = [
     label: 'Marketing',
     icon: Megaphone,
     children: [
-      { label: 'Promotions', to: '/marketing/promotions', permissions: ['promotions.view'] },
-      { label: 'Categories', to: '/marketing/promotion-categories', permissions: ['promotion_categories.view'] },
-      { label: 'Products', to: '/marketing/promotion-items', permissions: ['promotion_items.view'] }
+      { label: 'Promotions', to: '/admin/marketing/promotions', permissions: ['promotions.view'] },
+      { label: 'Categories', to: '/admin/marketing/promotion-categories', permissions: ['promotion_categories.view'] },
+      { label: 'Products', to: '/admin/marketing/promotion-items', permissions: ['promotion_items.view'] }
     ]
   },
   {

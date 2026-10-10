@@ -13,14 +13,14 @@ const {
 } = require('../controllers/promotionItemController');
 
 const authMiddleware = require('../middleware/authMiddleware');
-const permissionMiddleware = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
 
 
 // GET all promotion items
 router.get(
     '/',
     authMiddleware,
-    permissionMiddleware('promotion_items.view'),
+    requirePermission('promotion_items.view'),
     getAllPromotionItems
 );
 
@@ -29,7 +29,7 @@ router.get(
 router.get(
     '/:id',
     authMiddleware,
-    permissionMiddleware('promotion_items.view'),
+    requirePermission('promotion_items.view'),
     getPromotionItemById
 );
 
@@ -38,7 +38,7 @@ router.get(
 router.post(
     '/',
     authMiddleware,
-    permissionMiddleware('promotion_items.create'),
+    requirePermission('promotion_items.create'),
     createPromotionItem
 );
 
@@ -47,7 +47,7 @@ router.post(
 router.put(
     '/:id',
     authMiddleware,
-    permissionMiddleware('promotion_items.update'),
+    requirePermission('promotion_items.update'),
     updatePromotionItem
 );
 
@@ -56,7 +56,7 @@ router.put(
 router.delete(
     '/:id',
     authMiddleware,
-    permissionMiddleware('promotion_items.delete'),
+    requirePermission('promotion_items.delete'),
     deletePromotionItem
 );
 

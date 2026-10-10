@@ -11,7 +11,7 @@ const {
 } = require('../controllers/warrantyController');
 
 const authMiddleware = require('../middleware/authMiddleware');
-const requirePermission = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
 
 
 // GET all warranties

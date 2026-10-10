@@ -19,6 +19,13 @@ router.get(
     customerAddressController.getAddresses
 );
 
+router.get(
+    '/address/:addressId',
+    authenticate,
+    requirePermission('customers.view'),
+    customerAddressController.getAddressById
+);
+
 router.put(
     '/:customerId/addresses/:addressId',
     authenticate,

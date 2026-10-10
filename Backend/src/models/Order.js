@@ -67,6 +67,12 @@ module.exports = (sequelize, DataTypes) => {
                 unique: true
             },
 
+            invoice_number: {
+                type: DataTypes.STRING(50),
+                allowNull: true,
+                unique: true
+            },
+
             customer_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: true
@@ -133,6 +139,18 @@ module.exports = (sequelize, DataTypes) => {
 
             discount_amount: {
                 type: DataTypes.DECIMAL(15, 2),
+                allowNull: false,
+                defaultValue: 0
+            },
+
+            discount_percentage_mode: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false
+            },
+
+            discount_percentage: {
+                type: DataTypes.DECIMAL(5, 2),
                 allowNull: false,
                 defaultValue: 0
             },

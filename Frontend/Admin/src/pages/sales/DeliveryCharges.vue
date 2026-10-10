@@ -1,0 +1,993 @@
+<script setup>
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import deliveryAreaApi from '../../api/deliveryAreaApi'
+import deliveryDistrictApi from '../../api/deliveryDistrictApi'
+import { hasPermission } from '../../auth/authorization'
+
+const router = useRouter()
+
+// =========================================================
+// STATE
+// =========================================================
+
+const deliveryAreas = ref([])
+const districts = ref([])
+
+const loading = ref(false)
+const error = ref('')
+
+const search = ref('')
+const districtFilter = ref('')
+const statusFilter = ref('')
+
+// Pagination
+const pageSizeOptions = [10, 25, 50, 100]
+const pageSize = ref(10)
+const currentPage = ref(1)
+
+// =========================================================
+// LOAD DATA
+// =========================================================
+
+const loadDistricts = async () => {
+  try {
+    const response = await deliveryDistrictApi.getDistricts()
+
+    districts.value = response?.data || response || []
+  } catch (err) {
+    console.error('Failed to load delivery districts:', err)
+
+    districts.value = []
+  }
+}
+
+const loadDeliveryAreas = async () => {
+  loading.value = true
+  error.value = ''
+
+  try {
+    const response = await deliveryAreaApi.getDeliveryAreas()
+
+    deliveryAreas.value = response?.data || response || []
+  } catch (err) {
+    console.error('Failed to load delivery areas:', err)
+
+    error.value =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to load delivery areas.'
+  } finally {
+    loading.value = false
+  }
+}
+
+// =========================================================
+// FILTER OPTIONS
+// =========================================================
+
+const districtOptions = computed(() =>
+    districts.value
+        .map(district => ({
+          id: district.id,
+          name: district.district_name
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+)
+
+// =========================================================
+// FILTERED LIST
+// =========================================================
+
+const filteredAreas = computed(() => {
+  const searchTerm = search.value.trim().toLowerCase()
+
+  return deliveryAreas.value.filter(area => {
+    const districtName =
+        area.district?.district_name ||
+        area.district_name ||
+        ''
+
+    const matchesSearch =
+        !searchTerm ||
+        districtName.toLowerCase().includes(searchTerm) ||
+        area.area_name?.toLowerCase().includes(searchTerm)
+
+    const matchesDistrict =
+        !districtFilter.value ||
+        Number(area.district_id) === Number(districtFilter.value)
+
+    const matchesStatus =
+        statusFilter.value === '' ||
+        String(Boolean(area.status)) === statusFilter.value
+
+    return matchesSearch && matchesDistrict && matchesStatus
+  })
+})
+
+// =========================================================
+// PAGINATION
+// =========================================================
+
+const totalPages = computed(() =>
+    Math.max(1, Math.ceil(filteredAreas.value.length / pageSize.value))
+)
+
+const paginatedAreas = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+
+  return filteredAreas.value.slice(start, start + pageSize.value)
+})
+
+const rangeStart = computed(() =>
+    filteredAreas.value.length === 0
+        ? 0
+        : (currentPage.value - 1) * pageSize.value + 1
+)
+
+const rangeEnd = computed(() =>
+    Math.min(currentPage.value * pageSize.value, filteredAreas.value.length)
+)
+
+// Page buttons with ellipsis, e.g. 1 ... 4 5 6 ... 20
+const visiblePages = computed(() => {
+  const total = totalPages.value
+  const current = currentPage.value
+
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+
+  const pages = [1]
+  const start = Math.max(2, current - 1)
+  const end = Math.min(total - 1, current + 1)
+
+  if (start > 2) pages.push('...')
+
+  for (let i = start; i <= end; i++) {
+    pages.push(i)
+  }
+
+  if (end < total - 1) pages.push('...')
+
+  pages.push(total)
+
+  return pages
+})
+
+const goToPage = (page) => {
+  if (typeof page !== 'number') return
+
+  currentPage.value = Math.min(Math.max(page, 1), totalPages.value)
+}
+
+// Back to page 1 when filters or page size change
+watch([search, districtFilter, statusFilter, pageSize], () => {
+  currentPage.value = 1
+})
+
+// Keep the page valid (e.g. after deleting the last row on the last page)
+watch(totalPages, (total) => {
+  if (currentPage.value > total) {
+    currentPage.value = total
+  }
+})
+
+// =========================================================
+// ACTIONS
+// =========================================================
+
+const addDeliveryArea = () => {
+  router.push('/admin/sales/delivery-chargers/create')
+}
+
+const editDeliveryArea = (area) => {
+  router.push(`/admin/sales/delivery-chargers/edit/${area.id}`)
+}
+
+const deleteDeliveryArea = async (area) => {
+  const districtName =
+      area.district?.district_name ||
+      area.district_name ||
+      ''
+
+  const confirmed = window.confirm(
+      `Are you sure you want to delete the delivery area "${area.area_name}" in ${districtName}?`
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    await deliveryAreaApi.deleteDeliveryArea(area.id)
+
+    await loadDeliveryAreas()
+  } catch (err) {
+    console.error('Delete delivery area error:', err)
+
+    error.value =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to delete delivery area.'
+  }
+}
+
+const clearFilters = () => {
+  search.value = ''
+  districtFilter.value = ''
+  statusFilter.value = ''
+}
+
+// =========================================================
+// FORMATTERS
+// =========================================================
+
+const formatCurrency = (value) => {
+  return new Intl.NumberFormat('en-LK', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number(value || 0))
+}
+
+// =========================================================
+// INITIAL LOAD
+// =========================================================
+
+onMounted(async () => {
+  loading.value = true
+
+  try {
+    await Promise.all([loadDistricts(), loadDeliveryAreas()])
+  } finally {
+    loading.value = false
+  }
+})
+</script>
+
+
+<template>
+  <div class="delivery-areas-page">
+
+    <!-- Header -->
+    <div class="page-header">
+      <div>
+        <h1>Delivery Areas</h1>
+        <p>Manage delivery areas and their delivery charges.</p>
+      </div>
+
+      <button
+          v-if="hasPermission('delivery_charges.create')"
+          type="button"
+          class="btn-primary"
+          @click="addDeliveryArea"
+      >
+        + Add Delivery Area
+      </button>
+    </div>
+
+    <!-- Error -->
+    <div v-if="error" class="error-message">
+      {{ error }}
+    </div>
+
+    <!-- Summary -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Areas</div>
+        <div class="stat-value">{{ deliveryAreas.length }}</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-label">Showing</div>
+        <div class="stat-value">{{ filteredAreas.length }}</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-label">Districts</div>
+        <div class="stat-value">{{ districtOptions.length }}</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-card">
+
+      <div class="filter-group filter-search">
+        <label for="search">Search</label>
+
+        <input
+            id="search"
+            v-model="search"
+            type="text"
+            placeholder="Search district or area..."
+        />
+      </div>
+
+      <div class="filter-group">
+        <label for="district">District</label>
+
+        <select id="district" v-model="districtFilter">
+          <option value="">All Districts</option>
+
+          <option
+              v-for="district in districtOptions"
+              :key="district.id"
+              :value="district.id"
+          >
+            {{ district.name }}
+          </option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="status">Status</label>
+
+        <select id="status" v-model="statusFilter">
+          <option value="">All Status</option>
+          <option value="true">Active</option>
+          <option value="false">Inactive</option>
+        </select>
+      </div>
+
+      <button
+          type="button"
+          class="btn-secondary"
+          @click="clearFilters"
+      >
+        Clear
+      </button>
+
+    </div>
+
+    <!-- Table -->
+    <div class="table-card">
+
+      <div class="table-wrapper">
+        <table>
+
+          <thead>
+          <tr>
+            <th>#</th>
+            <th>District</th>
+            <th>Area</th>
+            <th>First 1 KG</th>
+            <th>Additional 1 KG</th>
+            <th>Status</th>
+            <th class="actions-column">Actions</th>
+          </tr>
+          </thead>
+
+          <tbody>
+
+          <tr v-if="loading">
+            <td colspan="7" class="empty-state">
+              Loading delivery areas...
+            </td>
+          </tr>
+
+          <tr v-else-if="filteredAreas.length === 0">
+            <td colspan="7" class="empty-state">
+              <strong>No delivery areas found</strong>
+              <span>Try changing your search or filters.</span>
+            </td>
+          </tr>
+
+          <tr
+              v-for="(area, index) in paginatedAreas"
+              :key="area.id"
+          >
+            <td>{{ (currentPage - 1) * pageSize + index + 1 }}</td>
+
+            <td>
+              <strong>
+                {{ area.district?.district_name || area.district_name || '-' }}
+              </strong>
+            </td>
+
+            <td>{{ area.area_name }}</td>
+
+            <td class="amount">Rs. {{ formatCurrency(area.first_kg_charge) }}</td>
+
+            <td class="amount">Rs. {{ formatCurrency(area.additional_kg_charge) }}</td>
+
+            <td>
+              <span
+                  class="status-badge"
+                  :class="area.status ? 'status-active' : 'status-inactive'"
+              >
+                {{ area.status ? 'Active' : 'Inactive' }}
+              </span>
+            </td>
+
+            <td class="actions-column">
+              <div class="action-buttons">
+
+                <button
+                    v-if="hasPermission('delivery_charges.update')"
+                    type="button"
+                    class="table-action edit"
+                    @click="editDeliveryArea(area)"
+                >
+                  Edit
+                </button>
+
+                <button
+                    v-if="hasPermission('delivery_charges.delete')"
+                    type="button"
+                    class="table-action delete"
+                    @click="deleteDeliveryArea(area)"
+                >
+                  Delete
+                </button>
+
+              </div>
+            </td>
+          </tr>
+
+          </tbody>
+
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div
+          v-if="!loading && filteredAreas.length > 0"
+          class="pagination-bar"
+      >
+
+        <div class="rows-per-page">
+          <label for="page-size">Rows per page</label>
+
+          <select id="page-size" v-model.number="pageSize">
+            <option
+                v-for="size in pageSizeOptions"
+                :key="size"
+                :value="size"
+            >
+              {{ size }}
+            </option>
+          </select>
+        </div>
+
+        <div class="range-text">
+          {{ rangeStart }}–{{ rangeEnd }} of {{ filteredAreas.length }}
+        </div>
+
+        <div class="pagination-controls">
+
+          <button
+              type="button"
+              class="page-button"
+              :disabled="currentPage === 1"
+              @click="goToPage(currentPage - 1)"
+          >
+            Previous
+          </button>
+
+          <template v-for="(page, i) in visiblePages" :key="`${page}-${i}`">
+            <span v-if="page === '...'" class="page-ellipsis">…</span>
+
+            <button
+                v-else
+                type="button"
+                class="page-button page-number"
+                :class="{ active: page === currentPage }"
+                :aria-current="page === currentPage ? 'page' : undefined"
+                @click="goToPage(page)"
+            >
+              {{ page }}
+            </button>
+          </template>
+
+          <button
+              type="button"
+              class="page-button"
+              :disabled="currentPage === totalPages"
+              @click="goToPage(currentPage + 1)"
+          >
+            Next
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+</template>
+
+
+<style scoped>
+.delivery-areas-page {
+  width: 100%;
+  font-family: var(--font-family);
+}
+
+/* =========================
+   Page Header
+   ========================= */
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-2xl);
+}
+
+.page-header h1 {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.page-header p {
+  margin-top: 5px;
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
+}
+
+/* =========================
+   Buttons
+   ========================= */
+
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 var(--spacing-lg);
+  border-radius: var(--radius-lg);
+  font-family: inherit;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast),
+  color var(--transition-fast),
+  border-color var(--transition-fast);
+}
+
+.btn-primary {
+  border: none;
+  background: var(--color-primary);
+  color: var(--color-text-light);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.btn-secondary {
+  border: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-hover-bg);
+  color: var(--color-text-primary);
+}
+
+/* =========================
+   Summary
+   ========================= */
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+}
+
+.stat-card {
+  padding: var(--spacing-xl);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-label {
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.stat-value {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+/* =========================
+   Filters
+   ========================= */
+
+.filter-card {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-xl);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 180px;
+}
+
+.filter-search {
+  flex: 1;
+  max-width: 360px;
+}
+
+.filter-group label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.filter-group input,
+.filter-group select,
+.rows-per-page select {
+  box-sizing: border-box;
+  height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-md);
+  outline: none;
+  transition: border-color var(--transition-fast),
+  box-shadow var(--transition-fast);
+}
+
+.filter-group input {
+  padding: 0 var(--spacing-lg);
+}
+
+.filter-group input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.filter-group select {
+  padding: 0 var(--spacing-md);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.filter-group input:focus,
+.filter-group select:focus,
+.rows-per-page select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* =========================
+   Table
+   ========================= */
+
+.table-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  padding: var(--spacing-md) var(--spacing-lg);
+  text-align: left;
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: var(--color-hover-bg);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+td {
+  padding: 14px var(--spacing-lg);
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-light);
+  vertical-align: middle;
+}
+
+td strong {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+tbody tr {
+  transition: background var(--transition-fast);
+}
+
+tbody tr:hover {
+  background: var(--color-surface-hover);
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.amount {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.actions-column {
+  text-align: right;
+}
+
+/* =========================
+   Status Badges
+   ========================= */
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.status-active {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.status-inactive {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+/* =========================
+   Row Actions
+   ========================= */
+
+.action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.table-action {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px var(--spacing-md);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: background var(--transition-fast),
+  color var(--transition-fast),
+  border-color var(--transition-fast);
+}
+
+.table-action.edit:hover {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.table-action.delete:hover {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-light);
+  color: var(--color-danger);
+}
+
+/* =========================
+   Pagination
+   ========================= */
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+}
+
+.rows-per-page {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.rows-per-page label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.rows-per-page select {
+  height: 34px;
+  padding: 0 var(--spacing-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.range-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.page-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 var(--spacing-md);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: background var(--transition-fast),
+  color var(--transition-fast),
+  border-color var(--transition-fast);
+}
+
+.page-button:hover:not(:disabled):not(.active) {
+  background: var(--color-hover-bg);
+  color: var(--color-text-primary);
+}
+
+.page-button.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-text-light);
+  cursor: default;
+}
+
+.page-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page-ellipsis {
+  min-width: 24px;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+/* =========================
+   States
+   ========================= */
+
+.empty-state {
+  padding: 50px var(--spacing-xl);
+  text-align: center;
+  white-space: normal;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.empty-state strong {
+  display: block;
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+}
+
+.empty-state span {
+  display: block;
+}
+
+.error-message {
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid var(--color-danger-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+/* =========================
+   Responsive
+   ========================= */
+
+@media (max-width: 900px) {
+  .filter-card {
+    flex-wrap: wrap;
+  }
+
+  .filter-group {
+    flex: 1;
+    min-width: 180px;
+  }
+
+  .filter-search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .page-header .btn-primary {
+    width: 100%;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+
+  .filter-card .btn-secondary {
+    width: 100%;
+  }
+
+  .pagination-bar {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .rows-per-page,
+  .pagination-controls {
+    justify-content: center;
+  }
+}
+</style>

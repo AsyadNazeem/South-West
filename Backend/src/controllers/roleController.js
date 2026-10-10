@@ -1,6 +1,6 @@
 'use strict';
 
-const { Role, Permission } = require('../models');
+const { Role, Permission, UserRole } = require('../models');
 
 exports.getRoles = async (req, res) => {
     try {
@@ -59,18 +59,28 @@ exports.getRole = async (req, res) => {
     }
 };
 
+
 exports.createRole = async (req, res) => {
     try {
         const { name, description } = req.body;
 
-        if (!name) {
+        const normalizedName =
+            typeof name === 'string' ? name.trim() : '';
+
+        if (!normalizedName) {
             return res.status(400).json({
                 message: 'Role name is required'
             });
         }
 
+        if (normalizedName.toLowerCase() === 'admin') {
+            return res.status(400).json({
+                message: 'The system Admin role name is reserved'
+            });
+        }
+
         const existingRole = await Role.findOne({
-            where: { name }
+            where: { name: normalizedName }
         });
 
         if (existingRole) {
@@ -80,7 +90,7 @@ exports.createRole = async (req, res) => {
         }
 
         const role = await Role.create({
-            name,
+            name: normalizedName,
             description
         });
 
@@ -89,7 +99,7 @@ exports.createRole = async (req, res) => {
             data: role
         });
     } catch (error) {
-        console.error(error);
+        console.error('Create role error:', error);
 
         return res.status(500).json({
             message: 'Failed to create role'
@@ -97,10 +107,11 @@ exports.createRole = async (req, res) => {
     }
 };
 
+
+
 exports.updateRole = async (req, res) => {
     try {
         const { name, description } = req.body;
-
         const role = await Role.findByPk(req.params.id);
 
         if (!role) {
@@ -109,9 +120,38 @@ exports.updateRole = async (req, res) => {
             });
         }
 
-        if (name && name !== role.name) {
+        const requestedName =
+            typeof name === 'string' ? name.trim() : undefined;
+
+        if (name !== undefined && !requestedName) {
+            return res.status(400).json({
+                message: 'Role name cannot be empty'
+            });
+        }
+
+        if (
+            role.name.trim().toLowerCase() === 'admin' &&
+            requestedName !== undefined &&
+            requestedName.toLowerCase() !== 'admin'
+        ) {
+            return res.status(403).json({
+                message: 'The system Admin role cannot be renamed'
+            });
+        }
+
+        if (
+            requestedName &&
+            requestedName.toLowerCase() === 'admin' &&
+            role.name.trim().toLowerCase() !== 'admin'
+        ) {
+            return res.status(400).json({
+                message: 'The system Admin role name is reserved'
+            });
+        }
+
+        if (requestedName && requestedName !== role.name) {
             const existingRole = await Role.findOne({
-                where: { name }
+                where: { name: requestedName }
             });
 
             if (existingRole) {
@@ -121,17 +161,24 @@ exports.updateRole = async (req, res) => {
             }
         }
 
-        await role.update({
-            name: name ?? role.name,
-            description: description ?? role.description
-        });
+        const updates = {};
+
+        if (requestedName !== undefined) {
+            updates.name = requestedName;
+        }
+
+        if (description !== undefined) {
+            updates.description = description;
+        }
+
+        await role.update(updates);
 
         return res.status(200).json({
             message: 'Role updated successfully',
             data: role
         });
     } catch (error) {
-        console.error(error);
+        console.error('Update role error:', error);
 
         return res.status(500).json({
             message: 'Failed to update role'
@@ -149,9 +196,28 @@ exports.deleteRole = async (req, res) => {
             });
         }
 
-        if (role.name === 'Admin') {
-            return res.status(400).json({
-                message: 'Admin role cannot be deleted'
+        // Prevent deletion of the system Admin role.
+        if (
+            typeof role.name === 'string' &&
+            role.name.trim().toLowerCase() === 'admin'
+        ) {
+            return res.status(403).json({
+                message: 'The system Admin role cannot be deleted'
+            });
+        }
+
+        // Prevent deleting roles that are still assigned to users.
+        const { UserRole } = require('../models');
+
+        const assignedUsers = await UserRole.count({
+            where: {
+                role_id: role.id
+            }
+        });
+
+        if (assignedUsers > 0) {
+            return res.status(409).json({
+                message: 'Cannot delete a role assigned to users. Reassign those users first.'
             });
         }
 
@@ -161,10 +227,11 @@ exports.deleteRole = async (req, res) => {
             message: 'Role deleted successfully'
         });
     } catch (error) {
-        console.error(error);
+        console.error('Delete role error:', error);
 
         return res.status(500).json({
             message: 'Failed to delete role'
         });
     }
 };
+

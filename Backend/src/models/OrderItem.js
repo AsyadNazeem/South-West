@@ -52,6 +52,18 @@ module.exports = (sequelize, DataTypes) => {
                 defaultValue: 0
             },
 
+            discount_percentage_mode: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false
+            },
+
+            discount_percentage: {
+                type: DataTypes.DECIMAL(5, 2),
+                allowNull: false,
+                defaultValue: 0
+            },
+
             tax_amount: {
                 type: DataTypes.DECIMAL(15, 2),
                 allowNull: false,

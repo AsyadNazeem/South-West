@@ -6,14 +6,14 @@ const router = express.Router();
 const deliveryController = require('../controllers/deliveryController');
 
 const authMiddleware = require('../middleware/authMiddleware');
-const permissionMiddleware = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
 
 
 // Get all deliveries
 router.get(
     '/',
     authMiddleware,
-    permissionMiddleware('deliveries.view'),
+    requirePermission('deliveries.view'),
     deliveryController.getAllDeliveries
 );
 
@@ -22,7 +22,7 @@ router.get(
 router.get(
     '/:id',
     authMiddleware,
-    permissionMiddleware('deliveries.view'),
+    requirePermission('deliveries.view'),
     deliveryController.getDeliveryById
 );
 
@@ -31,7 +31,7 @@ router.get(
 router.post(
     '/',
     authMiddleware,
-    permissionMiddleware('deliveries.create'),
+    requirePermission('deliveries.create'),
     deliveryController.createDelivery
 );
 
@@ -40,7 +40,7 @@ router.post(
 router.put(
     '/:id',
     authMiddleware,
-    permissionMiddleware('deliveries.update'),
+    requirePermission('deliveries.update'),
     deliveryController.updateDelivery
 );
 
@@ -49,7 +49,7 @@ router.put(
 router.delete(
     '/:id',
     authMiddleware,
-    permissionMiddleware('deliveries.delete'),
+    requirePermission('deliveries.delete'),
     deliveryController.deleteDelivery
 );
 

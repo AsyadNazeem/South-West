@@ -1,5 +1,7 @@
 const {
+    sequelize,
     InventoryStock,
+    InventoryStockMovement,
     Item,
     InventoryLocation
 } = require('../models');
@@ -285,11 +287,219 @@ const deleteInventoryStock = async (req, res) => {
     }
 };
 
+// SET ACTUAL ONLINE STOCK COUNT
+const setOnlineStockCount = async (req, res) => {
+    const { item_id, counted_quantity, notes } = req.body;
+
+    // Accept only the fields supported by this endpoint.
+    const allowedFields = ['item_id', 'counted_quantity', 'notes'];
+
+    if (
+        !req.body ||
+        Object.keys(req.body).some((key) => !allowedFields.includes(key))
+    ) {
+        return res.status(400).json({
+            message: 'Unsupported field in request'
+        });
+    }
+
+    const itemId = Number(item_id);
+    const counted = Number(counted_quantity);
+
+    if (!Number.isSafeInteger(itemId) || itemId <= 0) {
+        return res.status(400).json({
+            message: 'A valid item_id is required'
+        });
+    }
+
+    if (
+        counted_quantity === undefined ||
+        counted_quantity === null ||
+        counted_quantity === '' ||
+        !Number.isFinite(counted) ||
+        counted < 0 ||
+        !/^\d+(\.\d{1,3})?$/.test(String(counted_quantity))
+    ) {
+        return res.status(400).json({
+            message: 'counted_quantity must be a non-negative number with up to 3 decimal places'
+        });
+    }
+
+    if (
+        notes !== undefined &&
+        notes !== null &&
+        (typeof notes !== 'string' || notes.length > 2000)
+    ) {
+        return res.status(400).json({
+            message: 'notes must be a string of up to 2000 characters'
+        });
+    }
+
+    const transaction = await sequelize.transaction();
+
+    try {
+        // Resolve the online location on the server.
+        const onlineLocations = await InventoryLocation.findAll({
+            where: {
+                location_type: 'online',
+                is_active: true
+            },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        if (onlineLocations.length !== 1) {
+            await transaction.rollback();
+
+            return res.status(409).json({
+                message: 'Exactly one active online inventory location must be configured'
+            });
+        }
+
+        const onlineLocation = onlineLocations[0];
+
+        const item = await Item.findByPk(itemId, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        if (!item) {
+            await transaction.rollback();
+
+            return res.status(404).json({
+                message: 'Item not found'
+            });
+        }
+
+        if (!item.is_active) {
+            await transaction.rollback();
+
+            return res.status(409).json({
+                message: 'Cannot update stock for an inactive item'
+            });
+        }
+
+        let stock = await InventoryStock.findOne({
+            where: {
+                item_id: itemId,
+                location_id: onlineLocation.id
+            },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        if (!stock) {
+            stock = await InventoryStock.create(
+                {
+                    item_id: itemId,
+                    location_id: onlineLocation.id,
+                    quantity_on_hand: 0,
+                    quantity_reserved: 0,
+                    reorder_level: 0,
+                    reorder_quantity: 0,
+                    is_active: true
+                },
+                { transaction }
+            );
+        }
+
+        if (!stock.is_active) {
+            await transaction.rollback();
+
+            return res.status(409).json({
+                message: 'The online stock record is inactive'
+            });
+        }
+
+        const previous = Number(stock.quantity_on_hand);
+        const reserved = Number(stock.quantity_reserved);
+        const difference = Number((counted - previous).toFixed(3));
+
+        // Never set physical stock below quantities already reserved.
+        if (counted < reserved) {
+            await transaction.rollback();
+
+            return res.status(409).json({
+                message: 'Counted quantity cannot be below the reserved quantity',
+                reserved_quantity: reserved
+            });
+        }
+
+        if (difference === 0) {
+            await transaction.commit();
+
+            return res.status(200).json({
+                message: 'Online stock count verified; no quantity change required',
+                data: {
+                    item_id: itemId,
+                    location_id: onlineLocation.id,
+                    previous_quantity: previous,
+                    counted_quantity: counted,
+                    quantity_on_hand: previous,
+                    adjustment: 0
+                }
+            });
+        }
+
+        // Set the absolute count. Never add the count to the old balance.
+        await stock.update(
+            { quantity_on_hand: counted },
+            { transaction }
+        );
+
+        await InventoryStockMovement.create(
+            {
+                item_id: itemId,
+                location_id: onlineLocation.id,
+                movement_type: 'adjustment',
+                quantity: Math.abs(difference),
+                reference_type: 'daily_stock_count',
+                reference_id: null,
+                notes: [
+                    `Daily online stock count`,
+                    `Previous quantity: ${previous}`,
+                    `Counted quantity: ${counted}`,
+                    `Signed difference: ${difference}`,
+                    notes ? `Staff notes: ${notes}` : null
+                ].filter(Boolean).join(' | '),
+                created_by: req.user.id,
+                created_at: new Date()
+            },
+            { transaction }
+        );
+
+        await transaction.commit();
+
+        return res.status(200).json({
+            message: 'Online stock count updated successfully',
+            data: {
+                item_id: itemId,
+                location_id: onlineLocation.id,
+                previous_quantity: previous,
+                counted_quantity: counted,
+                quantity_on_hand: counted,
+                adjustment: difference
+            }
+        });
+    } catch (error) {
+        if (!transaction.finished) {
+            await transaction.rollback();
+        }
+
+        console.error('Set online stock count error:', error);
+
+        return res.status(500).json({
+            message: 'Failed to update online stock count'
+        });
+    }
+};
+
 
 module.exports = {
     getInventoryStocks,
     getInventoryStockById,
     createInventoryStock,
     updateInventoryStock,
-    deleteInventoryStock
+    deleteInventoryStock,
+    setOnlineStockCount
 };

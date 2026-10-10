@@ -1,14 +1,24 @@
-const { Role, Permission } = require('../models');
+
+'use strict';
+
+const {
+    Role,
+    Permission,
+    UserRole,
+    sequelize
+} = require('../models');
 
 const getRolePermissions = async (req, res) => {
     try {
         const { id } = req.params;
 
         const role = await Role.findByPk(id, {
+            attributes: ['id', 'name', 'description'],
             include: [
                 {
                     model: Permission,
                     as: 'permissions',
+                    attributes: ['id', 'name', 'module'],
                     through: {
                         attributes: []
                     }
@@ -27,7 +37,7 @@ const getRolePermissions = async (req, res) => {
             data: role
         });
     } catch (error) {
-        console.error(error);
+        console.error('Get role permissions error:', error);
 
         return res.status(500).json({
             message: 'Failed to retrieve role permissions'
@@ -35,15 +45,30 @@ const getRolePermissions = async (req, res) => {
     }
 };
 
-
 const updateRolePermissions = async (req, res) => {
     try {
         const { id } = req.params;
         const { permission_ids } = req.body;
 
-        if (!Array.isArray(permission_ids)) {
+        // Validate the request body.
+        if (
+            !Array.isArray(permission_ids) ||
+            !permission_ids.every(
+                permissionId =>
+                    Number.isSafeInteger(permissionId) &&
+                    permissionId > 0
+            )
+        ) {
             return res.status(400).json({
-                message: 'permission_ids must be an array'
+                message:
+                    'permission_ids must be an array of positive integer IDs'
+            });
+        }
+
+        // Reject duplicates instead of silently accepting them.
+        if (new Set(permission_ids).size !== permission_ids.length) {
+            return res.status(400).json({
+                message: 'Duplicate permission IDs are not allowed'
             });
         }
 
@@ -55,10 +80,38 @@ const updateRolePermissions = async (req, res) => {
             });
         }
 
+        // Protect the system Admin role.
+        if (
+            typeof role.name === 'string' &&
+            role.name.trim().toLowerCase() === 'admin'
+        ) {
+            return res.status(403).json({
+                message:
+                    'The system Admin role permissions cannot be changed through this endpoint'
+            });
+        }
+
+        // Prevent editing a role assigned to the requester.
+        const requesterRole = await UserRole.findOne({
+            where: {
+                user_id: req.user.id,
+                role_id: role.id
+            }
+        });
+
+        if (requesterRole) {
+            return res.status(403).json({
+                message:
+                    'You cannot modify permissions for a role assigned to your own account'
+            });
+        }
+
+        // Confirm every requested permission exists.
         const permissions = await Permission.findAll({
             where: {
                 id: permission_ids
-            }
+            },
+            attributes: ['id', 'name']
         });
 
         if (permissions.length !== permission_ids.length) {
@@ -67,13 +120,45 @@ const updateRolePermissions = async (req, res) => {
             });
         }
 
-        await role.setPermissions(permission_ids);
+        // Require an additional permission to grant sensitive privileges.
+        const sensitivePermissions = new Set([
+            'roles.manage',
+            'permissions.manage',
+            'permissions.privileged.manage',
+            'users.roles.manage',
+            'users.status.manage',
+            'users.password.reset',
+            'users.delete'
+        ]);
+
+        const grantsSensitivePermission = permissions.some(
+            permission => sensitivePermissions.has(permission.name)
+        );
+
+        if (
+            grantsSensitivePermission &&
+            !req.permissions?.has('permissions.privileged.manage')
+        ) {
+            return res.status(403).json({
+                message:
+                    'You are not authorized to grant sensitive permissions'
+            });
+        }
+
+        // Replace permissions atomically.
+        await sequelize.transaction(async transaction => {
+            await role.setPermissions(permission_ids, {
+                transaction
+            });
+        });
 
         const updatedRole = await Role.findByPk(id, {
+            attributes: ['id', 'name', 'description'],
             include: [
                 {
                     model: Permission,
                     as: 'permissions',
+                    attributes: ['id', 'name', 'module'],
                     through: {
                         attributes: []
                     }
@@ -86,14 +171,13 @@ const updateRolePermissions = async (req, res) => {
             data: updatedRole
         });
     } catch (error) {
-        console.error(error);
+        console.error('Update role permissions error:', error);
 
         return res.status(500).json({
             message: 'Failed to update role permissions'
         });
     }
 };
-
 
 module.exports = {
     getRolePermissions,

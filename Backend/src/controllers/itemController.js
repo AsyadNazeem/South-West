@@ -121,6 +121,8 @@ const createItem = async (req, res) => {
             item_code,
             item_name,
             description,
+            shipping_weight,
+            shipping_weight_unit,
             condition,
             is_serialized,
             is_active
@@ -150,12 +152,27 @@ const createItem = async (req, res) => {
             unit_id: unit_id || null,
             item_type_id: item_type_id || null,
             warranty_id: warranty_id || null,
+
             item_code,
             item_name,
+
             description: description || null,
+
+            shipping_weight:
+                shipping_weight !== undefined && shipping_weight !== null
+                    ? shipping_weight
+                    : null,
+
+            shipping_weight_unit:
+                shipping_weight_unit || 'kg',
+
             condition: condition || 'new',
-            is_serialized: is_serialized ?? false,
-            is_active: is_active ?? true
+
+            is_serialized:
+                is_serialized ?? false,
+
+            is_active:
+                is_active ?? true
         });
 
         const createdItem = await Item.findByPk(item.id, {
@@ -214,9 +231,12 @@ const updateItem = async (req, res) => {
             brand_id,
             unit_id,
             item_type_id,
+            warranty_id,
             item_code,
             item_name,
             description,
+            shipping_weight,
+            shipping_weight_unit,
             condition,
             is_serialized,
             is_active
@@ -269,6 +289,14 @@ const updateItem = async (req, res) => {
             description: description !== undefined
                 ? description
                 : item.description,
+
+            shipping_weight: shipping_weight !== undefined
+                ? shipping_weight
+                : item.shipping_weight,
+
+            shipping_weight_unit: shipping_weight_unit !== undefined
+                ? shipping_weight_unit
+                : item.shipping_weight_unit,
 
             condition: condition !== undefined
                 ? condition

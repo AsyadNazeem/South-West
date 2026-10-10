@@ -26,6 +26,12 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false
             },
 
+            payment_number: {
+                type: DataTypes.STRING(50),
+                allowNull: true,
+                unique: true
+            },
+
             payment_reference: {
                 type: DataTypes.STRING(100),
                 allowNull: false,
