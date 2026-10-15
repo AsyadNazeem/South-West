@@ -1,5 +1,192 @@
-const { Category, Item } = require('../models');
 
+const { Op } = require('sequelize');
+const { Category, Item, PromotionCategory } = require('../models');
+
+const MAX_CATEGORY_ID = '18446744073709551615';
+
+function isValidId(id) {
+    if (
+        (typeof id !== 'string' && typeof id !== 'number') ||
+        !/^[1-9]\d*$/.test(String(id))
+    ) {
+        return false;
+    }
+
+    const value = String(id);
+
+    return (
+        value.length < MAX_CATEGORY_ID.length ||
+        (value.length === MAX_CATEGORY_ID.length &&
+            value <= MAX_CATEGORY_ID)
+    );
+}
+
+function isPlainObject(value) {
+    return (
+        value !== null &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+    );
+}
+
+function validateText(value, field, maxLength, required = false) {
+    if (value === undefined) {
+        return required ? `${field} is required` : null;
+    }
+
+    if (typeof value !== 'string') {
+        return `${field} must be a string`;
+    }
+
+    if (required && !value.trim()) {
+        return `${field} is required`;
+    }
+
+    if (value.trim().length > maxLength) {
+        return `${field} must not exceed ${maxLength} characters`;
+    }
+
+    return null;
+}
+
+function validateDescription(value) {
+    if (value === undefined || value === null) {
+        return null;
+    }
+
+    if (typeof value !== 'string') {
+        return 'Description must be a string or null';
+    }
+
+    if (Buffer.byteLength(value, 'utf8') > 65535) {
+        return 'Description is too long';
+    }
+
+    return null;
+}
+
+function validateActive(value) {
+    return (
+        typeof value === 'boolean' ||
+        value === 0 ||
+        value === 1
+    );
+}
+
+function sendValidationError(res, message) {
+    return res.status(400).json({
+        success: false,
+        message
+    });
+}
+
+function handleCategoryError(res, error, operation) {
+    const dbCode = error.original?.code || error.parent?.code;
+
+    console.error(`${operation} failed:`, {
+        name: error.name,
+        code: dbCode
+    });
+
+    if (
+        error.name === 'SequelizeUniqueConstraintError' ||
+        dbCode === 'ER_DUP_ENTRY'
+    ) {
+        return res.status(409).json({
+            success: false,
+            message: 'Category name or code already exists'
+        });
+    }
+
+    if (error.name === 'SequelizeForeignKeyConstraintError') {
+        return res.status(409).json({
+            success: false,
+            message: 'Category is referenced by another record'
+        });
+    }
+
+    if (
+        error.name === 'SequelizeValidationError' ||
+        dbCode === 'ER_DATA_TOO_LONG'
+    ) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid category data'
+        });
+    }
+
+    return res.status(500).json({
+        success: false,
+        message: 'An internal server error occurred'
+    });
+}
+
+async function validateParent(parentId, categoryId = null) {
+    if (parentId === undefined || parentId === null) {
+        return { error: null, parent: null };
+    }
+
+    if (!isValidId(parentId)) {
+        return { error: 'Invalid parent category ID', parent: null };
+    }
+
+    if (
+        categoryId !== null &&
+        String(parentId) === String(categoryId)
+    ) {
+        return {
+            error: 'Category cannot be its own parent',
+            parent: null
+        };
+    }
+
+    const parent = await Category.findByPk(parentId);
+
+    if (!parent) {
+        return { error: 'Parent category not found', parent: null };
+    }
+
+    if (!parent.is_active) {
+        return {
+            error: 'Cannot assign an inactive parent category',
+            parent: null
+        };
+    }
+
+    // Walk up the parent chain to prevent indirect cycles.
+    const visited = new Set(
+        categoryId === null ? [] : [String(categoryId)]
+    );
+
+    let current = parent;
+
+    while (current) {
+        const currentId = String(current.id);
+
+        if (visited.has(currentId)) {
+            return {
+                error: 'This parent would create a category cycle',
+                parent: null
+            };
+        }
+
+        visited.add(currentId);
+
+        if (current.parent_id === null) {
+            break;
+        }
+
+        current = await Category.findByPk(current.parent_id);
+
+        if (!current) {
+            break;
+        }
+    }
+
+    return { error: null, parent };
+}
+
+// GET ALL CATEGORIES
 const getCategories = async (req, res) => {
     try {
         const categories = await Category.findAll({
@@ -13,49 +200,48 @@ const getCategories = async (req, res) => {
             order: [['id', 'ASC']]
         });
 
-        // Product count per category
         const counts = await Item.count({
+            attributes: ['category_id'],
             group: ['category_id']
         });
 
         const countMap = {};
 
-        counts.forEach((row) => {
-            countMap[row.category_id] = row.count;
+        counts.forEach(row => {
+            countMap[String(row.category_id)] = Number(row.count);
         });
 
-        const data = categories.map((category) => {
+        const data = categories.map(category => {
             const row = category.toJSON();
 
             return {
                 ...row,
-
-                // Frontend-friendly fields
                 category_code: row.code,
                 category_name: row.name,
-                parent_category_name: row.parent ? row.parent.name : '',
-                product_count: countMap[row.id] || 0,
+                parent_category_name: row.parent?.name || '',
+                product_count: countMap[String(row.id)] || 0,
                 status: row.is_active ? 'active' : 'inactive'
             };
         });
 
-        res.status(200).json({
+        return res.status(200).json({
+            success: true,
             message: 'Categories retrieved successfully',
             data
         });
     } catch (error) {
-        console.error('Get categories error:', error);
-
-        res.status(500).json({
-            message: 'Failed to retrieve categories'
-        });
+        return handleCategoryError(res, error, 'Get categories');
     }
 };
 
-
+// GET CATEGORY BY ID
 const getCategoryById = async (req, res) => {
     try {
         const { id } = req.params;
+
+        if (!isValidId(id)) {
+            return sendValidationError(res, 'Invalid category ID');
+        }
 
         const category = await Category.findByPk(id, {
             include: [
@@ -74,210 +260,317 @@ const getCategoryById = async (req, res) => {
 
         if (!category) {
             return res.status(404).json({
+                success: false,
                 message: 'Category not found'
             });
         }
 
-        res.status(200).json({
+        return res.status(200).json({
+            success: true,
             message: 'Category retrieved successfully',
             data: category
         });
     } catch (error) {
-        console.error('Get category error:', error);
-
-        res.status(500).json({
-            message: 'Failed to retrieve category'
-        });
+        return handleCategoryError(res, error, 'Get category');
     }
 };
 
-
+// CREATE CATEGORY
 const createCategory = async (req, res) => {
     try {
-        const {
-            name,
-            code,
-            description,
-            parent_id
-        } = req.body;
-
-        if (!name || !code) {
-            return res.status(400).json({
-                message: 'Name and code are required'
-            });
+        if (!isPlainObject(req.body)) {
+            return sendValidationError(
+                res,
+                'Request body must be a JSON object'
+            );
         }
 
+        const { name, code, description, parent_id } = req.body;
+
+        const allowedFields = ['name', 'code', 'description', 'parent_id'];
+        const unexpected = Object.keys(req.body).find(
+            field => !allowedFields.includes(field)
+        );
+
+        if (unexpected) {
+            return sendValidationError(res, `Unsupported field: ${unexpected}`);
+        }
+
+        let error = validateText(name, 'Name', 100, true);
+        if (error) return sendValidationError(res, error);
+
+        error = validateText(code, 'Code', 50, true);
+        if (error) return sendValidationError(res, error);
+
+        error = validateDescription(description);
+        if (error) return sendValidationError(res, error);
+
+        const normalizedName = name.trim();
+        const normalizedCode = code.trim();
+
         const existingName = await Category.findOne({
-            where: { name }
+            where: { name: normalizedName }
         });
 
         if (existingName) {
             return res.status(409).json({
+                success: false,
                 message: 'Category name already exists'
             });
         }
 
         const existingCode = await Category.findOne({
-            where: { code }
+            where: { code: normalizedCode }
         });
 
         if (existingCode) {
             return res.status(409).json({
+                success: false,
                 message: 'Category code already exists'
             });
         }
 
-        if (parent_id) {
-            const parentCategory = await Category.findByPk(parent_id);
+        const parentResult = await validateParent(parent_id);
 
-            if (!parentCategory) {
-                return res.status(404).json({
-                    message: 'Parent category not found'
-                });
-            }
+        if (parentResult.error) {
+            return parentResult.error === 'Parent category not found'
+                ? res.status(404).json({
+                    success: false,
+                    message: parentResult.error
+                })
+                : sendValidationError(res, parentResult.error);
         }
 
         const category = await Category.create({
-            name,
-            code,
-            description,
-            parent_id: parent_id || null
+            name: normalizedName,
+            code: normalizedCode,
+            description: description ?? null,
+            parent_id: parent_id ?? null
         });
 
-        res.status(201).json({
+        return res.status(201).json({
+            success: true,
             message: 'Category created successfully',
             data: category
         });
     } catch (error) {
-        console.error('Create category error:', error);
-
-        res.status(500).json({
-            message: 'Failed to create category'
-        });
+        return handleCategoryError(res, error, 'Create category');
     }
 };
 
-
+// UPDATE CATEGORY
 const updateCategory = async (req, res) => {
     try {
         const { id } = req.params;
+
+        if (!isValidId(id)) {
+            return sendValidationError(res, 'Invalid category ID');
+        }
+
+        if (!isPlainObject(req.body)) {
+            return sendValidationError(
+                res,
+                'Request body must be a JSON object'
+            );
+        }
+
+        const allowedFields = [
+            'name',
+            'code',
+            'description',
+            'parent_id',
+            'is_active'
+        ];
+
+        const unexpected = Object.keys(req.body).find(
+            field => !allowedFields.includes(field)
+        );
+
+        if (unexpected) {
+            return sendValidationError(res, `Unsupported field: ${unexpected}`);
+        }
+
+        if (Object.keys(req.body).length === 0) {
+            return sendValidationError(
+                res,
+                'Provide at least one field to update'
+            );
+        }
 
         const category = await Category.findByPk(id);
 
         if (!category) {
             return res.status(404).json({
+                success: false,
                 message: 'Category not found'
             });
         }
 
-        const {
-            name,
-            code,
-            description,
-            parent_id,
-            is_active
-        } = req.body;
+        const { name, code, description, parent_id, is_active } = req.body;
 
-        if (name && name !== category.name) {
+        if (name !== undefined) {
+            const error = validateText(name, 'Name', 100, true);
+            if (error) return sendValidationError(res, error);
+        }
+
+        if (code !== undefined) {
+            const error = validateText(code, 'Code', 50, true);
+            if (error) return sendValidationError(res, error);
+        }
+
+        if (description !== undefined) {
+            const error = validateDescription(description);
+            if (error) return sendValidationError(res, error);
+        }
+
+        if (is_active !== undefined && !validateActive(is_active)) {
+            return sendValidationError(
+                res,
+                'is_active must be true, false, 1, or 0'
+            );
+        }
+
+        const normalizedName =
+            name === undefined ? category.name : name.trim();
+
+        const normalizedCode =
+            code === undefined ? category.code : code.trim();
+
+        if (name !== undefined && normalizedName !== category.name) {
             const existingName = await Category.findOne({
-                where: { name }
+                where: {
+                    name: normalizedName,
+                    id: { [Op.ne]: category.id }
+                }
             });
 
             if (existingName) {
                 return res.status(409).json({
+                    success: false,
                     message: 'Category name already exists'
                 });
             }
         }
 
-        if (code && code !== category.code) {
+        if (code !== undefined && normalizedCode !== category.code) {
             const existingCode = await Category.findOne({
-                where: { code }
+                where: {
+                    code: normalizedCode,
+                    id: { [Op.ne]: category.id }
+                }
             });
 
             if (existingCode) {
                 return res.status(409).json({
+                    success: false,
                     message: 'Category code already exists'
                 });
             }
         }
 
-        if (parent_id !== undefined && parent_id !== null) {
-            if (Number(parent_id) === Number(id)) {
-                return res.status(400).json({
-                    message: 'Category cannot be its own parent'
-                });
+        if (parent_id !== undefined) {
+            const parentResult = await validateParent(
+                parent_id,
+                category.id
+            );
+
+            if (parentResult.error) {
+                return parentResult.error === 'Parent category not found'
+                    ? res.status(404).json({
+                        success: false,
+                        message: parentResult.error
+                    })
+                    : sendValidationError(res, parentResult.error);
             }
+        }
 
-            const parentCategory = await Category.findByPk(parent_id);
+        if (is_active === false || is_active === 0) {
+            const [childCount, itemCount] = await Promise.all([
+                Category.count({
+                    where: { parent_id: category.id }
+                }),
+                Item.count({
+                    where: { category_id: category.id }
+                })
+            ]);
 
-            if (!parentCategory) {
-                return res.status(404).json({
-                    message: 'Parent category not found'
+            if (childCount > 0 || itemCount > 0) {
+                return res.status(409).json({
+                    success: false,
+                    message: 'Cannot deactivate a category with child categories or assigned items'
                 });
             }
         }
 
-        await category.update({
-            name: name ?? category.name,
-            code: code ?? category.code,
-            description: description ?? category.description,
-            parent_id: parent_id !== undefined ? parent_id : category.parent_id,
-            is_active: is_active !== undefined ? is_active : category.is_active
-        });
+        const updates = {};
 
-        res.status(200).json({
+        if (name !== undefined) updates.name = normalizedName;
+        if (code !== undefined) updates.code = normalizedCode;
+        if (description !== undefined) updates.description = description;
+        if (parent_id !== undefined) updates.parent_id = parent_id;
+        if (is_active !== undefined) {
+            updates.is_active = is_active === true || is_active === 1;
+        }
+
+        await category.update(updates);
+
+        return res.status(200).json({
+            success: true,
             message: 'Category updated successfully',
             data: category
         });
     } catch (error) {
-        console.error('Update category error:', error);
-
-        res.status(500).json({
-            message: 'Failed to update category'
-        });
+        return handleCategoryError(res, error, 'Update category');
     }
 };
 
-
+// DELETE CATEGORY
 const deleteCategory = async (req, res) => {
     try {
         const { id } = req.params;
+
+        if (!isValidId(id)) {
+            return sendValidationError(res, 'Invalid category ID');
+        }
 
         const category = await Category.findByPk(id);
 
         if (!category) {
             return res.status(404).json({
+                success: false,
                 message: 'Category not found'
             });
         }
 
-        const childCategories = await Category.count({
-            where: {
-                parent_id: id
-            }
-        });
+        const [childCount, itemCount, promotionCount] = await Promise.all([
+            Category.count({
+                where: { parent_id: category.id }
+            }),
+            Item.count({
+                where: { category_id: category.id }
+            }),
+            PromotionCategory.count({
+                where: { category_id: category.id }
+            })
+        ]);
 
-        if (childCategories > 0) {
+        if (childCount > 0 || itemCount > 0 || promotionCount > 0) {
             return res.status(409).json({
-                message: 'Cannot delete category with child categories'
+                success: false,
+                message: 'Cannot delete a category that has child categories, assigned items, or promotion records'
             });
         }
 
         await category.destroy();
 
-        res.status(200).json({
+        return res.status(200).json({
+            success: true,
             message: 'Category deleted successfully'
         });
     } catch (error) {
-        console.error('Delete category error:', error);
-
-        res.status(500).json({
-            message: 'Failed to delete category'
-        });
+        return handleCategoryError(res, error, 'Delete category');
     }
 };
-
 
 module.exports = {
     getCategories,

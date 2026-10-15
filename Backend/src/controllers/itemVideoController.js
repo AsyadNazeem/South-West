@@ -3,6 +3,7 @@
 const { ItemVideo, Item, sequelize } = require('../models');
 const { removeStoredFile } = require('../utils/fileStorage');
 const { HttpError, toBool } = require('../utils/requestHelpers');
+const { recordAuditLog } = require('../services/auditLogService');
 
 const itemInclude = [
     {
@@ -137,6 +138,26 @@ const createItemVideo = async (req, res) => {
             { transaction }
         );
 
+        await recordAuditLog({
+            userId: req.user.id,
+            action: 'ITEM_VIDEO_CREATED',
+            module: 'items',
+            entityType: 'item_video',
+            entityId: video.id,
+            description: `Video created for item ID ${item_id}`,
+            newValues: {
+                item_id: video.item_id,
+                file_name: video.file_name,
+                mime_type: video.mime_type,
+                file_size: video.file_size,
+                is_active: video.is_active
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
+        });
+
         await transaction.commit();
 
         return res.status(201).json({
@@ -145,7 +166,15 @@ const createItemVideo = async (req, res) => {
         });
     } catch (error) {
         await rollbackQuietly(transaction);
-        await removeStoredFile(file.relativePath);
+
+        const cleanup = await removeStoredFile(file.relativePath);
+
+        if (cleanup.status === 'failed') {
+            console.error(
+                'Video upload cleanup required:',
+                file.relativePath
+            );
+        }
 
         // Unique key on item_id (race between two uploads)
         if (error.name === 'SequelizeUniqueConstraintError') {
@@ -164,29 +193,59 @@ const createItemVideo = async (req, res) => {
 
 
 // PUT /api/item-videos/:id   (JSON: is_active)
+
 const updateItemVideo = async (req, res) => {
+    const transaction = await sequelize.transaction();
+
     try {
-        const video = await ItemVideo.findByPk(req.params.id);
+        const video = await ItemVideo.findByPk(req.params.id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
         if (!video) {
-            return res.status(404).json({
-                message: 'Item video not found'
-            });
+            throw new HttpError(404, 'Item video not found');
         }
+
+        const oldValues = {
+            is_active: video.is_active
+        };
 
         if (req.body.is_active !== undefined) {
             await video.update({
                 is_active: toBool(req.body.is_active, video.is_active)
-            });
+            }, { transaction });
         }
+
+        await recordAuditLog({
+            userId: req.user.id,
+            action: 'ITEM_VIDEO_UPDATED',
+            module: 'items',
+            entityType: 'item_video',
+            entityId: video.id,
+            description: `Video updated for item ID ${video.item_id}`,
+            oldValues,
+            newValues: {
+                is_active: video.is_active
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
+        });
+
+        await transaction.commit();
 
         return res.status(200).json({
             message: 'Item video updated successfully',
             data: video
         });
     } catch (error) {
+        await rollbackQuietly(transaction);
+
         return sendError(
-            res, error,
+            res,
+            error,
             'Update item video error',
             'Failed to update item video'
         );
@@ -194,34 +253,73 @@ const updateItemVideo = async (req, res) => {
 };
 
 
+
 // DELETE /api/item-videos/:id
+
 const deleteItemVideo = async (req, res) => {
+    const transaction = await sequelize.transaction();
+
     try {
-        const video = await ItemVideo.findByPk(req.params.id);
+        const video = await ItemVideo.findByPk(req.params.id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
         if (!video) {
-            return res.status(404).json({
-                message: 'Item video not found'
-            });
+            throw new HttpError(404, 'Item video not found');
         }
 
         const filePath = video.file_path;
 
-        await video.destroy();
+        const oldValues = {
+            item_id: video.item_id,
+            file_name: video.file_name,
+            mime_type: video.mime_type,
+            file_size: video.file_size,
+            is_active: video.is_active
+        };
 
-        await removeStoredFile(filePath);
+        await video.destroy({ transaction });
+
+        await recordAuditLog({
+            userId: req.user.id,
+            action: 'ITEM_VIDEO_DELETED',
+            module: 'items',
+            entityType: 'item_video',
+            entityId: video.id,
+            description: `Video deleted from item ID ${video.item_id}`,
+            oldValues,
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
+        });
+
+        await transaction.commit();
+
+        const cleanup = await removeStoredFile(filePath);
+
+        if (cleanup.status === 'failed') {
+            console.error(
+                `Video file cleanup required for video ID ${video.id}`
+            );
+        }
 
         return res.status(200).json({
             message: 'Item video deleted successfully'
         });
     } catch (error) {
+        await rollbackQuietly(transaction);
+
         return sendError(
-            res, error,
+            res,
+            error,
             'Delete item video error',
             'Failed to delete item video'
         );
     }
 };
+
 
 
 module.exports = {

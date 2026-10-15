@@ -9,7 +9,7 @@ const permissionCatalog = [
     { name: 'roles.view', module: 'roles', description: 'View roles' },
     { name: 'roles.manage', module: 'roles', description: 'Create, update and delete roles' },
     { name: 'permissions.view', module: 'permissions', description: 'View permissions' },
-    { name: 'permissions.manage', module: 'permissions', description: 'Manage permissions' },
+    { name: 'permissions.privileged.manage', module: 'permissions', description: 'Grant sensitive permissions to roles' },
     { name: 'products.view', module: 'products', description: 'View products' },
     { name: 'products.create', module: 'products', description: 'Create products' },
     { name: 'products.update', module: 'products', description: 'Update products' },
@@ -24,7 +24,6 @@ const permissionCatalog = [
     { name: 'customers.update', module: 'customers', description: 'Update customers' },
     { name: 'customers.delete', module: 'customers', description: 'Delete customers' },
     { name: 'reports.view', module: 'reports', description: 'View reports' },
-    { name: 'admin.dashboard.view', module: 'admin', description: 'View the administrative dashboard' },
     { name: 'inventory.view', module: 'inventory', description: 'View inventory' },
     { name: 'inventory.create', module: 'inventory', description: 'Create inventory records' },
     { name: 'inventory.update', module: 'inventory', description: 'Update inventory records' },
@@ -94,7 +93,8 @@ const permissionCatalog = [
     { name: 'user_sessions.cleanup', module: 'user_sessions', description: 'Clean up expired user sessions' },
     { name: 'wishlists.view', module: 'wishlists', description: 'View wishlists' },
     { name: 'wishlists.create', module: 'wishlists', description: 'Create wishlists' },
-    { name: 'wishlists.delete', module: 'wishlists', description: 'Delete wishlists' }
+    { name: 'wishlists.delete', module: 'wishlists', description: 'Delete wishlists' },
+    { name: 'audit_logs.view', module: 'audit_logs', description: 'View audit logs' },
 ];
 
 const seededPermissionNames = new Set([
@@ -119,8 +119,7 @@ const seededPermissionNames = new Set([
     'customers.create',
     'customers.update',
     'customers.delete',
-    'reports.view',
-    'admin.dashboard.view'
+    'reports.view'
 ]);
 
 const additionalPermissionNames = permissionCatalog

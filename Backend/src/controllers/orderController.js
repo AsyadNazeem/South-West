@@ -1,3 +1,6 @@
+const {Op} = require('sequelize');
+const { recordAuditLog } = require('../services/auditLogService');
+
 const {
     Order,
     Customer,
@@ -9,13 +12,77 @@ const {
     Delivery,
     Invoice,
     OrderPromotion,
-    ProductReview
+    ProductReview,
+    Item,
+    ItemPrice
 } = require('../models');
+
+const getCurrentSellingPrice = async (
+    itemId,
+    transaction
+) => {
+    const now = new Date();
+
+    const price = await ItemPrice.findOne({
+        where: {
+            item_id: itemId,
+            price_type: 'selling',
+            currency: 'LKR',
+            is_active: true,
+            [Op.and]: [
+                {
+                    [Op.or]: [
+                        {effective_from: null},
+                        {effective_from: {[Op.lte]: now}}
+                    ]
+                },
+                {
+                    [Op.or]: [
+                        {effective_to: null},
+                        {effective_to: {[Op.gte]: now}}
+                    ]
+                }
+            ]
+        },
+        order: [
+            ['effective_from', 'DESC'],
+            ['id', 'DESC']
+        ],
+        transaction
+    });
+
+    if (!price) {
+        const error = new Error(
+            `No active selling price configured for item ${itemId}`
+        );
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const amount = Number(price.price);
+
+    if (!Number.isFinite(amount) || amount < 0) {
+        const error = new Error(
+            `Invalid selling price configured for item ${itemId}`
+        );
+        error.statusCode = 500;
+        throw error;
+    }
+
+    return amount;
+};
 
 const getOrderIncludes = () => [
     {
         model: Customer,
         as: 'customer',
+        attributes: [
+            'id',
+            'first_name',
+            'last_name',
+            'email',
+            'phone'
+        ],
         required: false
     },
     {
@@ -90,7 +157,7 @@ exports.getAllOrders = async (req, res) => {
 // GET ORDER BY ID
 exports.getOrderById = async (req, res) => {
     try {
-        const { id } = req.params;
+        const {id} = req.params;
 
         const order = await Order.findByPk(id, {
             include: getOrderIncludes()
@@ -142,6 +209,30 @@ exports.createOrder = async (req, res) => {
             payment,
             delivery
         } = req.body
+
+        const forbiddenFields = [
+            'subtotal',
+            'discount_amount',
+            'tax_amount',
+            'shipping_amount',
+            'total_amount',
+            'payment_status',
+            'status',
+            'fulfillment_status'
+        ];
+
+        const suppliedForbiddenFields = forbiddenFields.filter(
+            field => Object.prototype.hasOwnProperty.call(req.body, field)
+        );
+
+        if (suppliedForbiddenFields.length > 0) {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'Order totals and statuses are calculated by the server',
+                fields: suppliedForbiddenFields
+            });
+        }
 
         // ==========================================
         // VALIDATION
@@ -251,27 +342,79 @@ exports.createOrder = async (req, res) => {
             }
         }
 
-        // ==========================================
-        // CALCULATE ORDER TOTALS
-        // ==========================================
+        // CALCULATE ORDER TOTALS FROM DATABASE PRICES
 
-        const calculatedSubtotal = items.reduce((sum, item) => {
-            const quantity = Number(item.quantity || 0)
-            const unitPrice = Number(item.unit_price || 0)
-            const discount = Number(item.discount || 0)
+        const validatedItems = [];
+        let calculatedSubtotal = 0;
 
-            return sum + ((quantity * unitPrice) - discount)
-        }, 0)
+        for (const item of items) {
+            const itemId = Number(item.item_id);
+            const quantity = Number(item.quantity);
 
-        const orderDiscount = Number(discount_amount || 0)
-        const orderTax = Number(tax_amount || 0)
-        const shippingAmount = Number(shipping_amount || 0)
+            if (
+                !Number.isSafeInteger(itemId) ||
+                itemId <= 0 ||
+                !Number.isFinite(quantity) ||
+                quantity <= 0 ||
+                Math.round(quantity * 1000) !== quantity * 1000
+            ) {
+                const error = new Error(
+                    'Each item must have a valid item_id and quantity'
+                );
+                error.statusCode = 400;
+                throw error;
+            }
 
-        const calculatedTotal =
-            calculatedSubtotal -
-            orderDiscount +
-            orderTax +
-            shippingAmount
+            const product = await Item.findByPk(itemId, {
+                transaction
+            });
+
+            if (!product) {
+                const error = new Error(
+                    `Item ${itemId} was not found`
+                );
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const unitPrice = await getCurrentSellingPrice(
+                itemId,
+                transaction
+            );
+
+            const lineTotal = Number(
+                (quantity * unitPrice).toFixed(2)
+            );
+
+            calculatedSubtotal = Number(
+                (calculatedSubtotal + lineTotal).toFixed(2)
+            );
+
+            validatedItems.push({
+                item_id: itemId,
+                quantity,
+                unit_price: unitPrice,
+                discount_amount: 0,
+                line_total: lineTotal
+            });
+        }
+
+        const orderDiscount = 0;
+
+// Tax and delivery must come from trusted server-side
+// configuration/calculation, not request-body values.
+// Keep them at zero until those calculations are implemented.
+        const orderTax = 0;
+        const shippingAmount = 0;
+
+        const calculatedTotal = Number(
+            (
+                calculatedSubtotal -
+                orderDiscount +
+                orderTax +
+                shippingAmount
+            ).toFixed(2)
+        );
 
         // ==========================================
         // CREATE ORDER
@@ -283,10 +426,9 @@ exports.createOrder = async (req, res) => {
                 customer_id: customer_id || null,
                 order_date,
                 order_type: order_type || 'online',
-                status: status || 'pending',
-                payment_status: payment_status || 'unpaid',
-                fulfillment_status:
-                    fulfillment_status || 'unfulfilled',
+                status: 'pending',
+                payment_status: 'unpaid',
+                fulfillment_status: 'unfulfilled',
 
                 subtotal: calculatedSubtotal,
                 discount_amount: orderDiscount,
@@ -307,44 +449,22 @@ exports.createOrder = async (req, res) => {
         // CREATE ORDER ITEMS
         // ==========================================
 
-        const orderItems = []
+        const orderItems = [];
 
-        for (const item of items) {
-
-            if (!item.item_id) {
-                throw new Error(
-                    'Item ID is required for every order item'
-                )
-            }
-
-            const quantity = Number(item.quantity || 0)
-            const unitPrice = Number(item.unit_price || 0)
-            const discount = Number(item.discount || 0)
-
-            if (quantity <= 0) {
-                throw new Error(
-                    'Order item quantity must be greater than zero'
-                )
-            }
-
-            const itemTotal =
-                (quantity * unitPrice) - discount
-
+        for (const item of validatedItems) {
             const orderItem = await OrderItem.create(
                 {
                     order_id: order.id,
                     item_id: item.item_id,
-                    quantity,
-                    unit_price: unitPrice,
-                    discount,
-                    total: itemTotal
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    discount_amount: item.discount_amount,
+                    line_total: item.line_total
                 },
-                {
-                    transaction
-                }
-            )
+                {transaction}
+            );
 
-            orderItems.push(orderItem)
+            orderItems.push(orderItem);
         }
 
         // ==========================================
@@ -422,107 +542,61 @@ exports.createOrder = async (req, res) => {
             )
         }
 
+
         // ==========================================
         // CREATE INVOICE
         // ==========================================
 
-        const invoiceNumber =
-            `INV-${order.order_number}`
-
-        const paymentAmount =
-            Number(payment?.amount || 0)
-
-        const invoiceBalance =
-            calculatedTotal - paymentAmount
-
-        let invoiceStatus = 'draft'
-
+        // Manual order creation must never trust a
+        // payment amount or payment status supplied
+        // by the client.
         if (
-            paymentAmount >= calculatedTotal &&
-            calculatedTotal > 0
+            payment &&
+            (
+                Object.prototype.hasOwnProperty.call(payment, 'amount') ||
+                Object.prototype.hasOwnProperty.call(payment, 'status') ||
+                Object.prototype.hasOwnProperty.call(payment, 'payment_status') ||
+                Object.prototype.hasOwnProperty.call(payment, 'payment_date') ||
+                Object.prototype.hasOwnProperty.call(payment, 'transaction_reference')
+            )
         ) {
-            invoiceStatus = 'paid'
-        } else if (paymentAmount > 0) {
-            invoiceStatus = 'partially_paid'
+            const error = new Error(
+                'Payment amounts, statuses, dates and transaction references cannot be supplied when creating an order.'
+            );
+            error.statusCode = 400;
+            throw error;
         }
+
+        const invoiceNumber = `INV-${order.order_number}`;
 
         const invoice = await Invoice.create(
             {
                 invoice_number: invoiceNumber,
                 order_id: order.id,
                 customer_id: customer_id || null,
-
                 invoice_date: order_date,
-
-                status: invoiceStatus,
-
+                status: 'issued',
                 subtotal: calculatedSubtotal,
                 discount_amount: orderDiscount,
                 tax_amount: orderTax,
                 shipping_amount: shippingAmount,
                 total_amount: calculatedTotal,
-
-                paid_amount: paymentAmount,
-                balance_amount: Math.max(invoiceBalance, 0),
-
+                paid_amount: 0,
+                balance_amount: calculatedTotal,
                 notes: notes || null,
-
-                created_by:
-                    req.user ? req.user.id : null
+                created_by: req.user ? req.user.id : null
             },
-            {
-                transaction
-            }
-        )
+            {transaction}
+        );
 
         // ==========================================
         // CREATE PAYMENT
         // ==========================================
 
-        let createdPayment = null
+        // Do not create a payment record until a
+        // trusted payment workflow records it.
+        const createdPayment = null;
 
-        if (paymentAmount > 0) {
-
-            const paymentReference =
-                `PAY-${order.order_number}`
-
-            const paymentStatus =
-                payment.status || 'paid'
-
-            createdPayment = await Payment.create(
-                {
-                    payment_reference:
-                    paymentReference,
-
-                    order_id:
-                    order.id,
-
-                    payment_method:
-                        payment.method || 'cash',
-
-                    payment_status:
-                    paymentStatus,
-
-                    amount:
-                    paymentAmount,
-
-                    transaction_reference:
-                        payment.transaction_reference || null,
-
-                    payment_date:
-                        payment.payment_date || new Date(),
-
-                    notes:
-                        payment.notes || null,
-
-                    processed_by:
-                        req.user ? req.user.id : null
-                },
-                {
-                    transaction
-                }
-            )
-        }
 
         // ==========================================
 // CREATE DELIVERY
@@ -614,26 +688,51 @@ exports.createOrder = async (req, res) => {
         // UPDATE ORDER PAYMENT STATUS
         // ==========================================
 
-        let finalPaymentStatus = 'unpaid'
-
-        if (
-            paymentAmount >= calculatedTotal &&
-            calculatedTotal > 0
-        ) {
-            finalPaymentStatus = 'paid'
-        } else if (paymentAmount > 0) {
-            finalPaymentStatus = 'partially_paid'
-        }
+        // Manual orders start unpaid.
+        // Payment status can only change through a
+        // trusted payment recording workflow.
 
         await order.update(
             {
-                payment_status:
-                finalPaymentStatus
+                payment_status: 'unpaid'
             },
             {
                 transaction
             }
         )
+
+
+        await recordAuditLog({
+            userId: req.user ? req.user.id : null,
+            action: 'ORDER_CREATED',
+            module: 'orders',
+            entityType: 'order',
+            entityId: order.id,
+            description: `Order ${order.order_number} created`,
+            newValues: {
+                order_number: order.order_number,
+                customer_id: order.customer_id,
+                order_type: order.order_type,
+                status: order.status,
+                payment_status: order.payment_status,
+                fulfillment_status: order.fulfillment_status,
+                subtotal: order.subtotal,
+                discount_amount: order.discount_amount,
+                tax_amount: order.tax_amount,
+                shipping_amount: order.shipping_amount,
+                total_amount: order.total_amount,
+                item_count: orderItems.length,
+                invoice_id: invoice.id,
+                delivery_id: createdDelivery ? createdDelivery.id : null
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: null,
+            transaction
+        });
+
+        await transaction.commit()
+
 
         // ==========================================
         // COMMIT TRANSACTION
@@ -713,82 +812,154 @@ exports.createOrder = async (req, res) => {
 
 
 // UPDATE ORDER
+
+
 exports.updateOrder = async (req, res) => {
+    let transaction;
+
     try {
         const { id } = req.params;
 
-        const order = await Order.findByPk(id);
+        if (!/^[1-9]\d*$/.test(id)) {
+            return res.status(400).json({
+                message: 'Invalid order ID'
+            });
+        }
+
+        const allowedFields = ['notes'];
+        const receivedFields = Object.keys(req.body || {});
+
+        const unsupportedFields = receivedFields.filter(
+            field => !allowedFields.includes(field)
+        );
+
+        if (unsupportedFields.length > 0) {
+            return res.status(400).json({
+                message: 'Unsupported order update fields',
+                fields: unsupportedFields
+            });
+        }
+
+        if (req.body.notes === undefined) {
+            return res.status(400).json({
+                message: 'No valid fields provided for update'
+            });
+        }
+
+        const { notes } = req.body;
+
+        if (
+            notes !== null &&
+            (
+                typeof notes !== 'string' ||
+                notes.length > 2000
+            )
+        ) {
+            return res.status(400).json({
+                message: 'Notes must be a string of up to 2000 characters'
+            });
+        }
+
+        transaction = await Order.sequelize.transaction();
+
+        const order = await Order.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
         if (!order) {
+            await transaction.rollback();
+            transaction = null;
+
             return res.status(404).json({
                 message: 'Order not found'
             });
         }
 
-        const allowedFields = [
-            'customer_id',
-            'order_date',
-            'order_type',
-            'status',
-            'payment_status',
-            'fulfillment_status',
-            'subtotal',
-            'discount_amount',
-            'tax_amount',
-            'shipping_amount',
-            'total_amount',
-            'notes'
-        ];
+        const oldNotes = order.notes;
 
-        const updates = {};
+        if (oldNotes === notes) {
+            await transaction.commit();
+            transaction = null;
 
-        allowedFields.forEach(field => {
-            if (req.body[field] !== undefined) {
-                updates[field] = req.body[field];
-            }
+            return res.status(200).json({
+                message: 'Order notes updated successfully',
+                data: {
+                    id: order.id,
+                    order_number: order.order_number,
+                    notes: order.notes
+                }
+            });
+        }
+
+        await order.update(
+            { notes },
+            { transaction }
+        );
+
+        await recordAuditLog({
+            userId: req.user ? req.user.id : null,
+            action: 'ORDER_UPDATED',
+            module: 'orders',
+            entityType: 'order',
+            entityId: order.id,
+            description: `Notes updated for order ${order.order_number}`,
+            oldValues: {
+                notes_changed: true,
+                notes_length: oldNotes == null
+                    ? 0
+                    : oldNotes.length
+            },
+            newValues: {
+                notes_changed: true,
+                notes_length: notes == null
+                    ? 0
+                    : notes.length
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: null,
+            transaction
         });
 
-        await order.update(updates);
+        await transaction.commit();
+        transaction = null;
 
         return res.status(200).json({
-            message: 'Order updated successfully',
-            data: order
+            message: 'Order notes updated successfully',
+            data: {
+                id: order.id,
+                order_number: order.order_number,
+                notes: order.notes
+            }
         });
-
     } catch (error) {
+        if (transaction && !transaction.finished) {
+            try {
+                await transaction.rollback();
+            } catch (rollbackError) {
+                console.error(
+                    'Order update rollback error:',
+                    rollbackError
+                );
+            }
+        }
+
         console.error('Update order error:', error);
 
         return res.status(500).json({
-            message: 'Failed to update order',
-            error: error.message
+            message: 'Failed to update order'
         });
     }
 };
 
+
+
 // DELETE ORDER
+
 exports.deleteOrder = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const order = await Order.findByPk(id);
-
-        if (!order) {
-            return res.status(404).json({
-                message: 'Order not found'
-            });
-        }
-
-        await order.destroy();
-
-        return res.status(200).json({
-            message: 'Order deleted successfully'
-        });
-    } catch (error) {
-        console.error('Delete order error:', error);
-
-        return res.status(500).json({
-            message: 'Failed to delete order',
-            error: error.message
-        });
-    }
+    return res.status(405).json({
+        message:
+            'Orders cannot be permanently deleted. Use an authorized cancellation workflow.'
+    });
 };

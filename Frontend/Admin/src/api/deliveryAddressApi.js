@@ -1,25 +1,46 @@
-// api/deliveryAddressApi.js
+
 import api from './axios'
 
+const isValidId = (value) =>
+    (typeof value === 'string' || typeof value === 'number') &&
+    /^[1-9]\d*$/.test(String(value)) &&
+    Number.isSafeInteger(Number(value))
+
+const requireValidId = (value, fieldName) => {
+    if (!isValidId(value)) {
+        throw new Error(`Invalid ${fieldName}`)
+    }
+}
+
 const customerAddressApi = {
-    // All addresses of one customer
     getCustomerAddresses: async (customerId) => {
-        const response = await api.get(`/customers/${customerId}/addresses`)
+        requireValidId(customerId, 'customer ID')
+        const response = await api.get(
+            `/customers/${customerId}/addresses`
+        )
         return response.data
     },
 
-    // Single address -> GET /customers/address/:addressId
     getAddressById: async (addressId) => {
-        const response = await api.get(`/customers/address/${addressId}`)
+        requireValidId(addressId, 'address ID')
+        const response = await api.get(
+            `/customers/address/${addressId}`
+        )
         return response.data
     },
 
     createAddress: async (customerId, data) => {
-        const response = await api.post(`/customers/${customerId}/addresses`, data)
+        requireValidId(customerId, 'customer ID')
+        const response = await api.post(
+            `/customers/${customerId}/addresses`,
+            data
+        )
         return response.data
     },
 
     updateAddress: async (customerId, addressId, data) => {
+        requireValidId(customerId, 'customer ID')
+        requireValidId(addressId, 'address ID')
         const response = await api.put(
             `/customers/${customerId}/addresses/${addressId}`,
             data
@@ -28,6 +49,8 @@ const customerAddressApi = {
     },
 
     deleteAddress: async (customerId, addressId) => {
+        requireValidId(customerId, 'customer ID')
+        requireValidId(addressId, 'address ID')
         const response = await api.delete(
             `/customers/${customerId}/addresses/${addressId}`
         )

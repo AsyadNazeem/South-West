@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const { Op } = require('sequelize');
 const db = require('../models');
-
+const { recordAuditLog } = require('../services/auditLogService');
 const {
     sequelize,
     CheckoutIdempotency,
@@ -29,6 +29,33 @@ const CURRENCY = 'LKR';
 const PRICE_TYPE = 'selling';
 const IDEMPOTENCY_KEY_MAX_LENGTH = 100;
 
+const AUDIT_MODULE = 'CHECKOUT';
+
+async function auditCheckout(req, {
+    action,
+    customerId = null,
+    orderId = null,
+    description,
+    oldValues = null,
+    newValues = null,
+    transaction = undefined
+}) {
+    return recordAuditLog({
+        userId: req.user?.id ?? req.user?.user_id ?? null,
+        action,
+        module: AUDIT_MODULE,
+        entityType: 'Order',
+        entityId: orderId == null ? null : String(orderId),
+        description,
+        oldValues,
+        newValues,
+        ipAddress: req.ip ?? null,
+        userAgent: req.get?.('user-agent') ?? null,
+        requestId: req.id ?? req.requestId ?? null,
+        transaction
+    });
+}
+
 function getIdempotencyKey(req) {
     const key = req.get('Idempotency-Key');
 
@@ -44,10 +71,11 @@ function getIdempotencyKey(req) {
     return key;
 }
 
-function hashCheckoutRequest(addressId, paymentMethod) {
+function hashCheckoutRequest(cartId, addressId, paymentMethod) {
     return crypto
         .createHash('sha256')
         .update(JSON.stringify({
+            cart_id: Number(cartId),
             address_id: Number(addressId),
             payment_method: paymentMethod
         }))
@@ -190,7 +218,7 @@ async function getExistingCheckout(customerId, idempotencyKey, requestHash) {
 
 async function checkout(req, res) {
     const customerId = req.customer?.id;
-    const { address_id, payment_method } = req.body || {};
+    const { cart_id, address_id, payment_method } = req.body || {};
     const idempotencyKey = getIdempotencyKey(req);
 
     if (!customerId) {
@@ -202,6 +230,12 @@ async function checkout(req, res) {
     if (!idempotencyKey) {
         return res.status(400).json({
             message: 'A valid Idempotency-Key header is required.'
+        });
+    }
+
+    if (!positiveId(cart_id)) {
+        return res.status(400).json({
+            message: 'A valid cart ID is required.'
         });
     }
 
@@ -217,7 +251,11 @@ async function checkout(req, res) {
         });
     }
 
-    const requestHash = hashCheckoutRequest(address_id, payment_method);
+    const requestHash = hashCheckoutRequest(
+        cart_id,
+        address_id,
+        payment_method
+    );
 
     let transaction;
 
@@ -239,10 +277,10 @@ async function checkout(req, res) {
         // Lock the customer's active cart.
         const cart = await Cart.findOne({
             where: {
+                id: Number(cart_id),
                 customer_id: customerId,
                 status: 'active'
             },
-            order: [['id', 'DESC']],
             transaction,
             lock: transaction.LOCK.UPDATE
         });
@@ -616,9 +654,31 @@ async function checkout(req, res) {
         }, { transaction });
 
         // Convert the cart only after all checkout operations succeed.
+
         await cart.update({
             status: 'converted'
         }, { transaction });
+
+// Record the audit event in the same transaction as the order.
+        await auditCheckout(req, {
+            action: 'CUSTOMER_CHECKOUT_COMPLETED',
+            customerId,
+            orderId: order.id,
+            description: `Customer ${customerId} completed checkout`,
+            newValues: {
+                order_id: order.id,
+                order_number: orderNumber,
+                cart_id: cart.id,
+                payment_method,
+                payment_status: 'unpaid',
+                subtotal,
+                shipping_amount: shippingAmount,
+                total_amount: totalAmount,
+                currency: CURRENCY,
+                item_count: preparedItems.length
+            },
+            transaction
+        });
 
         await transaction.commit();
 
@@ -675,6 +735,32 @@ async function checkout(req, res) {
                     message: 'Unable to verify the existing checkout.'
                 });
             }
+        }
+
+        // Record a failed checkout after its main transaction has rolled back.
+        try {
+            await auditCheckout(req, {
+                action: 'CUSTOMER_CHECKOUT_FAILED',
+                customerId,
+                description: `Checkout failed for customer ${customerId}`,
+                newValues: {
+                    customer_id: customerId,
+                    cart_id: positiveId(cart_id) ? Number(cart_id) : null,
+                    address_id: positiveId(address_id) ? Number(address_id) : null,
+                    payment_method: ['cash', 'online'].includes(payment_method)
+                        ? payment_method
+                        : null,
+                    failure_reason: error.statusCode
+                        ? 'Checkout validation or business rule rejected the request'
+                        : 'Unexpected checkout processing error',
+                    status_code: error.statusCode ?? 500
+                }
+            });
+        } catch (auditError) {
+            console.error(
+                'Failed to record checkout failure audit:',
+                auditError.message
+            );
         }
 
         if (error.statusCode) {

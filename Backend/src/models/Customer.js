@@ -125,6 +125,13 @@ module.exports = (sequelize) => {
             foreignKey: 'customer_id',
             as: 'emailVerifications',
         });
+
+        Customer.hasMany(models.CustomerPasswordSetupToken, {
+            foreignKey: 'customer_id',
+            as: 'passwordSetupTokens',
+            onDelete: 'CASCADE',
+            onUpdate: 'CASCADE',
+        });
     };
 
     return Customer;

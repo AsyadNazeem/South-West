@@ -5,6 +5,7 @@ const {
     Item,
     InventoryLocation
 } = require('../models');
+const { recordAuditLog } = require('../services/auditLogService');
 
 
 // GET ALL STOCK
@@ -101,7 +102,10 @@ const getInventoryStockById = async (req, res) => {
 
 
 // CREATE STOCK
+
 const createInventoryStock = async (req, res) => {
+    let transaction;
+
     try {
         const {
             item_id,
@@ -112,47 +116,88 @@ const createInventoryStock = async (req, res) => {
             reorder_quantity
         } = req.body;
 
-        // Check item
-        const item = await Item.findByPk(item_id);
+        transaction = await sequelize.transaction();
+
+        const item = await Item.findByPk(item_id, {
+            transaction
+        });
 
         if (!item) {
+            await transaction.rollback();
+
             return res.status(404).json({
                 message: 'Item not found'
             });
         }
 
-        // Check location
-        const location = await InventoryLocation.findByPk(location_id);
+        const location = await InventoryLocation.findByPk(location_id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
         if (!location) {
+            await transaction.rollback();
+
             return res.status(404).json({
                 message: 'Inventory location not found'
             });
         }
 
-        // Prevent duplicate item/location stock record
         const existingStock = await InventoryStock.findOne({
             where: {
                 item_id,
                 location_id
-            }
+            },
+            transaction,
+            lock: transaction.LOCK.UPDATE
         });
 
         if (existingStock) {
+            await transaction.rollback();
+
             return res.status(409).json({
                 message: 'Stock record already exists for this item and location'
             });
         }
 
-        const stock = await InventoryStock.create({
-            item_id,
-            location_id,
-            quantity_on_hand: quantity_on_hand ?? 0,
-            quantity_reserved: quantity_reserved ?? 0,
-            reorder_level: reorder_level ?? 0,
-            reorder_quantity: reorder_quantity ?? 0,
-            is_active: true
+        const stock = await InventoryStock.create(
+            {
+                item_id,
+                location_id,
+                quantity_on_hand: quantity_on_hand ?? 0,
+                quantity_reserved: quantity_reserved ?? 0,
+                reorder_level: reorder_level ?? 0,
+                reorder_quantity: reorder_quantity ?? 0,
+                is_active: true
+            },
+            { transaction }
+        );
+
+        await recordAuditLog({
+            userId: req.user
+                ? (req.user.id ?? req.user.userId)
+                : null,
+            action: 'INVENTORY_STOCK_CREATED',
+            module: 'inventory',
+            entityType: 'inventory_stock',
+            entityId: stock.id,
+            description: `Inventory stock created for item ${item.item_code} at location ${location.name}`,
+            newValues: {
+                item_id: stock.item_id,
+                location_id: stock.location_id,
+                quantity_on_hand: stock.quantity_on_hand,
+                quantity_reserved: stock.quantity_reserved,
+                reorder_level: stock.reorder_level,
+                reorder_quantity: stock.reorder_quantity,
+                is_active: stock.is_active
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
         });
+
+        await transaction.commit();
 
         const createdStock = await InventoryStock.findByPk(stock.id, {
             include: [
@@ -184,6 +229,10 @@ const createInventoryStock = async (req, res) => {
         });
 
     } catch (error) {
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
+
         console.error('Create inventory stock error:', error);
 
         return res.status(500).json({
@@ -193,14 +242,25 @@ const createInventoryStock = async (req, res) => {
 };
 
 
+
 // UPDATE STOCK SETTINGS
+
 const updateInventoryStock = async (req, res) => {
+    let transaction;
+
     try {
         const { id } = req.params;
 
-        const stock = await InventoryStock.findByPk(id);
+        transaction = await sequelize.transaction();
+
+        const stock = await InventoryStock.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
         if (!stock) {
+            await transaction.rollback();
+
             return res.status(404).json({
                 message: 'Inventory stock not found'
             });
@@ -213,33 +273,141 @@ const updateInventoryStock = async (req, res) => {
             is_active
         } = req.body;
 
-        await stock.update({
-            quantity_reserved,
-            reorder_level,
-            reorder_quantity,
-            is_active
-        });
+        const oldValues = {
+            quantity_reserved: stock.quantity_reserved,
+            reorder_level: stock.reorder_level,
+            reorder_quantity: stock.reorder_quantity,
+            is_active: stock.is_active
+        };
+
+        const updates = {};
+
+        for (const field of [
+            'quantity_reserved',
+            'reorder_level',
+            'reorder_quantity',
+            'is_active'
+        ]) {
+            if (req.body[field] !== undefined) {
+                updates[field] = req.body[field];
+            }
+        }
+
+        if (Object.keys(req.body).some(
+            field => ![
+                'quantity_reserved',
+                'reorder_level',
+                'reorder_quantity',
+                'is_active'
+            ].includes(field)
+        )) {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'Unsupported field in request'
+            });
+        }
+
+        if (
+            updates.quantity_reserved !== undefined &&
+            (
+                !Number.isFinite(Number(updates.quantity_reserved)) ||
+                Number(updates.quantity_reserved) < 0
+            )
+        ) {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'quantity_reserved must be a non-negative number'
+            });
+        }
+
+        for (const field of ['reorder_level', 'reorder_quantity']) {
+            if (
+                updates[field] !== undefined &&
+                (
+                    !Number.isFinite(Number(updates[field])) ||
+                    Number(updates[field]) < 0
+                )
+            ) {
+                await transaction.rollback();
+
+                return res.status(400).json({
+                    message: `${field} must be a non-negative number`
+                });
+            }
+        }
+
+        if (
+            updates.is_active !== undefined &&
+            typeof updates.is_active !== 'boolean'
+        ) {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'is_active must be a boolean'
+            });
+        }
+
+        const reserved = Number(
+            updates.quantity_reserved ?? stock.quantity_reserved
+        );
+
+        const onHand = Number(stock.quantity_on_hand);
+
+        if (reserved > onHand) {
+            await transaction.rollback();
+
+            return res.status(409).json({
+                message: 'Reserved quantity cannot exceed quantity on hand'
+            });
+        }
+
+        await stock.update(updates, { transaction });
+
+        const newValues = {
+            quantity_reserved: stock.quantity_reserved,
+            reorder_level: stock.reorder_level,
+            reorder_quantity: stock.reorder_quantity,
+            is_active: stock.is_active
+        };
+
+        const changed = Object.keys(newValues).some(
+            field => String(oldValues[field]) !== String(newValues[field])
+        );
+
+        if (changed) {
+            await recordAuditLog({
+                userId: req.user
+                    ? (req.user.id ?? req.user.userId)
+                    : null,
+                action: 'INVENTORY_STOCK_UPDATED',
+                module: 'inventory',
+                entityType: 'inventory_stock',
+                entityId: stock.id,
+                description: `Inventory stock settings updated for item ${stock.item_id} at location ${stock.location_id}`,
+                oldValues,
+                newValues,
+                ipAddress: req.ip || null,
+                userAgent: req.get('user-agent') || null,
+                requestId: req.id || null,
+                transaction
+            });
+        }
+
+        await transaction.commit();
 
         const updatedStock = await InventoryStock.findByPk(id, {
             include: [
                 {
                     model: Item,
                     as: 'item',
-                    attributes: [
-                        'id',
-                        'item_code',
-                        'item_name'
-                    ]
+                    attributes: ['id', 'item_code', 'item_name']
                 },
                 {
                     model: InventoryLocation,
                     as: 'location',
-                    attributes: [
-                        'id',
-                        'code',
-                        'name',
-                        'location_type'
-                    ]
+                    attributes: ['id', 'code', 'name', 'location_type']
                 }
             ]
         });
@@ -250,6 +418,10 @@ const updateInventoryStock = async (req, res) => {
         });
 
     } catch (error) {
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
+
         console.error('Update inventory stock error:', error);
 
         return res.status(500).json({
@@ -259,26 +431,81 @@ const updateInventoryStock = async (req, res) => {
 };
 
 
+
 // DELETE STOCK
+
 const deleteInventoryStock = async (req, res) => {
+    let transaction;
+
     try {
         const { id } = req.params;
 
-        const stock = await InventoryStock.findByPk(id);
+        transaction = await sequelize.transaction();
+
+        const stock = await InventoryStock.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
         if (!stock) {
+            await transaction.rollback();
+
             return res.status(404).json({
                 message: 'Inventory stock not found'
             });
         }
 
-        await stock.destroy();
+        const oldValues = {
+            item_id: stock.item_id,
+            location_id: stock.location_id,
+            quantity_on_hand: stock.quantity_on_hand,
+            quantity_reserved: stock.quantity_reserved,
+            reorder_level: stock.reorder_level,
+            reorder_quantity: stock.reorder_quantity,
+            is_active: stock.is_active
+        };
+
+        // Do not delete stock while quantities are on hand or reserved.
+        if (
+            Number(stock.quantity_on_hand) !== 0 ||
+            Number(stock.quantity_reserved) !== 0
+        ) {
+            await transaction.rollback();
+
+            return res.status(409).json({
+                message: 'Cannot delete stock while quantities are on hand or reserved'
+            });
+        }
+
+        await recordAuditLog({
+            userId: req.user
+                ? (req.user.id ?? req.user.userId)
+                : null,
+            action: 'INVENTORY_STOCK_DELETED',
+            module: 'inventory',
+            entityType: 'inventory_stock',
+            entityId: stock.id,
+            description: `Inventory stock record deleted for item ${stock.item_id} at location ${stock.location_id}`,
+            oldValues,
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
+        });
+
+        await stock.destroy({ transaction });
+
+        await transaction.commit();
 
         return res.status(200).json({
             message: 'Inventory stock deleted successfully'
         });
 
     } catch (error) {
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
+
         console.error('Delete inventory stock error:', error);
 
         return res.status(500).json({
@@ -286,6 +513,7 @@ const deleteInventoryStock = async (req, res) => {
         });
     }
 };
+
 
 // SET ACTUAL ONLINE STOCK COUNT
 const setOnlineStockCount = async (req, res) => {
@@ -467,6 +695,32 @@ const setOnlineStockCount = async (req, res) => {
             },
             { transaction }
         );
+
+
+        await recordAuditLog({
+            userId: req.user
+                ? (req.user.id ?? req.user.userId)
+                : null,
+            action: 'ONLINE_STOCK_COUNT_ADJUSTED',
+            module: 'inventory',
+            entityType: 'inventory_stock',
+            entityId: stock.id,
+            description: `Online stock count adjusted for item ${itemId} at location ${onlineLocation.id}`,
+            oldValues: {
+                quantity_on_hand: previous
+            },
+            newValues: {
+                quantity_on_hand: counted,
+                adjustment: difference,
+                quantity_reserved: reserved,
+                notes: notes || null
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
+        });
+
 
         await transaction.commit();
 

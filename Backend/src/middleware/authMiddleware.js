@@ -1,7 +1,7 @@
-const { Op } = require('sequelize');
-const { verifyToken } = require('../utils/jwt');
-const { User, UserSession } = require('../models');
-const { hashSessionToken } = require('../services/authService');
+const {Op} = require('sequelize');
+const {verifyToken} = require('../utils/jwt');
+const {User, UserSession} = require('../models');
+const {hashSessionToken} = require('../services/authService');
 
 async function authenticate(req, res, next) {
     try {
@@ -58,8 +58,23 @@ async function authenticate(req, res, next) {
 
         next();
     } catch (error) {
-        return res.status(401).json({
-            message: 'Invalid or expired token'
+        if (
+            error.name === 'JsonWebTokenError' ||
+            error.name === 'TokenExpiredError' ||
+            error.name === 'NotBeforeError'
+        ) {
+            return res.status(401).json({
+                message: 'Invalid or expired token'
+            });
+        }
+
+        console.error(
+            'Authentication middleware error:',
+            error.message
+        );
+
+        return res.status(500).json({
+            message: 'Unable to authenticate request'
         });
     }
 }

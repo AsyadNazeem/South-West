@@ -30,10 +30,14 @@ router.get(
     getItemTypeSpecificationById
 );
 
+
 router.get(
     '/item-type/:itemTypeId',
+    authenticate,
+    requirePermission('products.view'),
     getSpecificationsByItemType
 );
+
 
 router.post(
     '/',

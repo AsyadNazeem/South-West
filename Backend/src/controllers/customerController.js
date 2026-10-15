@@ -1,17 +1,31 @@
-
 const {
     Customer,
     CustomerAddress,
     CustomerSession,
+    CustomerPasswordSetupToken,
     sequelize,
 } = require('../models');
+
+const {
+    createPasswordSetupInvitation,
+} = require('../services/customerPasswordSetupService');
+
+const {
+    sendCustomerPasswordSetupInvitation,
+} = require('../services/emailService');
+
+const {
+    CUSTOMER_TYPES,
+    generateCustomerCode,
+} = require('../services/customerCodeService');
+
+const { recordAuditLog } = require('../services/auditLogService');
 
 const ALLOWED_UPDATE_FIELDS = [
     'first_name',
     'last_name',
     'email',
     'phone',
-    'is_active',
 ];
 
 function normalizeOptionalString(value) {
@@ -159,27 +173,20 @@ function handleDatabaseError(error, res, fallbackMessage) {
     });
 }
 
+
+
 async function createCustomer(req, res) {
+    let transaction;
+
     try {
         const {
-            customer_code,
             first_name,
             last_name,
             email,
             phone,
         } = req.body;
 
-        if (
-            typeof customer_code !== 'string' ||
-            !customer_code.trim()
-        ) {
-            return res.status(400).json({
-                message: 'Customer code is required.',
-            });
-        }
-
         const fields = {
-            customer_code: customer_code.trim(),
             first_name,
             last_name,
             email: normalizeEmail(email),
@@ -201,13 +208,10 @@ async function createCustomer(req, res) {
         fields.last_name = last_name.trim();
         fields.phone = phone.trim();
 
-        if (await findDuplicateIdentifier('customer_code', fields.customer_code)) {
-            return res.status(409).json({
-                message: 'Customer code already exists.',
-            });
-        }
-
-        if (fields.email && await findDuplicateIdentifier('email', fields.email)) {
+        if (
+            fields.email &&
+            await findDuplicateIdentifier('email', fields.email)
+        ) {
             return res.status(409).json({
                 message: 'Email address is already associated with a customer.',
             });
@@ -219,13 +223,105 @@ async function createCustomer(req, res) {
             });
         }
 
-        const customer = await Customer.create(fields);
+        transaction = await sequelize.transaction();
+
+        fields.customer_code = await generateCustomerCode(
+            CUSTOMER_TYPES.STAFF_CREATED.value,
+            transaction
+        );
+
+        const customer = await Customer.create(fields, {
+            transaction,
+        });
+
+        let invitation = null;
+
+        if (customer.email) {
+            invitation = await createPasswordSetupInvitation(
+                customer.id,
+                transaction
+            );
+        }
+
+        const customerValues = {
+            id: customer.id,
+            customer_code: customer.customer_code,
+            first_name: customer.first_name,
+            last_name: customer.last_name,
+            email: customer.email,
+            phone: customer.phone,
+            is_active: customer.is_active,
+        };
+
+        await recordAuditLog({
+            userId: req.user.id,
+            action: 'CUSTOMER_CREATED',
+            module: 'customers',
+            entityType: 'customer',
+            entityId: customer.id,
+            description: `Customer ${customer.customer_code} created`,
+            newValues: customerValues,
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction,
+        });
+
+
+        await transaction.commit();
+
+        let invitationSent = false;
+
+        if (invitation) {
+            try {
+                await sendCustomerPasswordSetupInvitation(
+                    invitation.email,
+                    invitation.customerCode,
+                    invitation.token
+                );
+
+                invitationSent = true;
+            } catch (emailError) {
+                console.error(
+                    'Customer password invitation email failed:',
+                    emailError.message
+                );
+
+                // Invalidate the unsent token. A future resend must
+                // generate a fresh token.
+                await CustomerPasswordSetupToken.update(
+                    { used_at: new Date() },
+                    {
+                        where: {
+                            customer_id: customer.id,
+                            used_at: null,
+                        },
+                    }
+                ).catch((cleanupError) => {
+                    console.error(
+                        'Failed to invalidate unsent invitation:',
+                        cleanupError.message
+                    );
+                });
+            }
+        }
+
 
         return res.status(201).json({
-            message: 'Customer created successfully.',
+            message: invitationSent
+                ? 'Customer created successfully. Password setup invitation sent.'
+                : invitation
+                    ? 'Customer created, but the invitation email could not be sent.'
+                    : 'Customer created successfully. No email address was provided.',
+            invitation_sent: invitationSent,
             data: sanitizeCustomer(customer),
         });
+
     } catch (error) {
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
+
         return handleDatabaseError(
             error,
             res,
@@ -233,6 +329,8 @@ async function createCustomer(req, res) {
         );
     }
 }
+
+
 
 async function getCustomers(req, res) {
     try {
@@ -329,7 +427,10 @@ async function getCustomer(req, res) {
     }
 }
 
+
 async function updateCustomer(req, res) {
+    let transaction;
+
     try {
         const id = parseCustomerId(req.params.id);
 
@@ -339,19 +440,10 @@ async function updateCustomer(req, res) {
             });
         }
 
-        const customer = await Customer.findByPk(id);
-
-        if (!customer) {
-            return res.status(404).json({
-                message: 'Customer not found.',
-            });
-        }
-
         const suppliedFields = Object.keys(req.body);
 
         const forbiddenFields = suppliedFields.filter(
-            (field) =>
-                !ALLOWED_UPDATE_FIELDS.includes(field)
+            field => !ALLOWED_UPDATE_FIELDS.includes(field)
         );
 
         if (forbiddenFields.length) {
@@ -361,7 +453,7 @@ async function updateCustomer(req, res) {
             });
         }
 
-        if (suppliedFields.length === 0) {
+        if (!suppliedFields.length) {
             return res.status(400).json({
                 message: 'At least one field must be provided.',
             });
@@ -398,10 +490,34 @@ async function updateCustomer(req, res) {
             });
         }
 
+        transaction = await sequelize.transaction();
+
+        const customer = await Customer.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+        });
+
+        if (!customer) {
+            await transaction.rollback();
+
+            return res.status(404).json({
+                message: 'Customer not found.',
+            });
+        }
+
         if (
             updates.email &&
-            await findDuplicateIdentifier('email', updates.email, id)
+            await Customer.findOne({
+                where: {
+                    email: updates.email,
+                    id: { [require('sequelize').Op.ne]: id },
+                },
+                attributes: ['id'],
+                transaction,
+            })
         ) {
+            await transaction.rollback();
+
             return res.status(409).json({
                 message: 'Email address is already associated with another customer.',
             });
@@ -409,14 +525,32 @@ async function updateCustomer(req, res) {
 
         if (
             updates.phone &&
-            await findDuplicateIdentifier('phone', updates.phone, id)
+            await Customer.findOne({
+                where: {
+                    phone: updates.phone,
+                    id: { [require('sequelize').Op.ne]: id },
+                },
+                attributes: ['id'],
+                transaction,
+            })
         ) {
+            await transaction.rollback();
+
             return res.status(409).json({
                 message: 'Phone number is already associated with another customer.',
             });
         }
 
-        // Email changes must not silently retain the old verification status.
+        const oldValues = {
+            customer_code: customer.customer_code,
+            first_name: customer.first_name,
+            last_name: customer.last_name,
+            email: customer.email,
+            phone: customer.phone,
+            is_active: customer.is_active,
+        };
+
+        // Email changes must clear verification status.
         if (
             updates.email !== undefined &&
             updates.email !== customer.email
@@ -424,13 +558,49 @@ async function updateCustomer(req, res) {
             updates.email_verified_at = null;
         }
 
-        await customer.update(updates);
+        await customer.update(updates, { transaction });
+
+        const newValues = {
+            customer_code: customer.customer_code,
+            first_name: customer.first_name,
+            last_name: customer.last_name,
+            email: customer.email,
+            phone: customer.phone,
+            is_active: customer.is_active,
+        };
+
+        const changed = Object.keys(oldValues).some(
+            field => oldValues[field] !== newValues[field]
+        );
+
+        if (changed) {
+            await recordAuditLog({
+                userId: req.user.id,
+                action: 'CUSTOMER_UPDATED',
+                module: 'customers',
+                entityType: 'customer',
+                entityId: customer.id,
+                description: `Customer ${customer.customer_code} updated`,
+                oldValues,
+                newValues,
+                ipAddress: req.ip || null,
+                userAgent: req.get('user-agent') || null,
+                requestId: req.id || null,
+                transaction,
+            });
+        }
+
+        await transaction.commit();
 
         return res.status(200).json({
             message: 'Customer updated successfully.',
             data: sanitizeCustomer(customer),
         });
     } catch (error) {
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
+
         return handleDatabaseError(
             error,
             res,
@@ -438,6 +608,8 @@ async function updateCustomer(req, res) {
         );
     }
 }
+
+
 
 
 
@@ -450,62 +622,93 @@ async function deleteCustomer(req, res) {
         });
     }
 
+    let transaction;
+
     try {
-        const result = await sequelize.transaction(async (transaction) => {
-            const customer = await Customer.findByPk(id, {
-                transaction,
-                lock: transaction.LOCK.UPDATE,
-            });
+        transaction = await sequelize.transaction();
 
-            if (!customer) {
-                return { notFound: true };
-            }
-
-            // Deactivate the customer without deleting their history.
-            if (customer.is_active) {
-                await customer.update(
-                    { is_active: false },
-                    { transaction }
-                );
-            }
-
-            // Revoke every active session, including when the customer
-            // was already inactive.
-            await CustomerSession.update(
-                { revoked_at: new Date() },
-                {
-                    where: {
-                        customer_id: customer.id,
-                        revoked_at: null,
-                    },
-                    transaction,
-                }
-            );
-
-            return {
-                customer,
-                wasAlreadyInactive: !customer.is_active,
-            };
+        const customer = await Customer.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE,
         });
 
-        if (result.notFound) {
+        if (!customer) {
+            await transaction.rollback();
+
             return res.status(404).json({
                 message: 'Customer not found.',
             });
         }
 
+        const oldValues = {
+            customer_code: customer.customer_code,
+            first_name: customer.first_name,
+            last_name: customer.last_name,
+            email: customer.email,
+            phone: customer.phone,
+            is_active: customer.is_active,
+        };
+
+        const wasAlreadyInactive = !customer.is_active;
+
+        if (customer.is_active) {
+            await customer.update(
+                { is_active: false },
+                { transaction }
+            );
+        }
+
+        const [revokedSessions] = await CustomerSession.update(
+            { revoked_at: new Date() },
+            {
+                where: {
+                    customer_id: customer.id,
+                    revoked_at: null,
+                },
+                transaction,
+            }
+        );
+
+        if (!wasAlreadyInactive || revokedSessions > 0) {
+            await recordAuditLog({
+                userId: req.user.id,
+                action: 'CUSTOMER_DEACTIVATED',
+                module: 'customers',
+                entityType: 'customer',
+                entityId: customer.id,
+                description: `Customer ${customer.customer_code} deactivated`,
+                oldValues,
+                newValues: {
+                    ...oldValues,
+                    is_active: false,
+                    revoked_sessions: revokedSessions,
+                },
+                ipAddress: req.ip || null,
+                userAgent: req.get('user-agent') || null,
+                requestId: req.id || null,
+                transaction,
+            });
+        }
+
+        await transaction.commit();
+
         return res.status(200).json({
             message: 'Customer deactivated successfully.',
-            data: sanitizeCustomer(result.customer),
+            data: sanitizeCustomer(customer),
         });
     } catch (error) {
-        console.error('Customer deactivation error:', error.message);
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
 
-        return res.status(500).json({
-            message: 'Unable to deactivate customer.',
-        });
+        return handleDatabaseError(
+            error,
+            res,
+            'Unable to deactivate customer.'
+        );
     }
 }
+
 
 
 

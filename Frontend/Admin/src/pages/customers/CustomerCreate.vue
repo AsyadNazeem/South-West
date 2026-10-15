@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
-import { useRoute, useRouter } from "vue-router"
+import {computed, onMounted, ref} from "vue"
+import {useRoute, useRouter} from "vue-router"
 import api from "../../api/axios"
 
 const route = useRoute()
@@ -91,13 +91,13 @@ const loadCustomer = async () => {
 
 const validateForm = () => {
   if (
-      !form.value.customer_code.trim() ||
+      (isEdit.value && !form.value.customer_code.trim()) ||
       !form.value.first_name.trim() ||
       !form.value.last_name.trim() ||
       !form.value.phone.trim()
   ) {
     errorMessage.value =
-        "Customer code, first name, last name and phone are required."
+        "First name, last name and phone are required."
 
     return false
   }
@@ -123,7 +123,6 @@ const submitCustomer = async () => {
     saving.value = true
 
     const payload = {
-      customer_code: form.value.customer_code.trim(),
       first_name: form.value.first_name.trim(),
       last_name: form.value.last_name.trim(),
       email: form.value.email.trim() || null,
@@ -137,34 +136,36 @@ const submitCustomer = async () => {
     */
 
     if (!isEdit.value) {
+      const response = await api.post("/customers", payload)
 
-      const response = await api.post(
-          "/customers",
-          payload
-      )
+      const createdCustomer = response.data.data
 
       successMessage.value =
-          response.data.message ||
-          "Customer created successfully."
+          `${response.data.message || "Customer created successfully."} ` +
+          `Customer code: ${createdCustomer.customer_code}`
 
       setTimeout(() => {
         router.push("/admin/customers/all-customers")
-      }, 800)
+      }, 2500)
 
       return
     }
-
     /*
     |--------------------------------------------------------------------------
     | UPDATE
     |--------------------------------------------------------------------------
     */
 
+
+    // UPDATE
     const customerId = route.params.id
 
+    // Send only fields accepted by customerController.updateCustomer
     const updatePayload = {
-      ...payload,
-      is_active: form.value.is_active
+      first_name: payload.first_name,
+      last_name: payload.last_name,
+      email: payload.email,
+      phone: payload.phone
     }
 
     const response = await api.put(
@@ -183,8 +184,8 @@ const submitCustomer = async () => {
     }
 
     successMessage.value =
-        response.data.message ||
-        "Customer updated successfully."
+        response.data.message || "Customer updated successfully."
+
 
   } catch (error) {
     console.error(
@@ -381,32 +382,28 @@ onMounted(loadCustomer)
         </div>
 
 
-        <div class="form-grid">
+        <div
+            class="form-grid"
+            :class="{ 'create-mode': !isEdit }"
+        >
 
           <!-- Customer Code -->
-          <div class="form-group">
 
-            <label for="customer_code">
-              Customer Code
-              <span>*</span>
-            </label>
+          <!-- Customer Code: only visible when editing -->
+          <div v-if="isEdit" class="form-group">
+            <label for="customer_code">Customer Code</label>
+
 
             <input
                 id="customer_code"
                 v-model="form.customer_code"
                 type="text"
-                placeholder="CUS-00001"
-                maxlength="50"
-                required
-                :disabled="saving"
+                readonly
+                disabled
             />
 
-            <small>
-              A unique code used to identify the customer.
-            </small>
-
+            <small>Customer codes cannot be changed.</small>
           </div>
-
 
           <!-- Account Status -->
           <div
@@ -494,7 +491,7 @@ onMounted(loadCustomer)
                 v-model="form.email"
                 type="email"
                 placeholder="customer@example.com"
-                maxlength="150"
+                maxlength="255"
                 :disabled="saving"
             />
 
@@ -649,7 +646,9 @@ onMounted(loadCustomer)
 <style scoped>
 
 .page-container {
+  max-width: 1100px;
   width: 100%;
+  margin: 30px auto;
   font-family: var(--font-family);
 }
 
@@ -738,8 +737,20 @@ onMounted(loadCustomer)
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--spacing-xl);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.form-grid > .form-group {
+  min-width: 0;
+}
+
+.form-grid.create-mode {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid.create-mode > .form-group {
+  grid-column: auto;
 }
 
 .form-group {
@@ -771,9 +782,8 @@ onMounted(loadCustomer)
   font-size: var(--font-size-md);
   box-sizing: border-box;
   outline: none;
-  transition:
-      border-color var(--transition-fast),
-      box-shadow var(--transition-fast);
+  transition: border-color var(--transition-fast),
+  box-shadow var(--transition-fast);
 }
 
 .form-group input::placeholder {
@@ -877,10 +887,9 @@ onMounted(loadCustomer)
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
   cursor: pointer;
-  transition:
-      background var(--transition-fast),
-      border-color var(--transition-fast),
-      color var(--transition-fast);
+  transition: background var(--transition-fast),
+  border-color var(--transition-fast),
+  color var(--transition-fast);
 }
 
 .primary-button {

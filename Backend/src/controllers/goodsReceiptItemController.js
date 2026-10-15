@@ -2,8 +2,11 @@ const {
     GoodsReceiptItem,
     GoodsReceipt,
     PurchaseOrderItem,
-    Item
+    Item,
+    sequelize
 } = require('../models');
+
+const { recordAuditLog } = require('../services/auditLogService');
 
 // GET ALL
 const getGoodsReceiptItems = async (req, res) => {
@@ -130,10 +133,13 @@ const getGoodsReceiptItemById = async (req, res) => {
 };
 
 // CREATE
+
 const createGoodsReceiptItem = async (req, res) => {
-    const transaction = await GoodsReceiptItem.sequelize.transaction();
+    let transaction;
 
     try {
+        transaction = await sequelize.transaction();
+
         const {
             goods_receipt_id,
             purchase_order_item_id,
@@ -144,15 +150,24 @@ const createGoodsReceiptItem = async (req, res) => {
             notes
         } = req.body;
 
+        if (
+            notes !== undefined &&
+            notes !== null &&
+            typeof notes !== 'string'
+        ) {
+            await transaction.rollback();
 
-        // ==========================================
-        // 1. VALIDATE GOODS RECEIPT
-        // ==========================================
+            return res.status(400).json({
+                message: 'Notes must be a string or null'
+            });
+        }
 
+        // 1. Lock the receipt and ensure it is still editable.
         const goodsReceipt = await GoodsReceipt.findByPk(
             goods_receipt_id,
             {
-                transaction
+                transaction,
+                lock: transaction.LOCK.UPDATE
             }
         );
 
@@ -164,52 +179,31 @@ const createGoodsReceiptItem = async (req, res) => {
             });
         }
 
-
-        // Cannot modify cancelled receipt
-        if (goodsReceipt.status === 'cancelled') {
+        if (goodsReceipt.status !== 'draft') {
             await transaction.rollback();
 
             return res.status(400).json({
-                message:
-                    'Cannot add items to a cancelled goods receipt'
+                message: 'Only draft goods receipts can have items added'
             });
         }
 
-
-        // Cannot modify received receipt
-        if (goodsReceipt.status === 'received') {
-            await transaction.rollback();
-
-            return res.status(400).json({
-                message:
-                    'Cannot add items to a received goods receipt'
-            });
-        }
-
-
-        // ==========================================
-        // 2. VALIDATE PURCHASE ORDER ITEM
-        // ==========================================
-
-        const purchaseOrderItem =
-            await PurchaseOrderItem.findByPk(
-                purchase_order_item_id,
-                {
-                    transaction
-                }
-            );
+        // 2. Lock the purchase order item.
+        const purchaseOrderItem = await PurchaseOrderItem.findByPk(
+            purchase_order_item_id,
+            {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            }
+        );
 
         if (!purchaseOrderItem) {
             await transaction.rollback();
 
             return res.status(404).json({
-                message:
-                    'Purchase order item not found'
+                message: 'Purchase order item not found'
             });
         }
 
-
-        // Make sure PO item belongs to same PO
         if (
             Number(purchaseOrderItem.purchase_order_id) !==
             Number(goodsReceipt.purchase_order_id)
@@ -217,22 +211,12 @@ const createGoodsReceiptItem = async (req, res) => {
             await transaction.rollback();
 
             return res.status(400).json({
-                message:
-                    'Purchase order item does not belong to this purchase order'
+                message: 'Purchase order item does not belong to this purchase order'
             });
         }
 
-
-        // ==========================================
-        // 3. VALIDATE ITEM
-        // ==========================================
-
-        const item = await Item.findByPk(
-            item_id,
-            {
-                transaction
-            }
-        );
+        // 3. Validate item.
+        const item = await Item.findByPk(item_id, { transaction });
 
         if (!item) {
             await transaction.rollback();
@@ -242,302 +226,274 @@ const createGoodsReceiptItem = async (req, res) => {
             });
         }
 
-
-        // Make sure item matches PO item
-        if (
-            Number(purchaseOrderItem.item_id) !==
-            Number(item_id)
-        ) {
+        if (Number(purchaseOrderItem.item_id) !== Number(item_id)) {
             await transaction.rollback();
 
             return res.status(400).json({
-                message:
-                    'Item does not match the purchase order item'
+                message: 'Item does not match the purchase order item'
             });
         }
 
-
-        // ==========================================
-        // 4. VALIDATE QUANTITY
-        // ==========================================
-
+        // 4. Validate quantity.
         if (
             quantity_received === undefined ||
-            quantity_received === null
+            quantity_received === null ||
+            quantity_received === '' ||
+            !Number.isFinite(Number(quantity_received)) ||
+            Number(quantity_received) <= 0 ||
+            Number(quantity_received) >= 1e12 ||
+            Math.abs(
+                Number(quantity_received) * 1000 -
+                Math.round(Number(quantity_received) * 1000)
+            ) >= 1e-7
         ) {
             await transaction.rollback();
 
             return res.status(400).json({
-                message:
-                    'Quantity received is required'
+                message: 'Quantity received must be a positive number with at most 3 decimal places'
             });
         }
 
 
-        const receivedQuantity =
-            Number(quantity_received);
+        const receivedQuantity = Number(quantity_received);
 
 
-        if (
-            !Number.isFinite(receivedQuantity) ||
-            receivedQuantity <= 0
-        ) {
-            await transaction.rollback();
-
-            return res.status(400).json({
-                message:
-                    'Quantity received must be greater than zero'
-            });
-        }
-
-
-        // ==========================================
-        // 5. CHECK REMAINING PO QUANTITY
-        // ==========================================
-
-        const orderedQuantity =
-            Number(purchaseOrderItem.quantity_ordered);
-
-        const alreadyReceived =
-            Number(
-                purchaseOrderItem.quantity_received || 0
-            );
-
-        const remainingQuantity =
-            orderedQuantity - alreadyReceived;
-
-
-        if (receivedQuantity > remainingQuantity) {
-            await transaction.rollback();
-
-            return res.status(400).json({
-                message:
-                    `Quantity received cannot exceed remaining quantity of ${remainingQuantity}`
-            });
-        }
-
-
-        // ==========================================
-        // 6. VALIDATE UNIT COST
-        // ==========================================
-
+        // 5. Validate unit cost.
         if (
             unit_cost === undefined ||
-            unit_cost === null
+            unit_cost === null ||
+            unit_cost === '' ||
+            !Number.isFinite(Number(unit_cost)) ||
+            Number(unit_cost) < 0 ||
+            Number(unit_cost) >= 1e13 ||
+            Math.abs(
+                Number(unit_cost) * 100 -
+                Math.round(Number(unit_cost) * 100)
+            ) >= 1e-7
         ) {
             await transaction.rollback();
 
             return res.status(400).json({
-                message:
-                    'Unit cost is required'
+                message: 'Unit cost must be a non-negative amount with at most 2 decimal places'
             });
         }
 
+        const receivedUnitCost = Number(unit_cost);
 
-        const receivedUnitCost =
-            Number(unit_cost);
+        // 6. Validate condition.
+        const receiptCondition = condition ?? 'good';
+        const validConditions = ['good', 'damaged', 'defective'];
 
-
-        if (
-            !Number.isFinite(receivedUnitCost) ||
-            receivedUnitCost < 0
-        ) {
+        if (!validConditions.includes(receiptCondition)) {
             await transaction.rollback();
 
             return res.status(400).json({
-                message:
-                    'Unit cost cannot be negative'
+                message: 'Condition must be good, damaged, or defective'
             });
         }
 
-
-        // ==========================================
-        // 7. VALIDATE CONDITION
-        // ==========================================
-
-        const validConditions = [
-            'good',
-            'damaged',
-            'defective'
-        ];
-
-
-        const receiptCondition =
-            condition || 'good';
-
-
-        if (
-            !validConditions.includes(receiptCondition)
-        ) {
-            await transaction.rollback();
-
-            return res.status(400).json({
-                message:
-                    'Condition must be good, damaged, or defective'
-            });
-        }
-
-
-        // ==========================================
-        // 8. CHECK DUPLICATE
-        // ==========================================
-
-        const existingItem =
-            await GoodsReceiptItem.findOne({
-                where: {
-                    goods_receipt_id,
-                    purchase_order_item_id,
-                    item_id
-                },
-                transaction
-            });
-
+        // 7. Prevent duplicate receipt items.
+        const existingItem = await GoodsReceiptItem.findOne({
+            where: {
+                goods_receipt_id: goodsReceipt.id,
+                purchase_order_item_id,
+                item_id
+            },
+            transaction
+        });
 
         if (existingItem) {
             await transaction.rollback();
 
             return res.status(409).json({
-                message:
-                    'This purchase order item is already added to this goods receipt'
+                message: 'This purchase order item is already added to this goods receipt'
             });
         }
 
-
-        // ==========================================
-        // 9. CREATE GOODS RECEIPT ITEM
-        // ==========================================
-
-        const receiptItem =
-            await GoodsReceiptItem.create(
-                {
-                    goods_receipt_id,
-                    purchase_order_item_id,
-                    item_id,
-                    quantity_received:
-                    receivedQuantity,
-                    unit_cost:
-                    receivedUnitCost,
-                    condition:
-                    receiptCondition,
-                    notes
-                },
-                {
-                    transaction
-                }
-            );
-
-
-        // ==========================================
-        // 10. UPDATE PO RECEIVED QUANTITY
-        // ==========================================
-
-        const newReceivedQuantity =
-            alreadyReceived + receivedQuantity;
-
-
-        await purchaseOrderItem.update(
+        // 8. Create receipt item.
+        const receiptItem = await GoodsReceiptItem.create(
             {
-                quantity_received:
-                newReceivedQuantity
+                goods_receipt_id: goodsReceipt.id,
+                purchase_order_item_id,
+                item_id,
+                quantity_received: receivedQuantity,
+                unit_cost: receivedUnitCost,
+                condition: receiptCondition,
+                notes
             },
+            { transaction }
+        );
+
+
+        // 10. Audit the creation in the same transaction.
+        await recordAuditLog({
+            userId: req.user.id,
+            action: 'GOODS_RECEIPT_ITEM_CREATED',
+            module: 'inventory',
+            entityType: 'goods_receipt_item',
+            entityId: receiptItem.id,
+            description: `Item ${item_id} added to goods receipt ${goodsReceipt.receipt_number}`,
+            oldValues: null,
+            newValues: {
+                goods_receipt_id: goodsReceipt.id,
+                purchase_order_item_id: purchase_order_item_id,
+                item_id,
+                quantity_received: receivedQuantity,
+                unit_cost: receivedUnitCost,
+                condition: receiptCondition,
+                notes: notes ?? null,
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
+        });
+
+        // 11. Retrieve the created item.
+        const createdItem = await GoodsReceiptItem.findByPk(
+            receiptItem.id,
             {
+                include: [
+                    {
+                        model: GoodsReceipt,
+                        as: 'goodsReceipt',
+                        attributes: [
+                            'id',
+                            'receipt_number',
+                            'receipt_date',
+                            'status'
+                        ]
+                    },
+                    {
+                        model: PurchaseOrderItem,
+                        as: 'purchaseOrderItem',
+                        attributes: [
+                            'id',
+                            'purchase_order_id',
+                            'item_id',
+                            'quantity_ordered',
+                            'quantity_received',
+                            'unit_cost'
+                        ]
+                    },
+                    {
+                        model: Item,
+                        as: 'item',
+                        attributes: ['id', 'item_code', 'item_name']
+                    }
+                ],
                 transaction
             }
         );
 
-
-        // ==========================================
-        // 11. COMMIT TRANSACTION
-        // ==========================================
-
         await transaction.commit();
 
-
-        // ==========================================
-        // 12. GET CREATED RECORD WITH RELATIONS
-        // ==========================================
-
-        const createdItem =
-            await GoodsReceiptItem.findByPk(
-                receiptItem.id,
-                {
-                    include: [
-                        {
-                            model: GoodsReceipt,
-                            as: 'goodsReceipt',
-                            attributes: [
-                                'id',
-                                'receipt_number',
-                                'receipt_date',
-                                'status'
-                            ]
-                        },
-                        {
-                            model: PurchaseOrderItem,
-                            as: 'purchaseOrderItem',
-                            attributes: [
-                                'id',
-                                'purchase_order_id',
-                                'item_id',
-                                'quantity_ordered',
-                                'quantity_received',
-                                'unit_cost'
-                            ]
-                        },
-                        {
-                            model: Item,
-                            as: 'item',
-                            attributes: [
-                                'id',
-                                'item_code',
-                                'item_name'
-                            ]
-                        }
-                    ]
-                }
-            );
-
-
-        // ==========================================
-        // 13. RESPONSE
-        // ==========================================
-
         return res.status(201).json({
-            message:
-                'Goods receipt item created successfully',
+            message: 'Goods receipt item created successfully',
             data: createdItem
         });
-
-
     } catch (error) {
-
-        // Rollback if anything fails
-        if (!transaction.finished) {
+        if (transaction && !transaction.finished) {
             await transaction.rollback();
         }
 
-
-        console.error(
-            'Create goods receipt item error:',
-            error
-        );
-
+        console.error('Create goods receipt item error:', error);
 
         return res.status(500).json({
-            message:
-                'Failed to create goods receipt item'
+            message: 'Failed to create goods receipt item'
         });
     }
 };
 
 
+
 // UPDATE
+
 const updateGoodsReceiptItem = async (req, res) => {
-    const transaction =
-        await GoodsReceiptItem.sequelize.transaction();
+    let transaction;
 
     try {
+        transaction = await sequelize.transaction();
+
         const { id } = req.params;
+
+        if (!/^\d+$/.test(String(id)) || Number(id) <= 0) {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'Invalid goods receipt item ID'
+            });
+        }
+
+        // Find the item to identify its parent receipt.
+        const initialItem = await GoodsReceiptItem.findByPk(id, {
+            transaction
+        });
+
+        if (!initialItem) {
+            await transaction.rollback();
+
+            return res.status(404).json({
+                message: 'Goods receipt item not found'
+            });
+        }
+
+        // Lock the receipt first, then the receipt item and PO item.
+        const goodsReceipt = await GoodsReceipt.findByPk(
+            initialItem.goods_receipt_id,
+            {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            }
+        );
+
+        if (!goodsReceipt) {
+            await transaction.rollback();
+
+            return res.status(404).json({
+                message: 'Goods receipt not found'
+            });
+        }
+
+        if (goodsReceipt.status !== 'draft') {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'Cannot modify items after receipt is received or cancelled'
+            });
+        }
+
+        const receiptItem = await GoodsReceiptItem.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        if (
+            !receiptItem ||
+            Number(receiptItem.goods_receipt_id) !== Number(goodsReceipt.id)
+        ) {
+            await transaction.rollback();
+
+            return res.status(409).json({
+                message: 'Goods receipt item changed during the request; please retry'
+            });
+        }
+
+        const purchaseOrderItem = await PurchaseOrderItem.findByPk(
+            receiptItem.purchase_order_item_id,
+            {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            }
+        );
+
+        if (!purchaseOrderItem) {
+            await transaction.rollback();
+
+            return res.status(404).json({
+                message: 'Purchase order item not found'
+            });
+        }
 
         const {
             quantity_received,
@@ -546,28 +502,202 @@ const updateGoodsReceiptItem = async (req, res) => {
             notes
         } = req.body;
 
+        const oldValues = {
+            quantity_received: Number(receiptItem.quantity_received),
+            unit_cost: Number(receiptItem.unit_cost),
+            condition: receiptItem.condition,
+            notes: receiptItem.notes
+        };
 
-        // ==========================================
-        // 1. FIND GOODS RECEIPT ITEM
-        // ==========================================
+        // Validate new quantity.
+        const newQuantity = quantity_received === undefined
+            ? oldValues.quantity_received
+            : Number(quantity_received);
 
-        const receiptItem =
-            await GoodsReceiptItem.findByPk(id, {
-                include: [
-                    {
-                        model: GoodsReceipt,
-                        as: 'goodsReceipt'
-                    },
-                    {
-                        model: PurchaseOrderItem,
-                        as: 'purchaseOrderItem'
-                    }
-                ],
+        if (
+            quantity_received !== undefined &&
+            (
+                quantity_received === null ||
+                quantity_received === '' ||
+                !Number.isFinite(newQuantity) ||
+                newQuantity <= 0 ||
+                newQuantity >= 1e12 ||
+                Math.abs(newQuantity * 1000 - Math.round(newQuantity * 1000)) >= 1e-7
+            )
+        ) {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'Quantity received must be positive with at most 3 decimal places'
+            });
+        }
+
+        // Validate unit cost.
+        const newUnitCost = unit_cost === undefined
+            ? oldValues.unit_cost
+            : Number(unit_cost);
+
+        if (
+            unit_cost !== undefined &&
+            (
+                unit_cost === null ||
+                unit_cost === '' ||
+                !Number.isFinite(newUnitCost) ||
+                newUnitCost < 0 ||
+                newUnitCost >= 1e13 ||
+                Math.abs(newUnitCost * 100 - Math.round(newUnitCost * 100)) >= 1e-7
+            )
+        ) {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'Unit cost must be non-negative with at most 2 decimal places'
+            });
+        }
+
+        // Validate condition.
+        const newCondition = condition === undefined
+            ? oldValues.condition
+            : condition;
+
+        if (!['good', 'damaged', 'defective'].includes(newCondition)) {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'Condition must be good, damaged, or defective'
+            });
+        }
+
+        // Validate notes.
+        if (
+            notes !== undefined &&
+            notes !== null &&
+            typeof notes !== 'string'
+        ) {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'Notes must be a string or null'
+            });
+        }
+
+        // Update the receipt item.
+        await receiptItem.update(
+            {
+                quantity_received: newQuantity,
+                unit_cost: newUnitCost,
+                condition: newCondition,
+                notes: notes === undefined ? receiptItem.notes : notes
+            },
+            { transaction }
+        );
+
+        const newValues = {
+            quantity_received: Number(receiptItem.quantity_received),
+            unit_cost: Number(receiptItem.unit_cost),
+            condition: receiptItem.condition,
+            notes: receiptItem.notes ?? null
+        };
+
+        const changed = Object.keys(oldValues).some(
+            key => (oldValues[key] ?? null) !== (newValues[key] ?? null)
+        );
+        if (changed) {
+            await recordAuditLog({
+                userId: req.user.id,
+                action: 'GOODS_RECEIPT_ITEM_UPDATED',
+                module: 'inventory',
+                entityType: 'goods_receipt_item',
+                entityId: receiptItem.id,
+                description: `Item ${receiptItem.item_id} updated in goods receipt ${goodsReceipt.receipt_number}`,
+                oldValues,
+                newValues,
+                ipAddress: req.ip || null,
+                userAgent: req.get('user-agent') || null,
+                requestId: req.id || null,
                 transaction
             });
+        }
+
+        const updatedItem = await GoodsReceiptItem.findByPk(id, {
+            include: [
+                {
+                    model: GoodsReceipt,
+                    as: 'goodsReceipt',
+                    attributes: [
+                        'id',
+                        'purchase_order_id',
+                        'receipt_number',
+                        'receipt_date',
+                        'status'
+                    ]
+                },
+                {
+                    model: PurchaseOrderItem,
+                    as: 'purchaseOrderItem',
+                    attributes: [
+                        'id',
+                        'purchase_order_id',
+                        'item_id',
+                        'quantity_ordered',
+                        'quantity_received',
+                        'unit_cost'
+                    ]
+                },
+                {
+                    model: Item,
+                    as: 'item',
+                    attributes: ['id', 'item_code', 'item_name']
+                }
+            ],
+            transaction
+        });
+
+        await transaction.commit();
+
+        return res.status(200).json({
+            message: 'Goods receipt item updated successfully',
+            data: updatedItem
+        });
+    } catch (error) {
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
+
+        console.error('Update goods receipt item error:', error);
+
+        return res.status(500).json({
+            message: 'Failed to update goods receipt item'
+        });
+    }
+};
 
 
-        if (!receiptItem) {
+
+// DELETE
+
+const deleteGoodsReceiptItem = async (req, res) => {
+    let transaction;
+
+    try {
+        transaction = await sequelize.transaction();
+
+        const { id } = req.params;
+
+        if (!/^\d+$/.test(String(id)) || Number(id) <= 0) {
+            await transaction.rollback();
+
+            return res.status(400).json({
+                message: 'Invalid goods receipt item ID'
+            });
+        }
+
+        // Find the item to identify its parent receipt.
+        const initialItem = await GoodsReceiptItem.findByPk(id, {
+            transaction
+        });
+
+        if (!initialItem) {
             await transaction.rollback();
 
             return res.status(404).json({
@@ -575,489 +705,113 @@ const updateGoodsReceiptItem = async (req, res) => {
             });
         }
 
+        // Lock the parent receipt first.
+        const goodsReceipt = await GoodsReceipt.findByPk(
+            initialItem.goods_receipt_id,
+            {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            }
+        );
 
-        // ==========================================
-        // 2. CHECK GOODS RECEIPT STATUS
-        // ==========================================
-
-        if (
-            receiptItem.goodsReceipt.status === 'cancelled' ||
-            receiptItem.goodsReceipt.status === 'received'
-        ) {
+        if (!goodsReceipt) {
             await transaction.rollback();
 
-            return res.status(400).json({
-                message:
-                    'Cannot modify items after receipt is received or cancelled'
+            return res.status(404).json({
+                message: 'Goods receipt not found'
             });
         }
 
-
-        // ==========================================
-        // 3. VALIDATE QUANTITY
-        // ==========================================
-
-        let newQuantity =
-            Number(receiptItem.quantity_received);
-
-
-        if (quantity_received !== undefined) {
-
-            newQuantity =
-                Number(quantity_received);
-
-
-            if (
-                !Number.isFinite(newQuantity) ||
-                newQuantity <= 0
-            ) {
-                await transaction.rollback();
-
-                return res.status(400).json({
-                    message:
-                        'Quantity received must be greater than zero'
-                });
-            }
-        }
-
-
-        // ==========================================
-        // 4. VALIDATE UNIT COST
-        // ==========================================
-
-        let newUnitCost =
-            Number(receiptItem.unit_cost);
-
-
-        if (unit_cost !== undefined) {
-
-            newUnitCost =
-                Number(unit_cost);
-
-
-            if (
-                !Number.isFinite(newUnitCost) ||
-                newUnitCost < 0
-            ) {
-                await transaction.rollback();
-
-                return res.status(400).json({
-                    message:
-                        'Unit cost cannot be negative'
-                });
-            }
-        }
-
-
-        // ==========================================
-        // 5. VALIDATE CONDITION
-        // ==========================================
-
-        const validConditions = [
-            'good',
-            'damaged',
-            'defective'
-        ];
-
-
-        const newCondition =
-            condition !== undefined
-                ? condition
-                : receiptItem.condition;
-
-
-        if (
-            !validConditions.includes(newCondition)
-        ) {
+        if (goodsReceipt.status !== 'draft') {
             await transaction.rollback();
 
             return res.status(400).json({
-                message:
-                    'Condition must be good, damaged, or defective'
+                message: 'Cannot delete an item from a received or cancelled goods receipt'
             });
         }
 
+        const receiptItem = await GoodsReceiptItem.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
-        // ==========================================
-        // 6. GET PO ITEM
-        // ==========================================
+        if (
+            !receiptItem ||
+            Number(receiptItem.goods_receipt_id) !== Number(goodsReceipt.id)
+        ) {
+            await transaction.rollback();
 
-        const purchaseOrderItem =
-            await PurchaseOrderItem.findByPk(
-                receiptItem.purchase_order_item_id,
-                {
-                    transaction
-                }
-            );
+            return res.status(409).json({
+                message: 'Goods receipt item changed during the request; please retry'
+            });
+        }
 
+        const purchaseOrderItem = await PurchaseOrderItem.findByPk(
+            receiptItem.purchase_order_item_id,
+            {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            }
+        );
 
         if (!purchaseOrderItem) {
             await transaction.rollback();
 
             return res.status(404).json({
-                message:
-                    'Purchase order item not found'
+                message: 'Purchase order item not found'
             });
         }
 
+        // Capture the details before deleting the item.
+        const oldValues = {
+            goods_receipt_id: receiptItem.goods_receipt_id,
+            purchase_order_item_id: receiptItem.purchase_order_item_id,
+            item_id: receiptItem.item_id,
+            quantity_received: Number(receiptItem.quantity_received),
+            unit_cost: Number(receiptItem.unit_cost),
+            condition: receiptItem.condition,
+            notes: receiptItem.notes
+        };
 
-        // ==========================================
-        // 7. CALCULATE QUANTITY DIFFERENCE
-        // ==========================================
+        // Delete the receipt item.
+        await receiptItem.destroy({ transaction });
 
-        const oldQuantity =
-            Number(receiptItem.quantity_received);
-
-
-        const quantityDifference =
-            newQuantity - oldQuantity;
-
-
-        const currentPOReceived =
-            Number(
-                purchaseOrderItem.quantity_received || 0
-            );
-
-
-        const newPOReceived =
-            currentPOReceived +
-            quantityDifference;
-
-
-        // ==========================================
-        // 8. PREVENT INVALID PO QUANTITY
-        // ==========================================
-
-        if (newPOReceived < 0) {
-
-            await transaction.rollback();
-
-            return res.status(400).json({
-                message:
-                    'Updated quantity would result in an invalid purchase order received quantity'
-            });
-        }
-
-
-        // ==========================================
-        // 9. CHECK AGAINST ORDERED QUANTITY
-        // ==========================================
-
-        const orderedQuantity =
-            Number(
-                purchaseOrderItem.quantity_ordered
-            );
-
-
-        if (newPOReceived > orderedQuantity) {
-
-            await transaction.rollback();
-
-            return res.status(400).json({
-                message:
-                    `Total received quantity cannot exceed ordered quantity of ${orderedQuantity}`
-            });
-        }
-
-
-        // ==========================================
-        // 10. UPDATE GOODS RECEIPT ITEM
-        // ==========================================
-
-        await receiptItem.update(
-            {
-                quantity_received:
-                newQuantity,
-
-                unit_cost:
-                newUnitCost,
-
-                condition:
-                newCondition,
-
-                notes:
-                    notes !== undefined
-                        ? notes
-                        : receiptItem.notes
+        // Record deletion in the same transaction.
+        await recordAuditLog({
+            userId: req.user.id,
+            action: 'GOODS_RECEIPT_ITEM_DELETED',
+            module: 'inventory',
+            entityType: 'goods_receipt_item',
+            entityId: receiptItem.id,
+            description: `Item ${receiptItem.item_id} deleted from goods receipt ${goodsReceipt.receipt_number}`,
+            oldValues,
+            newValues: {
+                deleted: true
             },
-            {
-                transaction
-            }
-        );
-
-
-        // ==========================================
-        // 11. UPDATE PO RECEIVED QUANTITY
-        // ==========================================
-
-        await purchaseOrderItem.update(
-            {
-                quantity_received:
-                newPOReceived
-            },
-            {
-                transaction
-            }
-        );
-
-
-        // ==========================================
-        // 12. COMMIT
-        // ==========================================
-
-        await transaction.commit();
-
-
-        // ==========================================
-        // 13. GET UPDATED RECORD
-        // ==========================================
-
-        const updatedItem =
-            await GoodsReceiptItem.findByPk(
-                id,
-                {
-                    include: [
-                        {
-                            model: GoodsReceipt,
-                            as: 'goodsReceipt',
-                            attributes: [
-                                'id',
-                                'purchase_order_id',
-                                'receipt_number',
-                                'receipt_date',
-                                'status'
-                            ]
-                        },
-                        {
-                            model: PurchaseOrderItem,
-                            as: 'purchaseOrderItem',
-                            attributes: [
-                                'id',
-                                'purchase_order_id',
-                                'item_id',
-                                'quantity_ordered',
-                                'quantity_received',
-                                'unit_cost'
-                            ]
-                        },
-                        {
-                            model: Item,
-                            as: 'item',
-                            attributes: [
-                                'id',
-                                'item_code',
-                                'item_name'
-                            ]
-                        }
-                    ]
-                }
-            );
-
-
-        return res.status(200).json({
-            message:
-                'Goods receipt item updated successfully',
-            data: updatedItem
-        });
-
-
-    } catch (error) {
-
-        if (!transaction.finished) {
-            await transaction.rollback();
-        }
-
-
-        console.error(
-            'Update goods receipt item error:',
-            error
-        );
-
-
-        return res.status(500).json({
-            message:
-                'Failed to update goods receipt item'
-        });
-    }
-};
-
-
-// DELETE
-const deleteGoodsReceiptItem = async (req, res) => {
-    const transaction =
-        await GoodsReceiptItem.sequelize.transaction();
-
-    try {
-        const { id } = req.params;
-
-
-        // ==========================================
-        // 1. FIND GOODS RECEIPT ITEM
-        // ==========================================
-
-        const receiptItem =
-            await GoodsReceiptItem.findByPk(id, {
-                include: [
-                    {
-                        model: GoodsReceipt,
-                        as: 'goodsReceipt'
-                    }
-                ],
-                transaction
-            });
-
-
-        if (!receiptItem) {
-            await transaction.rollback();
-
-            return res.status(404).json({
-                message:
-                    'Goods receipt item not found'
-            });
-        }
-
-
-        // ==========================================
-        // 2. CHECK RECEIPT STATUS
-        // ==========================================
-
-        if (
-            receiptItem.goodsReceipt.status ===
-            'received'
-        ) {
-            await transaction.rollback();
-
-            return res.status(400).json({
-                message:
-                    'Cannot delete an item from a received goods receipt'
-            });
-        }
-
-
-        if (
-            receiptItem.goodsReceipt.status ===
-            'cancelled'
-        ) {
-            await transaction.rollback();
-
-            return res.status(400).json({
-                message:
-                    'Cannot delete an item from a cancelled goods receipt'
-            });
-        }
-
-
-        // ==========================================
-        // 3. FIND PO ITEM
-        // ==========================================
-
-        const purchaseOrderItem =
-            await PurchaseOrderItem.findByPk(
-                receiptItem.purchase_order_item_id,
-                {
-                    transaction
-                }
-            );
-
-
-        if (!purchaseOrderItem) {
-            await transaction.rollback();
-
-            return res.status(404).json({
-                message:
-                    'Purchase order item not found'
-            });
-        }
-
-
-        // ==========================================
-        // 4. CALCULATE NEW PO RECEIVED QUANTITY
-        // ==========================================
-
-        const currentPOReceived =
-            Number(
-                purchaseOrderItem.quantity_received || 0
-            );
-
-
-        const receiptQuantity =
-            Number(
-                receiptItem.quantity_received
-            );
-
-
-        const newPOReceived =
-            currentPOReceived -
-            receiptQuantity;
-
-
-        if (newPOReceived < 0) {
-
-            await transaction.rollback();
-
-            return res.status(400).json({
-                message:
-                    'Cannot delete item because purchase order received quantity would become negative'
-            });
-        }
-
-
-        // ==========================================
-        // 5. UPDATE PO ITEM
-        // ==========================================
-
-        await purchaseOrderItem.update(
-            {
-                quantity_received:
-                newPOReceived
-            },
-            {
-                transaction
-            }
-        );
-
-
-        // ==========================================
-        // 6. DELETE GOODS RECEIPT ITEM
-        // ==========================================
-
-        await receiptItem.destroy({
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
             transaction
         });
 
-
-        // ==========================================
-        // 7. COMMIT
-        // ==========================================
-
         await transaction.commit();
 
-
         return res.status(200).json({
-            message:
-                'Goods receipt item deleted successfully'
+            message: 'Goods receipt item deleted successfully'
         });
-
-
     } catch (error) {
-
-        if (!transaction.finished) {
+        if (transaction && !transaction.finished) {
             await transaction.rollback();
         }
 
-
-        console.error(
-            'Delete goods receipt item error:',
-            error
-        );
-
+        console.error('Delete goods receipt item error:', error);
 
         return res.status(500).json({
-            message:
-                'Failed to delete goods receipt item'
+            message: 'Failed to delete goods receipt item'
         });
     }
 };
+
 
 
 module.exports = {

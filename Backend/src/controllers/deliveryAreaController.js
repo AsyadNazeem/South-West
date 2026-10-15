@@ -2,6 +2,31 @@ const {
     DeliveryArea,
     DeliveryDistrict
 } = require("../models")
+const { recordAuditLog } = require('../services/auditLogService');
+
+async function auditDeliveryAction(req, {
+    action,
+    entityId = null,
+    description,
+    newValues = null
+}) {
+    try {
+        await recordAuditLog({
+            userId: req.user?.id ?? req.user?.user_id ?? null,
+            action,
+            module: 'DELIVERY',
+            entityType: 'DeliveryArea',
+            entityId: entityId == null ? null : String(entityId),
+            description,
+            newValues,
+            ipAddress: req.ip ?? null,
+            userAgent: req.get?.('user-agent') ?? null,
+            requestId: req.id ?? req.requestId ?? null
+        });
+    } catch (error) {
+        console.error('Delivery audit logging failed:', error.message);
+    }
+}
 
 
 // =====================================================
@@ -150,27 +175,53 @@ const calculateDeliveryCharge = async (req, res) => {
             })
         }
 
+
+        const isValidWeightType =
+            typeof total_weight_kg === "number" ||
+            (typeof total_weight_kg === "string" &&
+                total_weight_kg.trim() !== "");
+
+        const totalWeightKg = Number(total_weight_kg);
+
         if (
-            total_weight_kg === undefined ||
-            total_weight_kg === null ||
-            Number(total_weight_kg) <= 0
+            !isValidWeightType ||
+            !Number.isFinite(totalWeightKg) ||
+            totalWeightKg <= 0
         ) {
             return res.status(400).json({
                 success: false,
-                message: "total_weight_kg must be greater than 0."
-            })
+                message: "total_weight_kg must be a finite number greater than 0."
+            });
         }
 
-        const area = await DeliveryArea.findByPk(area_id)
+        const area = await DeliveryArea.findOne({
+            where: {
+                id: area_id,
+                status: 1
+            }
+        });
 
         if (!area) {
-            return res.status(404).json({
+            return res.status(400).json({
                 success: false,
-                message: "Delivery area not found."
-            })
+                message: "Delivery is not available for this area."
+            });
         }
 
-        const totalWeightKg = Number(total_weight_kg)
+        const district = await DeliveryDistrict.findOne({
+            where: {
+                id: area.district_id,
+                status: 1
+            }
+        });
+
+        if (!district) {
+            return res.status(400).json({
+                success: false,
+                message: "Delivery is not available for this area."
+            });
+        }
+
 
         // Charge by each started kilogram
         const chargeableWeightKg = Math.ceil(totalWeightKg)
@@ -188,6 +239,21 @@ const calculateDeliveryCharge = async (req, res) => {
                 chargeableWeightKg - 1
             ) * additionalKgCharge
 
+        await auditDeliveryAction(req, {
+            action: 'DELIVERY_CHARGE_CALCULATED',
+            entityId: area.id,
+            description: 'Delivery charge calculated successfully',
+            newValues: {
+                area_id: area.id,
+                district_id: area.district_id,
+                total_weight_kg: totalWeightKg,
+                chargeable_weight_kg: chargeableWeightKg,
+                first_kg_charge: firstKgCharge,
+                additional_kg_charge: additionalKgCharge,
+                delivery_charge: deliveryCharge
+            }
+        });
+
         return res.status(200).json({
             success: true,
             message: "Delivery charge calculated successfully.",
@@ -203,6 +269,15 @@ const calculateDeliveryCharge = async (req, res) => {
         })
 
     } catch (error) {
+        await auditDeliveryAction(req, {
+            action: 'DELIVERY_CHARGE_CALCULATION_FAILED',
+            entityId: req.body?.area_id ?? null,
+            description: 'Unexpected error while calculating delivery charge',
+            newValues: {
+                area_id: req.body?.area_id ?? null
+            }
+        });
+
         console.error(
             "Calculate delivery charge error:",
             error

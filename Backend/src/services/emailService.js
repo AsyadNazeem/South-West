@@ -61,4 +61,40 @@ async function sendVerificationCode(email, code, purpose) {
     });
 }
 
-module.exports = { sendVerificationCode };
+
+async function sendCustomerPasswordSetupInvitation(email, customerCode, token) {
+    const frontendUrl = process.env.CUSTOMER_APP_URL;
+
+    if (!frontendUrl) {
+        throw new Error('CUSTOMER_APP_URL is not configured');
+    }
+
+    const setupUrl = new URL('/set-password', frontendUrl);
+    setupUrl.searchParams.set('token', token);
+
+    await getTransporter().sendMail({
+        from:
+            process.env.SMTP_FROM ||
+            process.env.SMTP_USER ||
+            'South West <noreply@southwest.local>',
+        to: email,
+        subject: 'Set up your South West customer account',
+        text: [
+            'Welcome to South West!',
+            '',
+            `Your customer code is: ${customerCode}`,
+            '',
+            'Use the link below to set your account password:',
+            setupUrl.toString(),
+            '',
+            'This link expires in 10 minutes and can only be used once.',
+            'If you were not expecting this invitation, you can ignore this email.',
+        ].join('\n'),
+    });
+}
+
+
+module.exports = {
+    sendVerificationCode,
+    sendCustomerPasswordSetupInvitation,
+};

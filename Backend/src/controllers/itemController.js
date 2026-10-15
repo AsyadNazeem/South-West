@@ -1,4 +1,5 @@
 const {
+    sequelize,
     Item,
     Brand,
     Category,
@@ -8,6 +9,7 @@ const {
     ItemSpecificationValue,
     ItemSpecification
 } = require('../models');
+const { recordAuditLog } = require('../services/auditLogService');
 
 const getItems = async (req, res) => {
     try {
@@ -111,6 +113,8 @@ const getItemById = async (req, res) => {
 };
 
 const createItem = async (req, res) => {
+    const transaction = await sequelize.transaction();
+
     try {
         const {
             category_id,
@@ -175,6 +179,29 @@ const createItem = async (req, res) => {
                 is_active ?? true
         });
 
+        await recordAuditLog({
+            userId: req.user ? (req.user.id ?? req.user.userId) : null,
+            action: 'ITEM_CREATED',
+            module: 'items',
+            entityType: 'item',
+            entityId: item.id,
+            description: `Item ${item.item_code} created`,
+            newValues: {
+                item_code: item.item_code,
+                item_name: item.item_name,
+                category_id: item.category_id,
+                brand_id: item.brand_id,
+                unit_id: item.unit_id,
+                item_type_id: item.item_type_id,
+                warranty_id: item.warranty_id
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+
+            transaction
+        });
+
         const createdItem = await Item.findByPk(item.id, {
             include: [
                 {
@@ -200,6 +227,8 @@ const createItem = async (req, res) => {
             ]
         });
 
+        await transaction.commit();
+
         return res.status(201).json({
             message: 'Item created successfully',
             data: createdItem
@@ -208,6 +237,10 @@ const createItem = async (req, res) => {
     } catch (error) {
         console.error('Create item error:', error);
 
+        if (!transaction.finished) {
+            await transaction.rollback();
+        }
+
         return res.status(500).json({
             message: 'Failed to create item'
         });
@@ -215,6 +248,7 @@ const createItem = async (req, res) => {
 };
 
 const updateItem = async (req, res) => {
+    const transaction = await sequelize.transaction();
     try {
         const { id } = req.params
 
@@ -256,6 +290,16 @@ const updateItem = async (req, res) => {
                 })
             }
         }
+
+        const oldValues = {
+            item_code: item.item_code,
+            item_name: item.item_name,
+            category_id: item.category_id,
+            brand_id: item.brand_id,
+            unit_id: item.unit_id,
+            item_type_id: item.item_type_id,
+            warranty_id: item.warranty_id
+        };
 
         await item.update({
             category_id: category_id !== undefined
@@ -311,6 +355,30 @@ const updateItem = async (req, res) => {
                 : item.is_active
         })
 
+        await recordAuditLog({
+            userId: req.user ? (req.user.id ?? req.user.userId) : null,
+            action: 'ITEM_UPDATED',
+            module: 'items',
+            entityType: 'item',
+            entityId: item.id,
+            description: `Item ${item.item_code} updated`,
+            oldValues,
+            newValues: {
+                item_code: item.item_code,
+                item_name: item.item_name,
+                category_id: item.category_id,
+                brand_id: item.brand_id,
+                unit_id: item.unit_id,
+                item_type_id: item.item_type_id,
+                warranty_id: item.warranty_id
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+
+            transaction
+        });
+
         const updatedItem = await Item.findByPk(id, {
             include: [
                 {
@@ -336,6 +404,8 @@ const updateItem = async (req, res) => {
             ]
         })
 
+        await transaction.commit();
+
         return res.status(200).json({
             message: 'Item updated successfully',
             data: updatedItem
@@ -343,6 +413,10 @@ const updateItem = async (req, res) => {
 
     } catch (error) {
         console.error('Update item error:', error)
+
+        if (!transaction.finished) {
+            await transaction.rollback();
+        }
 
         return res.status(500).json({
             message: 'Failed to update item'

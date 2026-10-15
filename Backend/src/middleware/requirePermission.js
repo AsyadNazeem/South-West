@@ -1,24 +1,24 @@
 
+'use strict';
+
 const { User, Role, Permission } = require('../models');
 
-function requirePermission(permissionName) {
-    return async (req, res, next) => {
-        try {
-            if (!req.user) {
-                return res.status(401).json({
-                    message: 'Authentication required'
-                });
-            }
-
+async function getRequestPermissions(req) {
+    // Reuse the database lookup if this request checks multiple permissions.
+    if (!req.authorizationPermissionsPromise) {
+        req.authorizationPermissionsPromise = (async () => {
             const user = await User.findByPk(req.user.id, {
+                attributes: ['id', 'is_active'],
                 include: [
                     {
                         model: Role,
                         as: 'roles',
+                        through: { attributes: [] },
                         include: [
                             {
                                 model: Permission,
-                                as: 'permissions'
+                                as: 'permissions',
+                                through: { attributes: [] }
                             }
                         ]
                     }
@@ -26,17 +26,43 @@ function requirePermission(permissionName) {
             });
 
             if (!user || !user.is_active) {
-                return res.status(401).json({
-                    message: 'User is unavailable'
-                });
+                const error = new Error('User is unavailable');
+                error.status = 401;
+                throw error;
             }
 
-            const permissions = new Set(
+            return new Set(
                 (user.roles || []).flatMap(role =>
                     (role.permissions || []).map(permission => permission.name)
                 )
             );
+        })();
+    }
 
+    return req.authorizationPermissionsPromise;
+}
+
+function requirePermission(permissionName) {
+    return async (req, res, next) => {
+        try {
+            if (!req.user?.id) {
+                return res.status(401).json({
+                    message: 'Authentication required'
+                });
+            }
+
+            if (
+                typeof permissionName !== 'string' ||
+                !permissionName.trim()
+            ) {
+                console.error('Invalid permission configuration');
+
+                return res.status(500).json({
+                    message: 'Unable to verify permission'
+                });
+            }
+
+            const permissions = await getRequestPermissions(req);
             req.permissions = permissions;
 
             if (!permissions.has(permissionName)) {
@@ -48,7 +74,13 @@ function requirePermission(permissionName) {
 
             return next();
         } catch (error) {
-            console.error('Permission middleware error:', error);
+            if (error.status === 401) {
+                return res.status(401).json({
+                    message: error.message
+                });
+            }
+
+            console.error('Permission verification failed:', error.message);
 
             return res.status(500).json({
                 message: 'Unable to verify permission'

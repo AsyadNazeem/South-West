@@ -2,139 +2,422 @@ const {
     Customer,
     CustomerAddress,
     DeliveryDistrict,
-    DeliveryArea
+    DeliveryArea,
+    sequelize
 } = require('../models');
+const { recordAuditLog } = require('../services/auditLogService');
+
+const ADDRESS_FIELDS = [
+    'address_type',
+    'recipient_name',
+    'phone',
+    'address_line_1',
+    'address_line_2',
+    'district_id',
+    'area_id',
+    'city',
+    'state',
+    'postal_code',
+    'country',
+    'is_default'
+];
+
+const REQUIRED_FIELDS = [
+    'recipient_name',
+    'phone',
+    'address_line_1',
+    'city',
+    'district_id',
+    'area_id'
+];
 
 
-async function createAddress(req, res) {
+async function auditCustomerAddressAction({
+                                              req,
+                                              action,
+                                              customerId = null,
+                                              addressId = null,
+                                              description,
+                                              oldValues = null,
+                                              newValues = null
+                                          }) {
     try {
-        const customer = await Customer.findByPk(req.params.customerId);
-
-        if (!customer) {
-            return res.status(404).json({
-                message: 'Customer not found'
-            });
-        }
-
-        const {
-            address_type,
-            recipient_name,
-            phone,
-            address_line_1,
-            address_line_2,
-            district_id,
-            area_id,
-            city,
-            state,
-            postal_code,
-            country,
-            is_default
-        } = req.body;
-
-        // Required field validation
-        if (
-            !recipient_name ||
-            !phone ||
-            !address_line_1 ||
-            !city ||
-            !district_id ||
-            !area_id
-        ) {
-            return res.status(400).json({
-                message:
-                    'Recipient name, phone, address line 1, city, district and delivery area are required'
-            });
-        }
-
-        // Verify district exists
-        const district = await DeliveryDistrict.findByPk(district_id);
-
-        if (!district) {
-            return res.status(400).json({
-                message: 'Selected district does not exist'
-            });
-        }
-
-        // Verify area belongs to selected district
-        const area = await DeliveryArea.findOne({
-            where: {
-                id: area_id,
-                district_id: district_id
-            }
+        await recordAuditLog({
+            userId: req.user?.id ?? req.user?.user_id ?? null,
+            action,
+            module: 'CUSTOMER_ADDRESS',
+            entityType: 'CustomerAddress',
+            entityId: addressId,
+            description,
+            oldValues,
+            newValues: {
+                ...(newValues || {}),
+                ...(customerId !== null
+                    ? { customer_id: customerId }
+                    : {})
+            },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent'),
+            requestId: req.id
         });
-
-        if (!area) {
-            return res.status(400).json({
-                message:
-                    'Selected delivery area does not belong to the selected district'
-            });
-        }
-
-        // If this is the default address,
-        // remove default status from existing addresses
-        if (is_default) {
-            await CustomerAddress.update(
-                {
-                    is_default: false
-                },
-                {
-                    where: {
-                        customer_id: customer.id
-                    }
-                }
-            );
-        }
-
-        const address = await CustomerAddress.create({
-            customer_id: customer.id,
-
-            address_type,
-            recipient_name,
-            phone,
-
-            address_line_1,
-            address_line_2,
-
-            district_id,
-            area_id,
-
-            city,
-            state,
-            postal_code,
-            country,
-
-            is_default: is_default || false
-        });
-
-        return res.status(201).json({
-            message: 'Customer address created successfully',
-            data: address
-        });
-
     } catch (error) {
-        console.error('Create address error:', error);
-
-        return res.status(500).json({
-            message: 'Unable to create customer address'
-        });
+        console.error(
+            'Customer address audit logging failed:',
+            error.message
+        );
     }
 }
 
+function addressAuditValues(address) {
+    if (!address) return null;
+
+    return {
+        address_type: address.address_type,
+        recipient_name: address.recipient_name,
+        phone: address.phone,
+        address_line_1: address.address_line_1,
+        address_line_2: address.address_line_2,
+        district_id: address.district_id,
+        area_id: address.area_id,
+        city: address.city,
+        state: address.state,
+        postal_code: address.postal_code,
+        country: address.country,
+        is_default: address.is_default
+    };
+}
+
+
+
+
+function validId(value) {
+    return (
+        (typeof value === 'string' || typeof value === 'number') &&
+        /^\d+$/.test(String(value)) &&
+        BigInt(String(value)) > 0n &&
+        BigInt(String(value)) <= 18446744073709551615n
+    );
+}
+
+function getCustomerId(req) {
+    // Customer identity comes from verified customer authentication.
+    // Admin identity is supplied by the protected admin route.
+    return req.customer
+        ? req.customer.id
+        : req.params.customerId;
+}
+
+function validatePayload(body, partial = false) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return 'A valid address object is required.';
+    }
+
+    const unknownFields = Object.keys(body).filter(
+        key => !ADDRESS_FIELDS.includes(key)
+    );
+
+    if (unknownFields.length) {
+        return `Unsupported address field: ${unknownFields[0]}`;
+    }
+
+    if (!partial) {
+        for (const field of REQUIRED_FIELDS) {
+            if (
+                body[field] === undefined ||
+                body[field] === null ||
+                (typeof body[field] === 'string' && !body[field].trim())
+            ) {
+                return `${field} is required.`;
+            }
+        }
+    }
+
+    for (const field of [
+        'recipient_name',
+        'phone',
+        'address_line_1',
+        'address_line_2',
+        'city',
+        'state',
+        'postal_code',
+        'country',
+        'address_type'
+    ]) {
+        if (
+            body[field] !== undefined &&
+            body[field] !== null &&
+            typeof body[field] !== 'string'
+        ) {
+            return `${field} must be a string.`;
+        }
+    }
+
+    const limits = {
+        address_type: 30,
+        recipient_name: 200,
+        phone: 30,
+        address_line_1: 255,
+        address_line_2: 255,
+        city: 100,
+        state: 100,
+        postal_code: 20,
+        country: 100
+    };
+
+    for (const [field, max] of Object.entries(limits)) {
+        if (
+            typeof body[field] === 'string' &&
+            body[field].length > max
+        ) {
+            return `${field} cannot exceed ${max} characters.`;
+        }
+    }
+
+    if (
+        body.address_type !== undefined &&
+        !['shipping', 'billing'].includes(
+            body.address_type.trim().toLowerCase()
+        )
+    ) {
+        return 'address_type must be shipping or billing.';
+    }
+
+    for (const field of ['district_id', 'area_id']) {
+        if (
+            body[field] !== undefined &&
+            !validId(body[field])
+        ) {
+            return `${field} must be a valid positive ID.`;
+        }
+    }
+
+    if (
+        body.is_default !== undefined &&
+        typeof body.is_default !== 'boolean'
+    ) {
+        return 'is_default must be true or false.';
+    }
+
+    return null;
+}
+
+function normalisePayload(body) {
+    const result = {};
+
+    for (const field of ADDRESS_FIELDS) {
+        if (body[field] !== undefined) {
+            result[field] =
+                typeof body[field] === 'string'
+                    ? body[field].trim()
+                    : body[field];
+        }
+    }
+
+    if (result.address_type !== undefined) {
+        result.address_type = result.address_type.toLowerCase();
+    }
+
+    return result;
+}
+
+async function validateDeliveryLocation(
+    districtId,
+    areaId,
+    transaction
+) {
+    const district = await DeliveryDistrict.findOne({
+        where: {
+            id: districtId,
+            status: 1
+        },
+        transaction
+    });
+
+    if (!district) {
+        return {
+            error: 'Selected district does not exist or is inactive.'
+        };
+    }
+
+    const area = await DeliveryArea.findOne({
+        where: {
+            id: areaId,
+            district_id: districtId,
+            status: 1
+        },
+        transaction
+    });
+
+    if (!area) {
+        return {
+            error:
+                'Selected delivery area does not exist, is inactive, or does not belong to the selected district.'
+        };
+    }
+
+    return {};
+}
+
+function handleError(res, label, error) {
+    console.error(`${label}:`, error.message);
+
+    if (error.name === 'SequelizeValidationError') {
+        return res.status(400).json({
+            message: 'Address validation failed.'
+        });
+    }
+
+    if (error.name === 'SequelizeForeignKeyConstraintError') {
+        return res.status(400).json({
+            message: 'The selected customer or delivery location is invalid.'
+        });
+    }
+
+    if (
+        error.name === 'SequelizeUniqueConstraintError' ||
+        error.original?.code === 'ER_DUP_ENTRY'
+    ) {
+        return res.status(409).json({
+            message: 'This change conflicts with an existing default address. Please refresh and try again.'
+        });
+    }
+
+    return res.status(500).json({
+        message: 'Unable to process customer address.'
+    });
+}
+
+async function createAddress(req, res) {
+    const validationError = validatePayload(req.body);
+
+    if (validationError) {
+        return res.status(400).json({message: validationError});
+    }
+
+    const customerId = getCustomerId(req);
+
+    if (!validId(customerId)) {
+        return res.status(400).json({
+            message: 'A valid customer ID is required.'
+        });
+    }
+
+    const payload = normalisePayload(req.body);
+
+    try {
+        if (!req.customer) {
+            const customer = await Customer.findByPk(customerId);
+
+            if (!customer) {
+                return res.status(404).json({
+                    message: 'Customer not found.'
+                });
+            }
+        }
+
+        const address = await sequelize.transaction(async transaction => {
+            const customer = await Customer.findByPk(customerId, {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+
+            if (!customer) {
+                const error = new Error('Customer not found.');
+                error.statusCode = 404;
+                throw error;
+            }
+
+            const addressCount = await CustomerAddress.count({
+                where: {customer_id: customerId},
+                transaction
+            });
+
+            if (addressCount >= 3) {
+                const error = new Error(
+                    'You can save a maximum of 3 addresses.'
+                );
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const location = await validateDeliveryLocation(
+                payload.district_id,
+                payload.area_id,
+                transaction
+            );
+
+            if (location.error) {
+                const error = new Error(location.error);
+                error.statusCode = 400;
+                throw error;
+            }
+
+            if (payload.is_default === true) {
+                await CustomerAddress.update(
+                    {is_default: false},
+                    {
+                        where: {customer_id: customerId},
+                        transaction
+                    }
+                );
+            }
+
+            return CustomerAddress.create(
+                {
+                    ...payload,
+                    customer_id: customerId,
+                    address_type: payload.address_type || 'shipping',
+                    country: payload.country || 'Sri Lanka',
+                    is_default: payload.is_default === true
+                },
+                {transaction}
+            );
+        });
+
+        await auditCustomerAddressAction({
+            req,
+            action: 'CUSTOMER_ADDRESS_CREATED',
+            customerId,
+            addressId: address.id,
+            description: 'Customer address created successfully',
+            newValues: addressAuditValues(address)
+        });
+
+        return res.status(201).json({
+            message: 'Customer address created successfully.',
+            data: address
+        });
+    } catch (error) {
+        if (error.statusCode === 400) {
+            return res.status(400).json({message: error.message});
+        }
+
+        return handleError(res, 'Create address error', error);
+    }
+}
 
 async function getAddresses(req, res) {
-    try {
-        const customer = await Customer.findByPk(req.params.customerId);
+    const customerId = getCustomerId(req);
 
-        if (!customer) {
-            return res.status(404).json({
-                message: 'Customer not found'
-            });
+    if (!validId(customerId)) {
+        return res.status(400).json({
+            message: 'A valid customer ID is required.'
+        });
+    }
+
+    try {
+        if (!req.customer) {
+            const customer = await Customer.findByPk(customerId);
+
+            if (!customer) {
+                return res.status(404).json({
+                    message: 'Customer not found.'
+                });
+            }
         }
 
         const addresses = await CustomerAddress.findAll({
-            where: {
-                customer_id: customer.id
-            },
+            where: {customer_id: customerId},
             order: [
                 ['is_default', 'DESC'],
                 ['id', 'DESC']
@@ -142,286 +425,285 @@ async function getAddresses(req, res) {
         });
 
         return res.status(200).json({
-            message: 'Customer addresses retrieved successfully',
+            message: 'Customer addresses retrieved successfully.',
             data: addresses
         });
-
     } catch (error) {
-        console.error('Get addresses error:', error);
-
-        return res.status(500).json({
-            message: 'Unable to retrieve customer addresses'
-        });
+        return handleError(res, 'Get addresses error', error);
     }
 }
-
 
 async function updateAddress(req, res) {
-    try {
-        const address = await CustomerAddress.findOne({
-            where: {
-                id: req.params.addressId,
-                customer_id: req.params.customerId
-            }
-        });
+    const customerId = getCustomerId(req);
+    const {addressId} = req.params;
 
-        if (!address) {
-            return res.status(404).json({
-                message: 'Customer address not found'
-            });
-        }
-
-        const {
-            address_type,
-            recipient_name,
-            phone,
-            address_line_1,
-            address_line_2,
-            district_id,
-            area_id,
-            city,
-            state,
-            postal_code,
-            country,
-            is_default
-        } = req.body;
-
-        // Required field validation
-        if (
-            !recipient_name ||
-            !phone ||
-            !address_line_1 ||
-            !city ||
-            !district_id ||
-            !area_id
-        ) {
-            return res.status(400).json({
-                message:
-                    'Recipient name, phone, address line 1, city, district and delivery area are required'
-            });
-        }
-
-        // Verify district exists
-        const district = await DeliveryDistrict.findByPk(district_id);
-
-        if (!district) {
-            return res.status(400).json({
-                message: 'Selected district does not exist'
-            });
-        }
-
-        // Verify area belongs to district
-        const area = await DeliveryArea.findOne({
-            where: {
-                id: area_id,
-                district_id: district_id
-            }
-        });
-
-        if (!area) {
-            return res.status(400).json({
-                message:
-                    'Selected delivery area does not belong to the selected district'
-            });
-        }
-
-        // Remove default from other addresses
-        if (is_default) {
-            await CustomerAddress.update(
-                {
-                    is_default: false
-                },
-                {
-                    where: {
-                        customer_id: req.params.customerId
-                    }
-                }
-            );
-        }
-
-        await address.update({
-            address_type,
-            recipient_name,
-            phone,
-
-            address_line_1,
-            address_line_2,
-
-            district_id,
-            area_id,
-
-            city,
-            state,
-            postal_code,
-            country,
-
-            is_default: is_default || false
-        });
-
-        return res.status(200).json({
-            message: 'Customer address updated successfully',
-            data: address
-        });
-
-    } catch (error) {
-        console.error('Update address error:', error);
-
-        return res.status(500).json({
-            message: 'Unable to update customer address'
+    if (!validId(customerId) || !validId(addressId)) {
+        return res.status(400).json({
+            message: 'Valid customer and address IDs are required.'
         });
     }
-}
 
+    const validationError = validatePayload(req.body, true);
+
+    if (validationError) {
+        return res.status(400).json({message: validationError});
+    }
+
+    if (!Object.keys(req.body || {}).length) {
+        return res.status(400).json({
+            message: 'Provide at least one field to update.'
+        });
+    }
+
+    const payload = normalisePayload(req.body);
+
+    try {
+        const updatedAddress = await sequelize.transaction(async transaction => {
+            // Lock the customer row to serialize address changes per customer.
+            const customer = await Customer.findByPk(customerId, {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+
+            if (!customer) {
+                const error = new Error('Customer not found.');
+                error.statusCode = 404;
+                throw error;
+            }
+
+            const address = await CustomerAddress.findOne({
+                where: {
+                    id: addressId,
+                    customer_id: customerId
+                },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+
+            if (!address) {
+                const error = new Error('Customer address not found.');
+                error.statusCode = 404;
+                throw error;
+            }
+
+            const districtId =
+                payload.district_id !== undefined
+                    ? payload.district_id
+                    : address.district_id;
+
+            const areaId =
+                payload.area_id !== undefined
+                    ? payload.area_id
+                    : address.area_id;
+
+            if (
+                payload.district_id !== undefined ||
+                payload.area_id !== undefined
+            ) {
+                const location = await validateDeliveryLocation(
+                    districtId,
+                    areaId,
+                    transaction
+                );
+
+                if (location.error) {
+                    const error = new Error(location.error);
+                    error.statusCode = 400;
+                    throw error;
+                }
+            }
+
+            if (payload.is_default === true) {
+                await CustomerAddress.update(
+                    {is_default: false},
+                    {
+                        where: {
+                            customer_id: customerId,
+                            id: {[require('sequelize').Op.ne]: addressId}
+                        },
+                        transaction
+                    }
+                );
+            }
+
+
+            const oldValues = addressAuditValues(address);
+
+            await address.update(payload, { transaction });
+
+            await auditCustomerAddressAction({
+                req,
+                action: 'CUSTOMER_ADDRESS_UPDATED',
+                customerId,
+                addressId: address.id,
+                description: 'Customer address updated successfully',
+                oldValues,
+                newValues: addressAuditValues(address)
+            });
+
+            return address;
+
+        });
+
+
+        return res.status(200).json({
+            message: 'Customer address updated successfully.',
+            data: updatedAddress
+        });
+    } catch (error) {
+        if (error.statusCode === 404) {
+            return res.status(404).json({message: error.message});
+        }
+
+        if (error.statusCode === 400) {
+            return res.status(400).json({message: error.message});
+        }
+
+        return handleError(res, 'Update address error', error);
+    }
+}
 
 async function deleteAddress(req, res) {
+    const customerId = getCustomerId(req);
+    const {addressId} = req.params;
+
+    if (!validId(customerId) || !validId(addressId)) {
+        return res.status(400).json({
+            message: 'Valid customer and address IDs are required.'
+        });
+    }
+
     try {
         const address = await CustomerAddress.findOne({
             where: {
-                id: req.params.addressId,
-                customer_id: req.params.customerId
+                id: addressId,
+                customer_id: customerId
             }
         });
 
         if (!address) {
             return res.status(404).json({
-                message: 'Customer address not found'
+                message: 'Customer address not found.'
             });
         }
 
+        const oldValues = addressAuditValues(address);
         await address.destroy();
 
+        await auditCustomerAddressAction({
+            req,
+            action: 'CUSTOMER_ADDRESS_DELETED',
+            customerId,
+            addressId: address.id,
+            description: 'Customer address deleted successfully',
+            oldValues
+        });
+
         return res.status(200).json({
-            message: 'Customer address deleted successfully'
+            message: 'Customer address deleted successfully.'
         });
-
     } catch (error) {
-        console.error('Delete address error:', error);
-
-        return res.status(500).json({
-            message: 'Unable to delete customer address'
-        });
+        return handleError(res, 'Delete address error', error);
     }
 }
 
+async function getAddressById(req, res) {
+    const {addressId} = req.params;
+
+    if (!validId(addressId)) {
+        return res.status(400).json({
+            message: 'A valid address ID is required.'
+        });
+    }
+
+    try {
+        const where = {id: addressId};
+
+        if (req.customer) {
+            where.customer_id = req.customer.id;
+        }
+
+        const address = await CustomerAddress.findOne({where});
+
+        if (!address) {
+            return res.status(404).json({
+                message: 'Customer address not found.'
+            });
+        }
+
+        return res.status(200).json({
+            message: 'Customer address retrieved successfully.',
+            data: address
+        });
+    } catch (error) {
+        return handleError(res, 'Get address by ID error', error);
+    }
+}
 
 async function getAllAddresses(req, res) {
     try {
         const addresses = await CustomerAddress.findAll({
-            include: [
-                {
-                    model: Customer,
-                    as: 'customer',
-                    attributes: [
-                        'id',
-                        'first_name',
-                        'last_name'
-                    ]
-                }
-            ],
-            order: [
-                ['id', 'DESC']
-            ]
+            include: [{
+                model: Customer,
+                as: 'customer',
+                attributes: ['id', 'first_name', 'last_name']
+            }],
+            order: [['id', 'DESC']]
         });
 
-        const data = addresses.map((a) => {
-            const row = a.toJSON();
-
-            const type = (
-                row.address_type || ''
-            ).toLowerCase();
+        const data = addresses.map(address => {
+            const row = address.toJSON();
+            const type = (row.address_type || '').toLowerCase();
 
             return {
                 ...row,
-
                 customer_name: row.customer
                     ? `${row.customer.first_name} ${row.customer.last_name}`.trim()
                     : 'Guest',
-
                 province: row.state || '',
-
                 is_default_shipping:
-                    Boolean(row.is_default) &&
-                    type === 'shipping',
-
+                    Boolean(row.is_default) && type === 'shipping',
                 is_default_billing:
-                    Boolean(row.is_default) &&
-                    type === 'billing'
+                    Boolean(row.is_default) && type === 'billing'
             };
         });
 
         return res.status(200).json({
-            message: 'Customer addresses retrieved successfully',
+            message: 'Customer addresses retrieved successfully.',
             data
         });
-
     } catch (error) {
-        console.error(
-            'Get all addresses error:',
-            error
-        );
-
-        return res.status(500).json({
-            message: 'Unable to retrieve customer addresses'
-        });
+        return handleError(res, 'Get all addresses error', error);
     }
 }
 
-
 async function deleteAddressById(req, res) {
+    const {addressId} = req.params;
+
+    if (!validId(addressId)) {
+        return res.status(400).json({
+            message: 'A valid address ID is required.'
+        });
+    }
+
     try {
-        const address = await CustomerAddress.findByPk(
-            req.params.addressId
-        );
+        const address = await CustomerAddress.findByPk(addressId);
 
         if (!address) {
             return res.status(404).json({
-                message: 'Customer address not found'
+                message: 'Customer address not found.'
             });
         }
 
         await address.destroy();
 
         return res.status(200).json({
-            message: 'Customer address deleted successfully'
+            message: 'Customer address deleted successfully.'
         });
-
     } catch (error) {
-        console.error(
-            'Delete address error:',
-            error
-        );
-
-        return res.status(500).json({
-            message: 'Unable to delete customer address'
-        });
+        return handleError(res, 'Delete address by ID error', error);
     }
 }
-async function getAddressById(req, res) {
-    try {
-        const address = await CustomerAddress.findByPk(
-            req.params.addressId
-        );
-
-        if (!address) {
-            return res.status(404).json({
-                message: 'Customer address not found'
-            });
-        }
-
-        return res.status(200).json({
-            message: 'Customer address retrieved successfully',
-            data: address
-        });
-
-    } catch (error) {
-        console.error('Get address by ID error:', error);
-
-        return res.status(500).json({
-            message: 'Unable to retrieve customer address'
-        });
-    }
-}
-
 
 module.exports = {
     createAddress,

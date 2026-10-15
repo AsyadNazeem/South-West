@@ -348,37 +348,45 @@
 
 
           <!-- Value -->
-          <div class="form-group specification-value">
 
-            <label>
+          <!-- Value -->
+          <div class="form-group specification-value">
+            <label :for="`spec-${spec.specification_id}`">
               Value
             </label>
 
             <div class="value-with-unit">
+              <select
+                  v-if="spec.data_type === 'boolean'"
+                  :id="`spec-${spec.specification_id}`"
+                  v-model="spec.value"
+                  :required="spec.is_required"
+              >
+                <option value="">Select Yes or No</option>
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
 
               <input
+                  v-else
+                  :id="`spec-${spec.specification_id}`"
                   v-model="spec.value"
                   :type="
-                        spec.data_type === 'number'
-                            ? 'number'
-                            : 'text'
-                    "
-                  :placeholder="
-                        `Enter ${spec.name.toLowerCase()}`
-                    "
+        ['number', 'decimal'].includes(spec.data_type)
+          ? 'number'
+          : 'text'
+      "
+                  :step="spec.data_type === 'decimal' ? 'any' : undefined"
+                  :placeholder="`Enter ${spec.name.toLowerCase()}`"
                   :required="spec.is_required"
               />
 
-              <span
-                  v-if="spec.unit"
-                  class="specification-unit"
-              >
-                    {{ spec.unit }}
-                </span>
-
+              <span v-if="spec.unit" class="specification-unit">
+      {{ spec.unit }}
+    </span>
             </div>
-
           </div>
+
 
         </div>
 
@@ -880,8 +888,8 @@
 
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
-import { useRouter, useRoute } from "vue-router"
+import {computed, onMounted, ref} from "vue"
+import {useRoute, useRouter} from "vue-router"
 import api from "../../api/axios"
 
 const router = useRouter()
@@ -952,15 +960,15 @@ const openUnitModal = () => {
 const modalSaving = ref(false)
 
 const resetCategoryForm = () => {
-  newCategory.value = { name: '', code: '', description: '', parent_id: null }
+  newCategory.value = {name: '', code: '', description: '', parent_id: null}
 }
 
 const resetBrandForm = () => {
-  newBrand.value = { name: '', code: '', description: '' }
+  newBrand.value = {name: '', code: '', description: ''}
 }
 
 const resetUnitForm = () => {
-  newUnit.value = { name: '', code: '', description: '' }
+  newUnit.value = {name: '', code: '', description: ''}
 }
 
 const closeCategoryModal = () => {

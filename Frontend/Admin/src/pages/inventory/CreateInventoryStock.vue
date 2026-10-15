@@ -185,24 +185,36 @@ const submitForm = async () => {
       return
     }
 
-    const payload = {
-      item_id: Number(selectedItem.value.id),
-      location_id: Number(form.value.location_id),
-      quantity_on_hand: onHand,
-      quantity_reserved: reserved,
-      reorder_level: reorderLevel,
-      is_active: form.value.is_active
-    }
 
     if (isEditMode.value) {
+      // Only stock settings may be changed on an existing record.
+      const payload = {
+        quantity_reserved: reserved,
+        reorder_level: reorderLevel,
+        is_active: form.value.is_active
+      }
+
       await api.put(`/inventory-stock/${stockId.value}`, payload)
 
       alert('Stock record updated successfully.')
     } else {
+      // Creating a stock record requires item, location and initial quantities.
+      const payload = {
+        item_id: Number(selectedItem.value.id),
+        location_id: Number(form.value.location_id),
+        quantity_on_hand: onHand,
+        quantity_reserved: reserved,
+        reorder_level: reorderLevel,
+        is_active: form.value.is_active
+      }
+
       await api.post('/inventory-stock', payload)
 
       alert('Stock record created successfully.')
     }
+
+    router.push(LIST_ROUTE)
+
 
     router.push(LIST_ROUTE)
   } catch (error) {

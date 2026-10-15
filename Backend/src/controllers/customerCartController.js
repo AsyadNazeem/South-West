@@ -11,8 +11,39 @@ const {
     InventoryLocation
 } = require('../models');
 
+const { recordAuditLog } = require('../services/auditLogService');
+
 const CURRENCY = 'LKR';
 const PRICE_TYPE = 'selling';
+const AUDIT_MODULE = 'CUSTOMER_CART';
+
+// Best-effort audit logging: audit failures must not break cart operations.
+async function auditCartAction(req, {
+    action,
+    entityType = 'Cart',
+    entityId = null,
+    description,
+    oldValues = null,
+    newValues = null
+}) {
+    try {
+        await recordAuditLog({
+            userId: req.user?.id ?? req.user?.user_id ?? null,
+            action,
+            module: AUDIT_MODULE,
+            entityType,
+            entityId: entityId == null ? null : String(entityId),
+            description,
+            oldValues,
+            newValues,
+            ipAddress: req.ip ?? null,
+            userAgent: req.get?.('user-agent') ?? null,
+            requestId: req.id ?? req.requestId ?? null
+        });
+    } catch (error) {
+        console.error('Customer cart audit logging failed:', error.message);
+    }
+}
 
 function getCustomerId(req) {
     return req.customer?.id;
@@ -20,6 +51,18 @@ function getCustomerId(req) {
 
 function validPositiveInteger(value) {
     return Number.isSafeInteger(value) && value > 0;
+}
+
+function getCartItemSnapshot(cartItem) {
+    if (!cartItem) return null;
+
+    return {
+        id: cartItem.id,
+        cart_id: cartItem.cart_id,
+        item_id: cartItem.item_id,
+        quantity: Number(cartItem.quantity),
+        unit_price: Number(cartItem.unit_price)
+    };
 }
 
 async function getCurrentSellingPrice(itemId, transaction) {
@@ -76,6 +119,7 @@ async function getOnlineAvailableStock(itemId, transaction) {
     return stocks.reduce((total, stock) => {
         const onHand = Number(stock.quantity_on_hand);
         const reserved = Number(stock.quantity_reserved);
+
         return total + Math.max(0, onHand - reserved);
     }, 0);
 }
@@ -139,11 +183,16 @@ async function getMyCart(req, res) {
         const customerId = getCustomerId(req);
 
         if (!customerId) {
-            return res.status(401).json({ message: 'Customer authentication required' });
+            return res.status(401).json({
+                message: 'Customer authentication required'
+            });
         }
 
         const cart = await Cart.findOne({
-            where: { customer_id: customerId, status: 'active' },
+            where: {
+                customer_id: customerId,
+                status: 'active'
+            },
             include: [{
                 model: CartItem,
                 as: 'items',
@@ -156,13 +205,33 @@ async function getMyCart(req, res) {
             order: [['id', 'DESC']]
         });
 
+        await auditCartAction(req, {
+            action: 'CUSTOMER_CART_VIEWED',
+            entityType: 'Cart',
+            entityId: cart?.id ?? null,
+            description: `Customer ${customerId} viewed their active cart`,
+            newValues: {
+                customer_id: customerId,
+                cart_id: cart?.id ?? null,
+                item_count: cart?.items?.length ?? 0
+            }
+        });
+
         return res.status(200).json({
             message: 'Cart retrieved successfully',
             data: cart
         });
     } catch (error) {
         console.error('Get customer cart error:', error);
-        return res.status(500).json({ message: 'Failed to retrieve cart' });
+
+        await auditCartAction(req, {
+            action: 'CUSTOMER_CART_VIEW_FAILED',
+            description: 'Failed to retrieve customer cart'
+        });
+
+        return res.status(500).json({
+            message: 'Failed to retrieve cart'
+        });
     }
 }
 
@@ -171,11 +240,15 @@ async function addItem(req, res) {
     const { item_id, quantity = 1 } = req.body;
 
     if (!Number.isSafeInteger(Number(item_id)) || Number(item_id) <= 0) {
-        return res.status(400).json({ message: 'A valid item_id is required' });
+        return res.status(400).json({
+            message: 'A valid item_id is required'
+        });
     }
 
     if (!validPositiveInteger(quantity)) {
-        return res.status(400).json({ message: 'Quantity must be a positive integer' });
+        return res.status(400).json({
+            message: 'Quantity must be a positive integer'
+        });
     }
 
     if (req.body.unit_price !== undefined) {
@@ -185,8 +258,11 @@ async function addItem(req, res) {
     }
 
     const customerId = getCustomerId(req);
+
     if (!customerId) {
-        return res.status(401).json({ message: 'Customer authentication required' });
+        return res.status(401).json({
+            message: 'Customer authentication required'
+        });
     }
 
     try {
@@ -197,25 +273,41 @@ async function addItem(req, res) {
             });
 
             if (!item || !item.is_active) {
-                return { error: 404, message: 'Item not found or unavailable' };
+                return {
+                    error: 404,
+                    message: 'Item not found or unavailable'
+                };
             }
 
             const price = await getCurrentSellingPrice(item.id, transaction);
+
             if (!price || Number(price.price) <= 0) {
-                return { error: 409, message: 'No valid selling price is available for this item' };
+                return {
+                    error: 409,
+                    message: 'No valid selling price is available for this item'
+                };
             }
 
             const cart = await getOrCreateActiveCart(customerId, transaction);
+
             const existing = await CartItem.findOne({
-                where: { cart_id: cart.id, item_id: item.id },
+                where: {
+                    cart_id: cart.id,
+                    item_id: item.id
+                },
                 transaction,
                 lock: transaction.LOCK.UPDATE
             });
 
+            const oldValues = getCartItemSnapshot(existing);
+
             const requestedQuantity =
                 Number(quantity) + (existing ? Number(existing.quantity) : 0);
 
-            const availableStock = await getOnlineAvailableStock(item.id, transaction);
+            const availableStock = await getOnlineAvailableStock(
+                item.id,
+                transaction
+            );
 
             if (requestedQuantity > availableStock) {
                 return {
@@ -225,13 +317,17 @@ async function addItem(req, res) {
                 };
             }
 
+            let cartItem;
+
             if (existing) {
                 await existing.update({
                     quantity: requestedQuantity,
                     unit_price: price.price
                 }, { transaction });
+
+                cartItem = existing;
             } else {
-                await CartItem.create({
+                cartItem = await CartItem.create({
                     cart_id: cart.id,
                     item_id: item.id,
                     quantity: Number(quantity),
@@ -239,10 +335,28 @@ async function addItem(req, res) {
                 }, { transaction });
             }
 
-            return { cartId: cart.id };
+            return {
+                cartId: cart.id,
+                cartItemId: cartItem.id,
+                oldValues,
+                newValues: getCartItemSnapshot(cartItem),
+                itemCode: item.item_code
+            };
         });
 
         if (result.error) {
+            await auditCartAction(req, {
+                action: 'CUSTOMER_CART_ITEM_ADD_REJECTED',
+                entityType: 'CartItem',
+                description: `Adding item ${item_id} to customer ${customerId}'s cart was rejected`,
+                newValues: {
+                    customer_id: customerId,
+                    item_id: Number(item_id),
+                    requested_quantity: Number(quantity),
+                    reason: result.message
+                }
+            });
+
             return res.status(result.error).json({
                 message: result.message,
                 ...(result.available_quantity !== undefined
@@ -251,7 +365,22 @@ async function addItem(req, res) {
             });
         }
 
+        await auditCartAction(req, {
+            action: result.oldValues
+                ? 'CUSTOMER_CART_ITEM_QUANTITY_INCREASED'
+                : 'CUSTOMER_CART_ITEM_ADDED',
+            entityType: 'CartItem',
+            entityId: result.cartItemId,
+            description: `Customer ${customerId} added item ${item_id} to their cart`,
+            oldValues: result.oldValues,
+            newValues: {
+                ...result.newValues,
+                customer_id: customerId
+            }
+        });
+
         const cart = await loadCart(result.cartId);
+
         return res.status(200).json({
             message: 'Item added to cart successfully',
             data: cart
@@ -259,13 +388,25 @@ async function addItem(req, res) {
     } catch (error) {
         console.error('Add customer cart item error:', error);
 
+        await auditCartAction(req, {
+            action: 'CUSTOMER_CART_ITEM_ADD_FAILED',
+            entityType: 'CartItem',
+            description: `Failed to add item ${item_id} to customer ${customerId}'s cart`,
+            newValues: {
+                customer_id: customerId,
+                item_id: Number(item_id)
+            }
+        });
+
         if (error.name === 'SequelizeUniqueConstraintError') {
             return res.status(409).json({
                 message: 'This item was added concurrently. Refresh the cart and try again.'
             });
         }
 
-        return res.status(500).json({ message: 'Failed to add item to cart' });
+        return res.status(500).json({
+            message: 'Failed to add item to cart'
+        });
     }
 }
 
@@ -276,15 +417,23 @@ async function updateItem(req, res) {
     const customerId = getCustomerId(req);
 
     if (!customerId) {
-        return res.status(401).json({ message: 'Customer authentication required' });
+        return res.status(401).json({
+            message: 'Customer authentication required'
+        });
     }
 
     if (!validPositiveInteger(quantity)) {
-        return res.status(400).json({ message: 'Quantity must be a positive integer' });
+        return res.status(400).json({
+            message: 'Quantity must be a positive integer'
+        });
     }
 
-    if (req.body.unit_price !== undefined || req.body.cart_id !== undefined ||
-        req.body.item_id !== undefined || req.body.customer_id !== undefined) {
+    if (
+        req.body.unit_price !== undefined ||
+        req.body.cart_id !== undefined ||
+        req.body.item_id !== undefined ||
+        req.body.customer_id !== undefined
+    ) {
         return res.status(400).json({
             message: 'Only quantity can be updated'
         });
@@ -293,12 +442,19 @@ async function updateItem(req, res) {
     try {
         const result = await Cart.sequelize.transaction(async transaction => {
             const cartItem = await findOwnedActiveCartItem(
-                customerId, cartItemId, transaction
+                customerId,
+                cartItemId,
+                transaction
             );
 
             if (!cartItem) {
-                return { error: 404, message: 'Cart item not found' };
+                return {
+                    error: 404,
+                    message: 'Cart item not found'
+                };
             }
+
+            const oldValues = getCartItemSnapshot(cartItem);
 
             const item = await Item.findByPk(cartItem.item_id, {
                 transaction,
@@ -306,15 +462,26 @@ async function updateItem(req, res) {
             });
 
             if (!item || !item.is_active) {
-                return { error: 409, message: 'This item is no longer available' };
+                return {
+                    error: 409,
+                    message: 'This item is no longer available'
+                };
             }
 
             const price = await getCurrentSellingPrice(item.id, transaction);
+
             if (!price || Number(price.price) <= 0) {
-                return { error: 409, message: 'No valid selling price is available for this item' };
+                return {
+                    error: 409,
+                    message: 'No valid selling price is available for this item'
+                };
             }
 
-            const availableStock = await getOnlineAvailableStock(item.id, transaction);
+            const availableStock = await getOnlineAvailableStock(
+                item.id,
+                transaction
+            );
+
             if (Number(quantity) > availableStock) {
                 return {
                     error: 409,
@@ -328,10 +495,27 @@ async function updateItem(req, res) {
                 unit_price: price.price
             }, { transaction });
 
-            return { cartId: cartItem.cart_id };
+            return {
+                cartId: cartItem.cart_id,
+                cartItemId: cartItem.id,
+                oldValues,
+                newValues: getCartItemSnapshot(cartItem)
+            };
         });
 
         if (result.error) {
+            await auditCartAction(req, {
+                action: 'CUSTOMER_CART_ITEM_UPDATE_REJECTED',
+                entityType: 'CartItem',
+                entityId: cartItemId,
+                description: `Updating cart item ${cartItemId} for customer ${customerId} was rejected`,
+                newValues: {
+                    customer_id: customerId,
+                    requested_quantity: Number(quantity),
+                    reason: result.message
+                }
+            });
+
             return res.status(result.error).json({
                 message: result.message,
                 ...(result.available_quantity !== undefined
@@ -340,44 +524,123 @@ async function updateItem(req, res) {
             });
         }
 
+        await auditCartAction(req, {
+            action: 'CUSTOMER_CART_ITEM_UPDATED',
+            entityType: 'CartItem',
+            entityId: result.cartItemId,
+            description: `Customer ${customerId} updated cart item ${result.cartItemId}`,
+            oldValues: result.oldValues,
+            newValues: {
+                ...result.newValues,
+                customer_id: customerId
+            }
+        });
+
         return res.status(200).json({
             message: 'Cart item updated successfully',
             data: await loadCart(result.cartId)
         });
     } catch (error) {
         console.error('Update customer cart item error:', error);
-        return res.status(500).json({ message: 'Failed to update cart item' });
+
+        await auditCartAction(req, {
+            action: 'CUSTOMER_CART_ITEM_UPDATE_FAILED',
+            entityType: 'CartItem',
+            entityId: cartItemId,
+            description: `Failed to update cart item ${cartItemId} for customer ${customerId}`,
+            newValues: {
+                customer_id: customerId,
+                requested_quantity: Number(quantity)
+            }
+        });
+
+        return res.status(500).json({
+            message: 'Failed to update cart item'
+        });
     }
 }
 
 // REMOVE AN ITEM ONLY FROM THE CUSTOMER'S OWN ACTIVE CART
 async function removeItem(req, res) {
     const customerId = getCustomerId(req);
+    const cartItemId = req.params.id;
 
     if (!customerId) {
-        return res.status(401).json({ message: 'Customer authentication required' });
+        return res.status(401).json({
+            message: 'Customer authentication required'
+        });
     }
 
     try {
-        const deleted = await Cart.sequelize.transaction(async transaction => {
+        const result = await Cart.sequelize.transaction(async transaction => {
             const cartItem = await findOwnedActiveCartItem(
-                customerId, req.params.id, transaction
+                customerId,
+                cartItemId,
+                transaction
             );
 
-            if (!cartItem) return false;
+            if (!cartItem) {
+                return null;
+            }
+
+            const oldValues = getCartItemSnapshot(cartItem);
 
             await cartItem.destroy({ transaction });
-            return true;
+
+            return {
+                cartId: oldValues.cart_id,
+                cartItemId: oldValues.id,
+                oldValues
+            };
         });
 
-        if (!deleted) {
-            return res.status(404).json({ message: 'Cart item not found' });
+        if (!result) {
+            await auditCartAction(req, {
+                action: 'CUSTOMER_CART_ITEM_REMOVE_REJECTED',
+                entityType: 'CartItem',
+                entityId: cartItemId,
+                description: `Cart item ${cartItemId} was not found in customer ${customerId}'s active cart`,
+                newValues: {
+                    customer_id: customerId
+                }
+            });
+
+            return res.status(404).json({
+                message: 'Cart item not found'
+            });
         }
 
-        return res.status(200).json({ message: 'Item removed from cart successfully' });
+        await auditCartAction(req, {
+            action: 'CUSTOMER_CART_ITEM_REMOVED',
+            entityType: 'CartItem',
+            entityId: result.cartItemId,
+            description: `Customer ${customerId} removed cart item ${result.cartItemId}`,
+            oldValues: result.oldValues,
+            newValues: {
+                customer_id: customerId,
+                removed: true
+            }
+        });
+
+        return res.status(200).json({
+            message: 'Item removed from cart successfully'
+        });
     } catch (error) {
         console.error('Remove customer cart item error:', error);
-        return res.status(500).json({ message: 'Failed to remove cart item' });
+
+        await auditCartAction(req, {
+            action: 'CUSTOMER_CART_ITEM_REMOVE_FAILED',
+            entityType: 'CartItem',
+            entityId: cartItemId,
+            description: `Failed to remove cart item ${cartItemId} for customer ${customerId}`,
+            newValues: {
+                customer_id: customerId
+            }
+        });
+
+        return res.status(500).json({
+            message: 'Failed to remove cart item'
+        });
     }
 }
 

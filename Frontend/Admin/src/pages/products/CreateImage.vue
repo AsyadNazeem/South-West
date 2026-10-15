@@ -1,9 +1,11 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.css'
 import api from '../../api/axios'
+import Cropper from 'cropperjs'
+import 'cropperjs/dist/cropper.css'
 
 // ==========================================
 // Config
@@ -28,6 +30,15 @@ const router = useRouter()
 // Edit mode: route param is the product (item) id
 const isEditMode = computed(() => Boolean(route.params.id))
 const routeItemId = computed(() => route.params.id)
+
+// Image cropper
+const cropModalOpen = ref(false)
+const cropSourceUrl = ref('')
+const cropImage = ref(null)
+const currentCropFile = ref(null)
+const cropQueue = ref([])
+
+const cropperInstance = ref(null)
 
 // Files are served by the backend (e.g. http://localhost:5001/uploads/...).
 // If the API returns a relative URL, prefix it with the API origin.
@@ -119,7 +130,7 @@ const showError = async (message) => {
 
   await nextTick()
 
-  errorBox.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  errorBox.value?.scrollIntoView({behavior: 'smooth', block: 'center'})
 }
 
 const getVideoDuration = (file) =>
@@ -232,7 +243,7 @@ const setExistingMain = async (image) => {
   try {
     busyKey.value = `image-${image.id}`
 
-    await api.put(`${IMAGE_ENDPOINT}/${image.id}`, { is_primary: true })
+    await api.put(`${IMAGE_ENDPOINT}/${image.id}`, {is_primary: true})
 
     // A new image may have been picked as main — existing one wins now
     primaryImageId.value = null
@@ -297,17 +308,59 @@ const removeExistingVideo = async () => {
 // New images
 // ==========================================
 
-const handleImagesChange = (event) => {
+
+const destroyCropper = () => {
+  if (cropperInstance.value) {
+    cropperInstance.value.destroy()
+    cropperInstance.value = null
+  }
+}
+
+const openNextCrop = async () => {
+  destroyCropper()
+
+  if (cropSourceUrl.value) {
+    URL.revokeObjectURL(cropSourceUrl.value)
+    cropSourceUrl.value = ''
+  }
+
+  if (!cropQueue.value.length) {
+    cropModalOpen.value = false
+    currentCropFile.value = null
+    return
+  }
+
+  currentCropFile.value = cropQueue.value.shift()
+  cropSourceUrl.value = URL.createObjectURL(currentCropFile.value)
+  cropModalOpen.value = true
+
+  await nextTick()
+
+  if (!cropImage.value) return
+
+  cropperInstance.value = new Cropper(cropImage.value, {
+    aspectRatio: 1,
+    viewMode: 1,
+    autoCropArea: 1,
+    responsive: true,
+    background: false,
+    checkOrientation: true,
+    zoomable: true,
+    movable: true,
+    rotatable: true,
+    scalable: false
+  })
+}
+
+const handleImagesChange = async (event) => {
   const files = Array.from(event.target.files || [])
-
-  // Allow selecting the same file again later
   event.target.value = ''
-
   imageErrors.value = []
 
   if (!files.length) return
 
   const problems = []
+  const accepted = []
 
   for (const file of files) {
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
@@ -320,11 +373,14 @@ const handleImagesChange = (event) => {
       continue
     }
 
-    const duplicate = images.value.some(
-        image =>
-            image.file.name === file.name &&
-            image.file.size === file.size &&
-            image.file.lastModified === file.lastModified
+    const duplicate = [
+      ...images.value.map(image => image.file),
+      ...cropQueue.value,
+      ...accepted
+    ].some(existing =>
+        existing.name === file.name &&
+        existing.size === file.size &&
+        existing.lastModified === file.lastModified
     )
 
     if (duplicate) {
@@ -332,29 +388,99 @@ const handleImagesChange = (event) => {
       continue
     }
 
-    if (totalImageCount.value >= MAX_IMAGES) {
+    if (
+        totalImageCount.value + cropQueue.value.length + accepted.length
+        >= MAX_IMAGES
+    ) {
       problems.push(`You can upload a maximum of ${MAX_IMAGES} images.`)
       break
     }
 
-    images.value.push({
-      id: ++nextImageId,
-      file,
-      previewUrl: URL.createObjectURL(file)
-    })
-  }
-
-  // Auto-pick a main image only when the product has none yet
-  if (
-      !primaryImageId.value &&
-      images.value.length &&
-      existingImages.value.length === 0
-  ) {
-    primaryImageId.value = images.value[0].id
+    accepted.push(file)
   }
 
   imageErrors.value = problems
+  cropQueue.value.push(...accepted)
+
+  if (!cropModalOpen.value && accepted.length) {
+    await openNextCrop()
+  }
 }
+
+const saveCroppedImage = async () => {
+  if (!cropperInstance || !currentCropFile.value) return
+
+  try {
+    const canvas = cropperInstance.value.getCroppedCanvas({
+      width: 1200,
+      height: 1200,
+      imageSmoothingEnabled: true,
+      imageSmoothingQuality: 'high'
+    })
+
+    if (!canvas) {
+      imageErrors.value = ['Unable to crop this image. Please try another image.']
+      return
+    }
+
+    const blob = await new Promise(resolve => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.92)
+    })
+
+    if (!blob) {
+      imageErrors.value = ['Unable to process this image. Please try again.']
+      return
+    }
+
+    const original = currentCropFile.value
+    const croppedFile = new File(
+        [blob],
+        `${original.name.replace(/\.[^.]+$/, '')}-cropped.jpg`,
+        {
+          type: 'image/jpeg',
+          lastModified: Date.now()
+        }
+    )
+
+    const image = {
+      id: ++nextImageId,
+      file: croppedFile,
+      previewUrl: URL.createObjectURL(croppedFile)
+    }
+
+    images.value.push(image)
+
+    if (!primaryImageId.value && existingImages.value.length === 0) {
+      primaryImageId.value = image.id
+    }
+
+    destroyCropper()
+
+    if (cropSourceUrl.value) {
+      URL.revokeObjectURL(cropSourceUrl.value)
+      cropSourceUrl.value = ''
+    }
+
+    currentCropFile.value = null
+    await openNextCrop()
+  } catch (error) {
+    console.error('Image cropping failed:', error)
+    imageErrors.value = ['Image cropping failed. Please try again.']
+  }
+}
+
+const cancelCurrentCrop = async () => {
+  destroyCropper()
+
+  if (cropSourceUrl.value) {
+    URL.revokeObjectURL(cropSourceUrl.value)
+    cropSourceUrl.value = ''
+  }
+
+  currentCropFile.value = null
+  await openNextCrop()
+}
+
 
 const removeImage = (imageId) => {
   const image = images.value.find(item => item.id === imageId)
@@ -454,13 +580,6 @@ const submitForm = async () => {
       return
     }
 
-    if (isEditMode.value && !images.value.length && !video.value) {
-      await showError(
-          'Add a new image or video to save, or press Cancel to go back.'
-      )
-      return
-    }
-
     const itemId = selectedItem.value.id
     const altText = form.value.alt_text.trim()
     const sortOffset = existingImages.value.length
@@ -526,6 +645,12 @@ const goBack = () => {
 }
 
 onBeforeUnmount(() => {
+  destroyCropper()
+
+  if (cropSourceUrl.value) {
+    URL.revokeObjectURL(cropSourceUrl.value)
+  }
+
   images.value.forEach(image => URL.revokeObjectURL(image.previewUrl))
   clearVideo()
 })
@@ -976,6 +1101,55 @@ onBeforeUnmount(() => {
 
     </form>
 
+  </div>
+
+  <div v-if="cropModalOpen" class="crop-modal-overlay">
+    <section
+        class="crop-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="crop-modal-title"
+    >
+      <h2 id="crop-modal-title">Crop product image</h2>
+
+      <p class="crop-help">
+        Recommended size: 1200 × 1200 px.
+        Drag to position the image and zoom as needed.
+      </p>
+
+      <p v-if="currentCropFile" class="crop-filename">
+        {{ currentCropFile.name }}
+      </p>
+
+      <div class="crop-image-container">
+        <img
+            v-if="cropSourceUrl"
+            ref="cropImage"
+            :src="cropSourceUrl"
+            alt="Image to crop"
+        />
+      </div>
+
+      <div class="crop-actions">
+        <button
+            type="button"
+            class="btn-secondary"
+            :disabled="loading"
+            @click="cancelCurrentCrop"
+        >
+          Skip image
+        </button>
+
+        <button
+            type="button"
+            class="btn-primary"
+            :disabled="loading || !cropperInstance"
+            @click="saveCroppedImage"
+        >
+          Use cropped image
+        </button>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -1487,6 +1661,58 @@ onBeforeUnmount(() => {
 .btn-secondary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.crop-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 65%);
+}
+
+.crop-modal {
+  width: 100%;
+  max-width: 760px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.crop-modal h2 {
+  margin: 0 0 8px;
+}
+
+.crop-help,
+.crop-filename {
+  margin: 8px 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.crop-image-container {
+  width: 100%;
+  height: min(55vh, 500px);
+  margin: 16px 0;
+  background: #222;
+}
+
+.crop-image-container img {
+  display: block;
+  max-width: 100%;
+}
+
+.crop-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 /* =========================

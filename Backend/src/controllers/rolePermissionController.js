@@ -1,5 +1,6 @@
 
 'use strict';
+const { recordAuditLog } = require('../services/auditLogService');
 
 const {
     Role,
@@ -50,6 +51,12 @@ const updateRolePermissions = async (req, res) => {
         const { id } = req.params;
         const { permission_ids } = req.body;
 
+        if (!/^[1-9]\d*$/.test(id)) {
+            return res.status(400).json({
+                message: 'Invalid role ID'
+            });
+        }
+
         // Validate the request body.
         if (
             !Array.isArray(permission_ids) ||
@@ -81,13 +88,16 @@ const updateRolePermissions = async (req, res) => {
         }
 
         // Protect the system Admin role.
-        if (
-            typeof role.name === 'string' &&
-            role.name.trim().toLowerCase() === 'admin'
-        ) {
+        // Protect system administrator roles.
+        const normalizedRoleName = String(role.name || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ');
+
+        if (['admin', 'super admin'].includes(normalizedRoleName)) {
             return res.status(403).json({
-                message:
-                    'The system Admin role permissions cannot be changed through this endpoint'
+                message: 'Protected system role permissions cannot be changed'
             });
         }
 
@@ -120,37 +130,76 @@ const updateRolePermissions = async (req, res) => {
             });
         }
 
-        // Require an additional permission to grant sensitive privileges.
-        const sensitivePermissions = new Set([
-            'roles.manage',
-            'permissions.manage',
-            'permissions.privileged.manage',
-            'users.roles.manage',
-            'users.status.manage',
-            'users.password.reset',
-            'users.delete'
-        ]);
-
-        const grantsSensitivePermission = permissions.some(
-            permission => sensitivePermissions.has(permission.name)
+        const grantsPrivilegedPermission = permissions.some(
+            permission => permission.name === 'permissions.privileged.manage'
         );
 
-        if (
-            grantsSensitivePermission &&
-            !req.permissions?.has('permissions.privileged.manage')
-        ) {
+        if (grantsPrivilegedPermission) {
             return res.status(403).json({
-                message:
-                    'You are not authorized to grant sensitive permissions'
+                message: 'The privileged permission cannot be delegated to another role'
             });
         }
 
-        // Replace permissions atomically.
+// Fail closed if trusted permission middleware did not populate the Set.
+        if (!(req.permissions instanceof Set)) {
+            return res.status(403).json({
+                message: 'Unable to verify your permissions'
+            });
+        }
+
+        const unauthorizedPermissions = permissions.filter(
+            permission => !req.permissions.has(permission.name)
+        );
+
+        if (unauthorizedPermissions.length > 0) {
+            return res.status(403).json({
+                message: 'You cannot grant permissions you do not possess',
+                permissions: unauthorizedPermissions.map(
+                    permission => permission.name
+                )
+            });
+        }
+
+
+        // Replace permissions atomically and record the audit event.
         await sequelize.transaction(async transaction => {
+            const oldPermissions = await role.getPermissions({
+                transaction,
+                attributes: ['id', 'name']
+            });
+
+            const oldValues = oldPermissions
+                .map(permission => permission.name)
+                .sort();
+
+            const newValues = permissions
+                .map(permission => permission.name)
+                .sort();
+
             await role.setPermissions(permission_ids, {
                 transaction
             });
+
+            await recordAuditLog({
+                userId: req.user.id,
+                action: 'ROLE_PERMISSIONS_UPDATED',
+                module: 'roles',
+                entityType: 'role',
+                entityId: role.id,
+                description: `Permissions updated for role ${role.name}`,
+                oldValues: {
+                    permissions: oldValues
+                },
+                newValues: {
+                    permissions: newValues
+                },
+                ipAddress: req.ip || null,
+                userAgent: req.get('user-agent') || null,
+                requestId: req.id || null,
+                transaction
+            });
         });
+
 
         const updatedRole = await Role.findByPk(id, {
             attributes: ['id', 'name', 'description'],

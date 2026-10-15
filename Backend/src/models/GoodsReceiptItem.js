@@ -81,14 +81,23 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false
             }
         },
+
         {
             sequelize,
             modelName: 'GoodsReceiptItem',
             tableName: 'goods_receipt_items',
             timestamps: true,
             createdAt: 'created_at',
-            updatedAt: 'updated_at'
+            updatedAt: 'updated_at',
+            indexes: [
+                {
+                    name: 'goods_receipt_items_receipt_po_item_unique',
+                    unique: true,
+                    fields: ['goods_receipt_id', 'purchase_order_item_id']
+                }
+            ]
         }
+
     );
 
     return GoodsReceiptItem;

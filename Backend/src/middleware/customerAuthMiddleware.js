@@ -66,7 +66,11 @@ async function customerAuthMiddleware(req, res, next) {
             },
         });
 
-        if (!session || String(session.customer_id) !== String(decoded.customerId)) {
+        if (
+            !session ||
+            String(session.customer_id) !== String(decoded.customerId) ||
+            session.session_uuid !== decoded.sessionId
+        ) {
             return res.status(401).json({
                 message: 'Customer session is invalid or expired.',
             });

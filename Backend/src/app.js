@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+
 const sequelize = require("./config/database");
 const authRoutes = require("./routes/authRoutes");
 const customerRoutes = require("./routes/customerRoutes");
@@ -56,19 +57,35 @@ const warrantyRoutes = require('./routes/warrantyRoutes');
 const customerAuthRoutes = require("./routes/customerAuthRoutes");
 const customerCartRoutes = require('./routes/customerCartRoutes');
 const customerCheckoutRoutes = require('./routes/customerCheckoutRoutes');
+const customerOrderRoutes = require('./routes/customerOrderRoutes');
+const auditLogRoutes = require('./routes/auditLogRoutes');
 
+const customerSelfAddressRoutes = require('./routes/customerSelfAddressRoutes');
+const myNotificationRoutes = require('./routes/myNotificationRoutes');
+const myNotificationPreferenceRoutes = require('./routes/myNotificationPreferenceRoutes');
+const storeCategoryRoutes = require('./routes/storeCategoryRoutes');
+const storeProductRoutes = require('./routes/storeProductRoutes');
 
 const app = express();
 
 app.use(
     cors({
-        origin: 'http://localhost:5173',
+        origin: [
+            'http://localhost:5173',
+            'http://localhost:5174'
+        ],
+
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization']
     })
 )
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
+
+app.use((req, res, next) => {
+    console.log(`[REQUEST] ${req.method} ${req.url}`);
+    next();
+});
 
 // Routes
 app.get("/", (req, res) => {
@@ -132,11 +149,21 @@ app.use('/api/warranties', warrantyRoutes);
 app.use("/api/customer-auth", customerAuthRoutes);
 app.use('/api/customer-cart', customerCartRoutes);
 app.use('/api/customer-checkout', customerCheckoutRoutes);
+app.use('/api/customer-orders', customerOrderRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/item-videos', require('./routes/itemVideoRoutes'));
 
+app.use('/api/customer/addresses', customerSelfAddressRoutes);
+app.use('/api/my/notifications', myNotificationRoutes);
+app.use('/api/my/notification-preferences', myNotificationPreferenceRoutes);
+app.use('/api/store/categories', storeCategoryRoutes);
+app.use('/api/store/products', storeProductRoutes);
+
 const PORT = process.env.PORT || 5001;
+
+
 
 async function startServer() {
     try {
@@ -154,6 +181,9 @@ async function startServer() {
 }
 
 startServer();
+
+
+
 
 // curl -X POST http://localhost:5001/api/auth/login \
 //     -H "Content-Type: application/json" \
@@ -190,9 +220,20 @@ startServer();
 // }'
 
 
+
 // curl -i -X POST http://localhost:5001/api/customer-auth/login \
 //     -H "Content-Type: application/json" \
 //   -d '{
 // "identifier": "asyad.test001@example.com",
 //     "password": "SouthWestTest@2026"
+// }'
+
+// curl -i -X POST http://localhost:5001/api/customer-auth/register \
+//     -H "Content-Type: application/json" \
+//   -d '{
+// "first_name": "Cart",
+//     "last_name": "SecurityTest",
+//     "email": "test@gmail.com",
+//     "phone": "0778276627",
+//     "password": "Test@123"
 // }'

@@ -702,12 +702,16 @@ router.beforeEach(async (to) => {
     if (to.name === 'Login' && token) {
         try {
             await ensureAuthorization()
-            return { name: 'Dashboard' }
+
+            if (hasPermission('dashboard.view')) {
+                return { name: 'Dashboard' }
+            }
+
+            return { name: 'AccessDenied' }
         } catch {
             clearAuthentication()
         }
     }
-
     return true
 })
 

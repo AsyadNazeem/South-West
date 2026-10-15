@@ -42,6 +42,12 @@ module.exports = (sequelize) => {
                 type: DataTypes.STRING(500),
                 allowNull: true,
             },
+
+            session_uuid: {
+                type: DataTypes.UUID,
+                allowNull: false,
+                unique: true,
+            },
         },
         {
             tableName: 'customer_sessions',

@@ -6,6 +6,7 @@ const {
     InventoryLocation,
     User
 } = require('../models');
+const { recordAuditLog } = require('../services/auditLogService');
 
 
 // GET ALL STOCK MOVEMENTS
@@ -124,11 +125,11 @@ const getInventoryStockMovementById = async (req, res) => {
 
 
 // CREATE STOCK MOVEMENT
-// CREATE STOCK MOVEMENT
 const createInventoryStockMovement = async (req, res) => {
-    const transaction = await sequelize.transaction();
+    let transaction;
 
     try {
+        transaction = await sequelize.transaction();
         const {
             item_id,
             location_id,
@@ -140,7 +141,9 @@ const createInventoryStockMovement = async (req, res) => {
         } = req.body;
 
         // Check item
-        const item = await Item.findByPk(item_id);
+        const item = await Item.findByPk(item_id, {
+            transaction
+        });
 
         if (!item) {
             await transaction.rollback();
@@ -151,7 +154,10 @@ const createInventoryStockMovement = async (req, res) => {
         }
 
         // Check location
-        const location = await InventoryLocation.findByPk(location_id);
+        const location = await InventoryLocation.findByPk(location_id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
         if (!location) {
             await transaction.rollback();
@@ -161,24 +167,23 @@ const createInventoryStockMovement = async (req, res) => {
             });
         }
 
-        // Validate quantity
-        if (quantity === undefined || quantity === null) {
+        if (
+            quantity === undefined ||
+            quantity === null ||
+            quantity === '' ||
+            !Number.isFinite(Number(quantity)) ||
+            Number(quantity) <= 0
+        ) {
             await transaction.rollback();
 
             return res.status(400).json({
-                message: 'Quantity is required'
+                message: 'Quantity must be a positive number'
             });
         }
 
-        if (Number(quantity) <= 0) {
-            await transaction.rollback();
-
-            return res.status(400).json({
-                message: 'Quantity must be greater than zero'
-            });
-        }
 
         // Validate movement type
+
         const validMovementTypes = [
             'purchase',
             'sale',
@@ -197,35 +202,7 @@ const createInventoryStockMovement = async (req, res) => {
             });
         }
 
-        // Find existing stock record
-        let stock = await InventoryStock.findOne({
-            where: {
-                item_id,
-                location_id
-            },
-            transaction,
-            lock: transaction.LOCK.UPDATE
-        });
 
-        // Create stock record if it does not exist
-        if (!stock) {
-            stock = await InventoryStock.create(
-                {
-                    item_id,
-                    location_id,
-                    quantity_on_hand: 0,
-                    quantity_reserved: 0,
-                    reorder_level: 0,
-                    reorder_quantity: 0,
-                    is_active: true
-                },
-                {
-                    transaction
-                }
-            );
-        }
-
-        // Calculate stock quantity change
         let quantityChange = 0;
 
         switch (movement_type) {
@@ -241,14 +218,37 @@ const createInventoryStockMovement = async (req, res) => {
                 quantityChange = -Number(quantity);
                 break;
 
-            case 'adjustment_in':
-                quantityChange = Number(quantity);
-                break;
+            case 'adjustment':
+                await transaction.rollback();
 
-            case 'adjustment_out':
-                quantityChange = -Number(quantity);
-                break;
+                return res.status(400).json({
+                    message: 'Use a dedicated stock adjustment flow to specify the adjustment direction'
+                });
         }
+
+        // Find and lock the stock record
+        let stock = await InventoryStock.findOne({
+            where: {
+                item_id,
+                location_id
+            },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        if (!stock) {
+            stock = await InventoryStock.create(
+                {
+                    item_id,
+                    location_id,
+                    quantity_on_hand: 0,
+                    quantity_reserved: 0
+                },
+                { transaction }
+            );
+        }
+
+        const previousQuantity = Number(stock.quantity_on_hand);
 
         // Prevent negative stock
         const newQuantity =
@@ -289,6 +289,33 @@ const createInventoryStockMovement = async (req, res) => {
                 transaction
             }
         );
+
+
+        await recordAuditLog({
+            userId: req.user
+                ? (req.user.id ?? req.user.userId)
+                : null,
+            action: 'INVENTORY_STOCK_MOVEMENT_CREATED',
+            module: 'inventory',
+            entityType: 'inventory_stock_movement',
+            entityId: movement.id,
+            description: `Stock movement ${movement_type} recorded for item ${item_id} at location ${location_id}`,
+            oldValues: {
+                quantity_on_hand: previousQuantity
+            },
+            newValues: {
+                quantity_on_hand: newQuantity,
+                movement_type,
+                quantity: Number(quantity),
+                reference_type: reference_type ?? null,
+                reference_id: reference_id ?? null
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
+        });
+
 
         // Commit transaction
         await transaction.commit();
@@ -343,7 +370,9 @@ const createInventoryStockMovement = async (req, res) => {
         });
 
     } catch (error) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
 
         console.error(
             'Create inventory stock movement error:',
