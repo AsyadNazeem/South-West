@@ -86,6 +86,7 @@ const loadLocation = async () => {
 |--------------------------------------------------------------------------
 */
 
+
 const submitForm = async () => {
   loading.value = true
   errorMessage.value = ''
@@ -94,30 +95,34 @@ const submitForm = async () => {
     const code = form.value.code.trim().toUpperCase()
     const name = form.value.name.trim()
 
-    if (!code) {
-      errorMessage.value = 'Location code is required.'
-      return
-    }
-
     if (!name) {
       errorMessage.value = 'Location name is required.'
       return
     }
 
+    if (isEditMode.value && !code) {
+      errorMessage.value = 'Location code is required.'
+      return
+    }
+
     const payload = {
-      code,
       name,
       location_type: form.value.location_type,
       address: form.value.address.trim() || null
     }
 
     if (isEditMode.value) {
+      payload.code = code
       payload.is_active = form.value.is_active
 
-      await api.put(`/inventory-locations/${locationId.value}`, payload)
+      await api.put(
+        `/inventory-locations/${locationId.value}`,
+        payload
+      )
 
       alert('Inventory location updated successfully.')
     } else {
+      // The backend generates the location code.
       await api.post('/inventory-locations', payload)
 
       alert('Inventory location created successfully.')
@@ -126,24 +131,25 @@ const submitForm = async () => {
     router.push(LIST_ROUTE)
   } catch (error) {
     console.error(
-        isEditMode.value
-            ? 'Failed to update inventory location:'
-            : 'Failed to create inventory location:',
-        error
+      isEditMode.value
+        ? 'Failed to update inventory location:'
+        : 'Failed to create inventory location:',
+      error
     )
 
     errorMessage.value =
-        error.response?.data?.message ||
-        error.message ||
-        (
-            isEditMode.value
-                ? 'Failed to update inventory location.'
-                : 'Failed to create inventory location.'
-        )
+      error.response?.data?.message ||
+      error.message ||
+      (
+        isEditMode.value
+          ? 'Failed to update inventory location.'
+          : 'Failed to create inventory location.'
+      )
   } finally {
     loading.value = false
   }
 }
+
 
 /*
 |--------------------------------------------------------------------------
@@ -259,19 +265,25 @@ watch(locationId, (id) => {
               <span>*</span>
             </label>
 
-            <input
-                id="code"
-                v-model="form.code"
-                type="text"
-                placeholder="e.g. WH-MAIN"
-                maxlength="50"
-                required
-                :disabled="loading"
-            />
+          
+<input
+  id="code"
+  v-model="form.code"
+  type="text"
+  :placeholder="isEditMode ? 'Location code' : 'Generated automatically'"
+  maxlength="50"
+  :required="isEditMode"
+  :disabled="loading || !isEditMode"
+/>
 
-            <small>
-              A unique code used to identify this location.
-            </small>
+<small>
+  {{
+    isEditMode
+      ? 'The existing location code is preserved when editing.'
+      : 'A unique location code will be generated automatically.'
+  }}
+</small>
+
 
           </div>
 

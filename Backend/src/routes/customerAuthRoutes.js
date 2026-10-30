@@ -6,7 +6,14 @@ const router = express.Router();
 const customerAuthController = require('../controllers/customerAuthController');
 const customerPasswordSetupController = require('../controllers/customerPasswordSetupController');
 const customerAuthMiddleware = require('../middleware/customerAuthMiddleware');
+const customerGoogleAuthController =
+    require('../controllers/customerGoogleAuthController');
 
+
+const customerPasswordChangeController =
+    require('../controllers/customerPasswordChangeController');
+
+    
 const {
     customerLoginLimiter,
     customerRegistrationLimiter,
@@ -14,6 +21,8 @@ const {
     customerActivationLimiter,
     customerPasswordSetupValidationLimiter,
     customerPasswordSetupLimiter,
+    customerPasswordChangeCodeLimiter,
+    customerPasswordChangeLimiter,
 } = require('../middleware/customerAuthRateLimit');
 
 // Public authentication endpoints
@@ -65,6 +74,34 @@ router.get(
     '/me',
     customerAuthMiddleware,
     customerAuthController.me
+);
+
+
+router.post(
+    '/password-change/request-code',
+    customerAuthMiddleware,
+    customerPasswordChangeCodeLimiter,
+    customerPasswordChangeController.requestCode
+);
+
+router.post(
+    '/password-change/confirm',
+    customerAuthMiddleware,
+    customerPasswordChangeLimiter,
+    customerPasswordChangeController.changePassword
+);
+
+
+router.get('/google', customerGoogleAuthController.start);
+
+router.get(
+    '/google/callback',
+    customerGoogleAuthController.callback
+);
+
+router.post(
+    '/google/exchange',
+    customerGoogleAuthController.exchange
 );
 
 module.exports = router;

@@ -25,12 +25,12 @@ const updatePaymentStatus = async (req, res) => {
             });
         }
 
-        if (!allowedStatuses.includes(payment_status)) {
-            return res.status(400).json({
-                message: 'Invalid payment status',
-                allowed_statuses: allowedStatuses
-            });
-        }
+        // This generic handler must not directly change payment status.
+        // Use a dedicated, authorized workflow for collection, gateway
+        // confirmation, or refunds.
+        return res.status(400).json({
+            message: 'Direct payment status changes are disabled'
+        });
 
         transaction = await Payment.sequelize.transaction();
 
@@ -257,15 +257,13 @@ const createPayment = async (req, res) => {
             });
         }
 
-        if (
-            payment_status !== undefined &&
-            !allowedStatuses.includes(payment_status)
-        ) {
-            return res.status(400).json({
-                message: 'Invalid payment status',
-                allowed_statuses: allowedStatuses
-            });
-        }
+   // Payment status is server-controlled.
+// Clients cannot create a payment as paid or refunded.
+if (payment_status !== undefined) {
+    return res.status(400).json({
+        message: 'Payment status cannot be set when creating a payment'
+    });
+}
 
         transaction = await Payment.sequelize.transaction();
 
@@ -388,14 +386,14 @@ const updatePayment = async (req, res) => {
             });
         }
 
-        const allowedFields = [
-            'payment_method',
-            'payment_status',
-            'amount',
-            'transaction_reference',
-            'payment_date',
-            'notes'
-        ];
+       // Payment status and amount must not be changed through
+// the general payment-edit endpoint.
+const allowedFields = [
+    'payment_method',
+    'transaction_reference',
+    'payment_date',
+    'notes'
+];
 
         const receivedFields = Object.keys(req.body || {});
         const unsupportedFields = receivedFields.filter(

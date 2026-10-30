@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Login from '../pages/auth/Login.vue'
 import AccessDenied from '../pages/auth/AccessDenied.vue'
 import Dashboard from '../pages/dashboard/Dashboard.vue'
+import Reports from '../pages/reports/Reports.vue'
 import AdminLayout from '../components/layout/AdminLayout.vue'
 import Customer from '../pages/customers/CustomerList.vue'
 import Address from '../pages/customers/CustomerAddresses.vue'
@@ -12,6 +13,8 @@ import CustomerAddressCreate from '../pages/customers/CustomerAddressCreate.vue'
 import CustomerView from '../pages/customers/CustomerView.vue'
 import Items from '../pages/products/ItemList.vue'
 import ItemCreate from '../pages/products/ItemCreate.vue'
+import ItemVariants from "../pages/products/ItemVariants.vue"
+import ItemVariantsCreate from "../pages/products/CreateItemVariants.vue"
 import ItemView from '../pages/products/ItemView.vue'
 import ProductCategoryCreate from '../pages/products/ProductCategoryCreate.vue'
 import ProductCategory from '../pages/products/ProductCategory.vue'
@@ -49,13 +52,9 @@ import CreatePurchaseOrder from '../pages/purchasing/CreatePurchaseOrder.vue'
 import Suppliers from '../pages/purchasing/Suppliers.vue'
 import CreateSuppliers from '../pages/purchasing/CreateSuppliers.vue'
 import Orders from '../pages/sales/Orders.vue'
-import CreateOrders from '../pages/sales/CreateOrders.vue'
 import Payment from '../pages/sales/Payment.vue'
-import CreatePayment from '../pages/sales/CreatePayment.vue'
 import Invoice from '../pages/sales/Invoice.vue'
-import CreateInvoices from '../pages/sales/CreateInvoices.vue'
 import Deliveries from '../pages/sales/Deliveries.vue'
-import CreateDeliveries from '../pages/sales/CreateDeliveries.vue'
 import DeliveryCharges from '../pages/sales/DeliveryCharges.vue'
 import CreateDeliveryCharges from '../pages/sales/CreateDeliveryCharges.vue'
 import Promotions from '../pages/marketing/Promotions.vue'
@@ -64,6 +63,11 @@ import PromotionCategories from '../pages/marketing/PromotionCategories.vue'
 import CreatePromotionCategories from '../pages/marketing/CreatePromotionCategories.vue'
 import PromotionItems from '../pages/marketing/PromotionItems.vue'
 import CreatePromotionItems from '../pages/marketing/CreatePromotionItems.vue'
+import HomepageBanners from '../pages/marketing/HomepageBanners.vue'
+import DiscountCampaigns from '../pages/marketing/DiscountCampaigns.vue'
+import CreateHomePage from '../pages/marketing/CreateHomepageBanners.vue'
+import CreateDiscountCampaigns from '../pages/marketing/DiscountCampaignForm.vue'
+import AuditLog from '../pages/administration/AuditLog.vue'
 
 import {
     clearAuthentication,
@@ -96,6 +100,12 @@ const routes = [
                 name: 'Dashboard',
                 component: Dashboard,
                 meta: { permission: 'dashboard.view' }
+            },
+            {
+                path: 'reports',
+                name: 'Reports',
+                component: Reports,
+                meta: { permission: 'reports.view' }
             },
             {
                 path: 'access-denied',
@@ -179,6 +189,21 @@ const routes = [
                 component: ItemCreate,
                 meta: { permission: 'products.update' }
             },
+            {   path: "products/item-variants", 
+                name: 'item-variants',
+                component: ItemVariants, 
+                meta: { permission: 'products.view'} 
+            },
+            {   path: "products/item-variants/create", 
+                name: 'variants-create',
+                component: ItemVariantsCreate, 
+                meta: { permission: 'products.create'} 
+            },
+            {   path: "products/item-variants/edit/:id", 
+                name: 'variants-edit',
+                component: ItemVariantsCreate, 
+                meta: { permission: 'products.update'} 
+            },
             {
                 path: 'products/categories',
                 name: 'product-category',
@@ -254,6 +279,12 @@ const routes = [
             {
                 path: 'products/item-prices/edit/:id',
                 name: 'price-edit',
+                component: CreatePrice,
+                meta: { permission: 'products.update' }
+            },
+            {
+                path: 'products/item-prices/edit-all/:itemId',
+                name: 'price-edit-all',
                 component: CreatePrice,
                 meta: { permission: 'products.update' }
             },
@@ -378,12 +409,25 @@ const routes = [
                     ]
                 }
             },
-            {
-                path: 'administration/user-sessions',
-                name: 'user-sessions',
-                component: UserSession,
-                meta: { permission: 'user_sessions.view' }
-            },
+{
+    path: 'administration/user-sessions',
+    name: 'user-sessions',
+    component: UserSession,
+    meta: { permission: 'user_sessions.view' }
+},
+{
+    path: 'administration/users/:userId/sessions',
+    name: 'user-sessions-by-user',
+    component: UserSession,
+    meta: { permission: 'user_sessions.view' }
+},
+
+{
+    path: 'administration/audit-log',
+    name: 'audit-logs',
+    component: AuditLog,
+    meta: { permission: 'audit_logs.view' }
+},
 
 
             // Inventory Management Routes
@@ -423,6 +467,11 @@ const routes = [
                 component: CreateInventoryStock,
                 meta: { permission: 'inventory.update' }
             },
+
+            {
+    path: 'inventory/stock/edit-item/:itemId',
+    component: CreateInventoryStock,
+},
             {
                 path: 'inventory/movements',
                 name: 'stock-movement',
@@ -507,34 +556,10 @@ const routes = [
                 meta: { permission: 'orders.view' }
             },
             {
-                path: 'sales/orders/create',
-                name: 'create-orders',
-                component: CreateOrders,
-                meta: { permission: 'orders.create' }
-            },
-            {
-                path: 'sales/orders/edit/:id',
-                name: 'edit-orders',
-                component: CreateOrders,
-                meta: { permission: 'orders.update' }
-            },
-            {
                 path: 'sales/payments',
                 name: 'Payment',
                 component: Payment,
                 meta: { permission: 'payments.view' }
-            },
-            {
-                path: 'sales/payments/create',
-                name: 'CreatePayment',
-                component: CreatePayment,
-                meta: { permission: 'payments.create' }
-            },
-            {
-                path: 'sales/payments/edit/:id',
-                name: 'EditPayment',
-                component: CreatePayment,
-                meta: { permission: 'payments.update' }
             },
             {
                 path: 'sales/invoices',
@@ -543,36 +568,11 @@ const routes = [
                 meta: { permission: 'invoices.view' }
             },
             {
-                path: 'sales/invoices/create',
-                name: 'CreateInvoices',
-                component: CreateInvoices,
-                meta: { permission: 'invoices.create' }
-            },
-            {
-                path: 'sales/invoices/edit/:id',
-                name: 'EditInvoices',
-                component: CreateInvoices,
-                meta: { permission: 'invoices.update' }
-            },
-            {
                 path: 'sales/deliveries',
                 name: 'Deliveries',
                 component: Deliveries,
                 meta: { permission: 'deliveries.view' }
             },
-            {
-                path: 'sales/deliveries/create',
-                name: 'CreateDeliveries',
-                component: CreateDeliveries,
-                meta: { permission: 'deliveries.create' }
-            },
-            {
-                path: 'sales/deliveries/edit/:id',
-                name: 'EditInvoices',
-                component: CreateDeliveries,
-                meta: { permission: 'deliveries.update' }
-            },
-
             {
                 path: 'sales/delivery-chargers',
                 name: 'DeliveryCharges',
@@ -650,6 +650,44 @@ const routes = [
                 component: CreatePromotionItems,
                 meta: { permission: 'promotion_items.update' }
             },
+
+            {
+    path: 'marketing/homepage-banners',
+    name: 'HomepageBanners',
+    component: HomepageBanners,
+    meta: { permission: 'homepage_banners.view' }
+},
+{
+    path: 'marketing/homepage-banners/create',
+    name: 'CreateHomepageBanner',
+    component: CreateHomePage,
+    meta: { permission: 'homepage_banners.create' }
+},
+{
+    path: 'marketing/homepage-banners/edit/:id',
+    name: 'EditHomepageBanner',
+    component: CreateHomePage,
+    meta: { permission: 'homepage_banners.update' }
+},
+{
+    path: 'marketing/discount-campaigns',
+    name: 'DiscountCampaigns',
+    component: DiscountCampaigns,
+    meta: { permission: 'discount_campaigns.view' }
+},
+{
+    path: 'marketing/discount-campaigns/create',
+    name: 'CreateDiscountCampaigns',
+    component: CreateDiscountCampaigns,
+    meta: { permission: 'discount_campaigns.create' }
+},
+{
+    path: 'marketing/discount-campaigns/edit/:id',
+    name: 'EditDiscountCampaign',
+    component: CreateDiscountCampaigns,
+    meta: { permission: 'discount_campaigns.update' }
+}
+
 
         ]
     }

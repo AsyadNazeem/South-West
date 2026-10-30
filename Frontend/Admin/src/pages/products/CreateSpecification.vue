@@ -17,6 +17,8 @@ const form = ref({
   code: '',
   data_type: 'text',
   unit: '',
+  options: [],
+  optionsText: '',
   description: '',
   is_required: false,
   is_active: true
@@ -49,6 +51,8 @@ const loadSpecification = async () => {
       code: specification.code || '',
       data_type: specification.data_type || 'text',
       unit: specification.unit || '',
+      options: Array.isArray(specification.options) ? specification.options : [],
+      optionsText: Array.isArray(specification.options) ? specification.options.join('\n') : '',
       description: specification.description || '',
       is_required: Boolean(specification.is_required),
       is_active: Boolean(specification.is_active)
@@ -81,21 +85,26 @@ const submitForm = async () => {
       return
     }
 
-    if (!form.value.code.trim()) {
-      errorMessage.value = 'Specification code is required.'
-      return
-    }
 
     if (!form.value.data_type) {
       errorMessage.value = 'Data type is required.'
       return
     }
 
+    const options = form.value.data_type === 'select'
+      ? [...new Set(form.value.optionsText.split(/\r?\n/).map(option => option.trim()).filter(Boolean))]
+      : []
+
+    if (form.value.data_type === 'select' && options.length === 0) {
+      errorMessage.value = 'Enter at least one predefined option for Select data type.'
+      return
+    }
+
     const payload = {
       name: form.value.name.trim(),
-      code: form.value.code.trim().toUpperCase(),
       data_type: form.value.data_type,
       unit: form.value.unit.trim() || null,
+      options,
       description: form.value.description.trim() || null,
       is_required: form.value.is_required,
       is_active: form.value.is_active
@@ -251,19 +260,20 @@ onMounted(async () => {
               <span>*</span>
             </label>
 
-            <input
-                id="code"
-                v-model="form.code"
-                type="text"
-                placeholder="e.g. RAM"
-                maxlength="50"
-                :disabled="loading"
-                required
-            />
+          <input
+  id="code"
+  v-model="form.code"
+  type="text"
+  placeholder="Generated automatically"
+  maxlength="50"
+  disabled
+/>
 
-            <small>
-              A unique code used to identify this specification.
-            </small>
+<small>
+  {{ isEditMode
+    ? 'Automatically generated code; it cannot be changed.'
+    : 'The code will be generated automatically when you save.' }}
+</small>
 
           </div>
 
@@ -306,6 +316,23 @@ onMounted(async () => {
               </option>
             </select>
 
+          </div>
+
+          <!-- Predefined options for Select -->
+          <div v-if="form.data_type === 'select'" class="form-group full-width">
+            <label for="specification_options">
+              Predefined Options <span>*</span>
+            </label>
+            <textarea
+              id="specification_options"
+              v-model="form.optionsText"
+              rows="5"
+              maxlength="10000"
+              placeholder="Enter one option per line, e.g.\n8GB\n16GB\n32GB"
+              :disabled="loading"
+              required
+            ></textarea>
+            <small>Enter one option per line. These values appear in a dropdown when creating or editing variants.</small>
           </div>
 
           <!-- Unit -->

@@ -1,17 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 
 import invoiceApi from '../../api/invoiceApi'
 import { hasPermission } from '../../auth/authorization.js'
-
-const router = useRouter()
 
 // ==========================================
 // Routes
 // ==========================================
 
-const CREATE_ROUTE = '/admin/sales/invoices/create'
 const DETAIL_ROUTE = '/admin/sales/invoices'
 
 // ==========================================
@@ -32,17 +28,6 @@ const deletingId = ref(null)
 // Permissions
 // ==========================================
 
-const canCreate = computed(() =>
-    hasPermission('invoices.create')
-)
-
-const canUpdate = computed(() =>
-    hasPermission('invoices.update')
-)
-
-const canDelete = computed(() =>
-    hasPermission('invoices.delete')
-)
 
 // ==========================================
 // Load Invoices
@@ -136,44 +121,6 @@ const viewInvoice = (id) => {
 
 const editInvoice = (id) => {
   router.push(`${DETAIL_ROUTE}/${id}/edit`)
-}
-
-// ==========================================
-// Delete Invoice
-// ==========================================
-
-const deleteInvoice = async (id) => {
-  const confirmed = confirm(
-      'Are you sure you want to delete this invoice?'
-  )
-
-  if (!confirmed) {
-    return
-  }
-
-  deletingId.value = id
-
-  try {
-    await invoiceApi.deleteInvoice(id)
-
-    invoices.value = invoices.value.filter(
-        invoice => invoice.id !== id
-    )
-
-  } catch (error) {
-    console.error(
-        'Failed to delete invoice:',
-        error
-    )
-
-    errorMessage.value =
-        error?.response?.data?.message ||
-        error?.message ||
-        'Failed to delete invoice.'
-
-  } finally {
-    deletingId.value = null
-  }
 }
 
 // ==========================================
@@ -319,16 +266,6 @@ onMounted(() => {
           Manage customer invoices and payment balances.
         </p>
       </div>
-
-      <button
-          v-if="canCreate"
-          type="button"
-          class="btn-primary"
-          @click="goToCreate"
-      >
-        + Create Invoice
-      </button>
-
     </div>
 
 
@@ -727,35 +664,6 @@ onMounted(() => {
                   @click="viewInvoice(invoice.id)"
               >
                 View
-              </button>
-
-
-              <button
-                  v-if="canUpdate"
-                  type="button"
-                  class="action-button edit"
-                  @click="editInvoice(invoice.id)"
-              >
-                Edit
-              </button>
-
-
-              <button
-                  v-if="canDelete"
-                  type="button"
-                  class="action-button delete"
-                  :disabled="
-                                        deletingId === invoice.id
-                                    "
-                  @click="
-                                        deleteInvoice(invoice.id)
-                                    "
-              >
-                {{
-                  deletingId === invoice.id
-                      ? 'Deleting...'
-                      : 'Delete'
-                }}
               </button>
 
             </div>

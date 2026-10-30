@@ -14,11 +14,15 @@ import PersonalInformation from '../pages/account/PersonalInformation.vue'
 import AddressBook from '../pages/account/AddressBook.vue'
 import ChangePassword from '../pages/account/ChangePassword.vue'
 import MyOrders from '../pages/account/MyOrders.vue'
+import Notifications from '../pages/account/Notifications.vue'
 import Wishlist from '../pages/account/Wishlist.vue'
 import MyReviews from '../pages/account/MyReviews.vue'
 import ReturnsCancellations from '../pages/account/ReturnsCancellations.vue'
 import ProductDetails from '../pages/ProductDetails.vue'
 import Cart from '../pages/Cart.vue'
+import Checkout from '../pages/Checkout.vue'
+
+import GoogleCallback from '../pages/auth/GoogleCallback.vue'
 
 
 const routes = [
@@ -27,22 +31,33 @@ const routes = [
         name: 'home',
         component: Home,
     },
-    {
-        path: '/product/:id',
-        name: 'product-details',
-        component: ProductDetails,
-        props: true,
-    },
+{
+    path: '/product/:productSlug',
+    name: 'product-details',
+    component: ProductDetails,
+    props: true,
+},
     {
         path: '/cart',
         name: 'customer-cart',
         component: Cart,
     },
     {
+path: '/checkout/:token?',
+    name: 'customer-checkout',
+    component: Checkout,
+    meta: { requiresCustomerAuth: true },
+},
+    {
         path: '/login',
         name: 'customer-login',
         component: Login,
     },
+    {
+    path: '/auth/google/callback',
+    name: 'customer-google-callback',
+    component: GoogleCallback,
+},
     {
         path: '/register',
         name: 'customer-register',
@@ -84,6 +99,10 @@ const routes = [
             {
                 path: 'orders',
                 component: MyOrders,
+            },
+            {
+                path: 'notifications',
+                component: Notifications,
             },
             {
                 path: 'wishlist',

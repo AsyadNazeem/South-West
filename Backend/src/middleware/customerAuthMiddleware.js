@@ -107,4 +107,5 @@ async function customerAuthMiddleware(req, res, next) {
     }
 }
 
+
 module.exports = customerAuthMiddleware;

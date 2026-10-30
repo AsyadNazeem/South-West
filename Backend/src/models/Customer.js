@@ -38,8 +38,14 @@ module.exports = (sequelize) => {
 
             phone: {
                 type: DataTypes.STRING(30),
-                allowNull: false,
+                allowNull: true,
             },
+
+google_id: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    unique: true,
+},
 
             is_active: {
                 type: DataTypes.BOOLEAN,

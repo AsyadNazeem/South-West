@@ -15,6 +15,10 @@ const MOVEMENT_BASE = '/admin/inventory/movements'
 const router = useRouter()
 const route = useRoute()
 
+const itemVariants = ref([])
+const selectedVariant = ref(null)
+const variantsLoading = ref(false)
+
 // ==========================================
 // Mode
 // ==========================================
@@ -162,6 +166,35 @@ const loadMovement = async () => {
   }
 }
 
+const loadItemVariants = async (itemId) => {
+  itemVariants.value = []
+  selectedVariant.value = null
+
+  if (!itemId) return
+
+  try {
+    variantsLoading.value = true
+
+    const response = await api.get(`/items/${itemId}/variants`)
+    itemVariants.value = (response.data.data || []).filter(
+      variant => variant.is_active
+    )
+
+    selectedVariant.value =
+      itemVariants.value.find(variant => variant.is_default) ||
+      itemVariants.value[0] ||
+      null
+  } catch (error) {
+    console.error('Failed to load item variants:', error)
+    errorMessage.value =
+      error.response?.data?.message || 'Failed to load item variants.'
+  } finally {
+    variantsLoading.value = false
+  }
+}
+
+const onItemChange = (item) => loadItemVariants(item?.id)
+
 // Fills the form from an existing movement (edit mode)
 const applyMovement = (movement) => {
   selectedItem.value =
@@ -258,12 +291,18 @@ const submitForm = async () => {
       return
     }
 
+    if (!selectedVariant.value) {
+  errorMessage.value = 'Please select an item variant.'
+  return
+}
+
     const referenceId = form.value.reference_id.trim()
 
     const payload = {
       item_id: Number(selectedItem.value.id),
       location_id: Number(selectedLocation.value.id),
       movement_type: form.value.movement_type,
+      variant_id: Number(selectedVariant.value.id),
       quantity,
       reference_type: form.value.reference_type.trim() || null,
       reference_id: referenceId
@@ -383,6 +422,7 @@ const goBack = () => {
                 :show-labels="false"
                 :disabled="loading"
                 placeholder="Search by item code or name..."
+                @select="onItemChange"
             >
               <template #noResult>
                 No items found.
@@ -392,6 +432,26 @@ const goBack = () => {
                 No items available.
               </template>
             </Multiselect>
+
+            <div class="form-group">
+  <label for="variant">Variant <span>*</span></label>
+
+  <Multiselect
+    id="variant"
+    v-model="selectedVariant"
+    :options="itemVariants"
+    label="variant_sku"
+    track-by="id"
+    :loading="variantsLoading"
+    :disabled="loading || !selectedItem"
+    :show-labels="false"
+    placeholder="Select a variant..."
+  >
+    <template #noOptions>
+      Select an item to load its variants.
+    </template>
+  </Multiselect>
+</div>
           </div>
 
           <!-- Location -->

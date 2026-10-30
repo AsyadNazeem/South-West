@@ -1,6 +1,11 @@
+const { Op, QueryTypes } = require('sequelize');
 
-const { Op } = require('sequelize');
-const { Category, Item, PromotionCategory } = require('../models');
+const {
+    sequelize,
+    Category,
+    Item,
+    PromotionCategory
+} = require('../models');
 
 const MAX_CATEGORY_ID = '18446744073709551615';
 
@@ -69,7 +74,11 @@ function validateActive(value) {
     return (
         typeof value === 'boolean' ||
         value === 0 ||
-        value === 1
+        value === 1 ||
+        value === 'true' ||
+        value === 'false' ||
+        value === '0' ||
+        value === '1'
     );
 }
 
@@ -276,6 +285,7 @@ const getCategoryById = async (req, res) => {
 };
 
 // CREATE CATEGORY
+
 const createCategory = async (req, res) => {
     try {
         if (!isPlainObject(req.body)) {
@@ -285,28 +295,35 @@ const createCategory = async (req, res) => {
             );
         }
 
-        const { name, code, description, parent_id } = req.body;
+        const { name, description, parent_id } = req.body;
 
-        const allowedFields = ['name', 'code', 'description', 'parent_id'];
+        // Accept code temporarily for backward compatibility, but ignore it.
+        const allowedFields = [
+            'name',
+            'code',
+            'description',
+            'parent_id',
+            'is_active'
+        ];
+
         const unexpected = Object.keys(req.body).find(
             field => !allowedFields.includes(field)
         );
 
         if (unexpected) {
-            return sendValidationError(res, `Unsupported field: ${unexpected}`);
+            return sendValidationError(
+                res,
+                `Unsupported field: ${unexpected}`
+            );
         }
 
         let error = validateText(name, 'Name', 100, true);
-        if (error) return sendValidationError(res, error);
-
-        error = validateText(code, 'Code', 50, true);
         if (error) return sendValidationError(res, error);
 
         error = validateDescription(description);
         if (error) return sendValidationError(res, error);
 
         const normalizedName = name.trim();
-        const normalizedCode = code.trim();
 
         const existingName = await Category.findOne({
             where: { name: normalizedName }
@@ -319,18 +336,14 @@ const createCategory = async (req, res) => {
             });
         }
 
-        const existingCode = await Category.findOne({
-            where: { code: normalizedCode }
-        });
+        const normalizedParentId =
+            parent_id === '' ||
+            parent_id === undefined ||
+            parent_id === null
+                ? null
+                : parent_id;
 
-        if (existingCode) {
-            return res.status(409).json({
-                success: false,
-                message: 'Category code already exists'
-            });
-        }
-
-        const parentResult = await validateParent(parent_id);
+        const parentResult = await validateParent(normalizedParentId);
 
         if (parentResult.error) {
             return parentResult.error === 'Parent category not found'
@@ -341,12 +354,64 @@ const createCategory = async (req, res) => {
                 : sendValidationError(res, parentResult.error);
         }
 
-        const category = await Category.create({
-            name: normalizedName,
-            code: normalizedCode,
-            description: description ?? null,
-            parent_id: parent_id ?? null
-        });
+        const imageUrl = req.file
+            ? `/uploads/${req.file.relativePath}`
+            : null;
+
+        const category = await sequelize.transaction(
+            async transaction => {
+                // Lock the sequence row so concurrent requests
+                // cannot receive the same category code.
+                const sequences = await sequelize.query(
+                    `SELECT next_value
+                     FROM category_code_sequences
+                     WHERE id = 1
+                     FOR UPDATE`,
+                    {
+                        type: QueryTypes.SELECT,
+                        transaction
+                    }
+                );
+
+                if (!sequences.length) {
+                    throw new Error(
+                        'Category code sequence is not initialized'
+                    );
+                }
+
+                const nextValue = Number(sequences[0].next_value);
+
+                if (
+                    !Number.isSafeInteger(nextValue) ||
+                    nextValue < 1
+                ) {
+                    throw new Error(
+                        'Category code sequence value is invalid'
+                    );
+                }
+
+                const generatedCode =
+                    `CAT-${String(nextValue).padStart(4, '0')}`;
+
+                await sequelize.query(
+                    `UPDATE category_code_sequences
+                     SET next_value = next_value + 1
+                     WHERE id = 1`,
+                    { transaction }
+                );
+
+                return Category.create(
+                    {
+                        name: normalizedName,
+                        code: generatedCode,
+                        description: description ?? null,
+                        parent_id: normalizedParentId,
+                        image_url: imageUrl
+                    },
+                    { transaction }
+                );
+            }
+        );
 
         return res.status(201).json({
             success: true,
@@ -354,9 +419,14 @@ const createCategory = async (req, res) => {
             data: category
         });
     } catch (error) {
-        return handleCategoryError(res, error, 'Create category');
+        return handleCategoryError(
+            res,
+            error,
+            'Create category'
+        );
     }
 };
+
 
 // UPDATE CATEGORY
 const updateCategory = async (req, res) => {
@@ -374,13 +444,14 @@ const updateCategory = async (req, res) => {
             );
         }
 
-        const allowedFields = [
-            'name',
-            'code',
-            'description',
-            'parent_id',
-            'is_active'
-        ];
+const allowedFields = [
+    'name',
+    'code',
+    'description',
+    'parent_id',
+    'is_active',
+    'image_url',
+];
 
         const unexpected = Object.keys(req.body).find(
             field => !allowedFields.includes(field)
@@ -390,7 +461,7 @@ const updateCategory = async (req, res) => {
             return sendValidationError(res, `Unsupported field: ${unexpected}`);
         }
 
-        if (Object.keys(req.body).length === 0) {
+if (Object.keys(req.body).length === 0 && !req.file) {
             return sendValidationError(
                 res,
                 'Provide at least one field to update'
@@ -468,23 +539,34 @@ const updateCategory = async (req, res) => {
             }
         }
 
-        if (parent_id !== undefined) {
-            const parentResult = await validateParent(
-                parent_id,
-                category.id
-            );
+const normalizedParentId =
+    parent_id === '' || parent_id === null
+        ? null
+        : parent_id;
 
-            if (parentResult.error) {
-                return parentResult.error === 'Parent category not found'
-                    ? res.status(404).json({
-                        success: false,
-                        message: parentResult.error
-                    })
-                    : sendValidationError(res, parentResult.error);
-            }
-        }
+if (parent_id !== undefined) {
+    const parentResult = await validateParent(
+        normalizedParentId,
+        category.id
+    );
 
-        if (is_active === false || is_active === 0) {
+    if (parentResult.error) {
+        return parentResult.error === 'Parent category not found'
+            ? res.status(404).json({
+                success: false,
+                message: parentResult.error
+            })
+            : sendValidationError(res, parentResult.error);
+    }
+}
+
+const isDeactivating =
+    is_active === false ||
+    is_active === 0 ||
+    is_active === 'false' ||
+    is_active === '0';
+
+if (isDeactivating) {
             const [childCount, itemCount] = await Promise.all([
                 Category.count({
                     where: { parent_id: category.id }
@@ -502,17 +584,38 @@ const updateCategory = async (req, res) => {
             }
         }
 
-        const updates = {};
+const updates = {};
 
-        if (name !== undefined) updates.name = normalizedName;
-        if (code !== undefined) updates.code = normalizedCode;
-        if (description !== undefined) updates.description = description;
-        if (parent_id !== undefined) updates.parent_id = parent_id;
-        if (is_active !== undefined) {
-            updates.is_active = is_active === true || is_active === 1;
-        }
+if (name !== undefined) {
+    updates.name = normalizedName;
+}
 
-        await category.update(updates);
+if (code !== undefined) {
+    updates.code = normalizedCode;
+}
+
+if (description !== undefined) {
+    updates.description = description;
+}
+
+if (parent_id !== undefined) {
+    updates.parent_id = normalizedParentId;
+}
+
+if (is_active !== undefined) {
+    updates.is_active =
+        is_active === true ||
+        is_active === 1 ||
+        is_active === 'true' ||
+        is_active === '1';
+}
+
+// Only replace the image when a new file was uploaded.
+if (req.file) {
+    updates.image_url = `/uploads/${req.file.relativePath}`;
+}
+
+await category.update(updates);
 
         return res.status(200).json({
             success: true,

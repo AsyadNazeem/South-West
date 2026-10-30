@@ -76,7 +76,6 @@ const submitForm = async () => {
 
   try {
     const name = form.value.name.trim()
-    const code = form.value.code.trim().toUpperCase()
     const durationValue = Number(form.value.duration_value)
 
     if (!name) {
@@ -84,10 +83,6 @@ const submitForm = async () => {
       return
     }
 
-    if (!code) {
-      errorMessage.value = 'Warranty code is required.'
-      return
-    }
 
     if (
         form.value.duration_value === '' ||
@@ -98,24 +93,26 @@ const submitForm = async () => {
       return
     }
 
-    const payload = {
-      name,
-      code,
-      duration_value: durationValue,
-      duration_unit: form.value.duration_unit,
-      description: form.value.description.trim() || null,
-      is_active: form.value.is_active
-    }
+const payload = {
+    name,
+    duration_value: durationValue,
+    duration_unit: form.value.duration_unit,
+    description: form.value.description.trim() || null,
+    is_active: form.value.is_active
+}
 
-    if (isEditMode.value) {
-      await api.put(`/warranties/${warrantyId.value}`, payload)
+if (isEditMode.value) {
+    await api.put(`/warranties/${warrantyId.value}`, {
+        ...payload,
+        code: form.value.code.trim()
+    })
 
-      alert('Warranty updated successfully.')
-    } else {
-      await api.post('/warranties', payload)
+    alert('Warranty updated successfully.')
+} else {
+    await api.post('/warranties', payload)
 
-      alert('Warranty created successfully.')
-    }
+    alert('Warranty created successfully.')
+}
 
     router.push(LIST_ROUTE)
   } catch (error) {
@@ -242,28 +239,21 @@ onMounted(() => {
           </div>
 
           <!-- Code -->
-          <div class="form-group">
+         <div class="form-group">
+  <label for="code">Warranty Code</label>
 
-            <label for="code">
-              Warranty Code
-              <span>*</span>
-            </label>
+  <input
+    v-if="isEditMode"
+    id="code"
+    v-model="form.code"
+    type="text"
+    readonly
+  />
 
-            <input
-                id="code"
-                v-model="form.code"
-                type="text"
-                placeholder="e.g. WAR-1Y"
-                maxlength="50"
-                required
-                :disabled="loading"
-            />
-
-            <small>
-              A unique code used to identify this warranty.
-            </small>
-
-          </div>
+  <p v-else>
+    The warranty code will be generated automatically when you save.
+  </p>
+</div>
 
         </div>
 

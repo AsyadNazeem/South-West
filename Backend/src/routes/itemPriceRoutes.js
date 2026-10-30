@@ -10,7 +10,9 @@ const {
     getItemPriceById,
     createItemPrice,
     updateItemPrice,
-    deleteItemPrice
+    deleteItemPrice,
+    bulkSaveItemPrices,
+    bulkUpdateItemPrices
 } = require('../controllers/itemPriceController');
 
 
@@ -21,6 +23,12 @@ router.get(
     getItemPrices
 );
 
+router.post(
+    '/bulk',
+    authenticate,
+    requirePermission('products.update'),
+    bulkSaveItemPrices
+);
 
 router.get(
     '/:id',
@@ -37,6 +45,13 @@ router.post(
     createItemPrice
 );
 
+
+router.put(
+    '/bulk-update',
+    authenticate,
+    requirePermission('products.update'),
+    bulkUpdateItemPrices
+);
 
 router.put(
     '/:id',

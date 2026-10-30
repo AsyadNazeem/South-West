@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 const orderController = require('../controllers/orderController');
+const orderStatusController = require('../controllers/orderStatusController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requirePermission } = require('../middleware/requirePermission');
 
@@ -20,18 +21,12 @@ router.get(
     orderController.getOrderById
 );
 
-router.post(
-    '/',
-    authMiddleware,
-    requirePermission('orders.create'),
-    orderController.createOrder
-);
 
-router.put(
-    '/:id',
+router.patch(
+    '/:id/status',
     authMiddleware,
     requirePermission('orders.update'),
-    orderController.updateOrder
+    orderStatusController.updateOrderStatus
 );
 
 router.delete(

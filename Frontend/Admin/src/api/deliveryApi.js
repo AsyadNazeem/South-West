@@ -15,12 +15,6 @@ const deliveryApi = {
         return response.data
     },
 
-    createDelivery: async (data) => {
-        const response = await api.post('/deliveries', data)
-
-        return response.data
-    },
-
     updateDelivery: async (id, data) => {
         const response = await api.put(
             `/deliveries/${id}`,

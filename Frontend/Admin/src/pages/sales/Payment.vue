@@ -1,24 +1,20 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 
 import paymentApi from '../../api/paymentApi'
-import { hasPermission } from '../../auth/authorization.js'
 
-const router = useRouter()
 
 // ==========================================
 // Routes
 // ==========================================
 
-const CREATE_ROUTE = '/admin/sales/payments/create'
-const DETAIL_ROUTE = '/admin/sales/payments'
 
 // ==========================================
 // State
 // ==========================================
 
 const payments = ref([])
+const selectedPayment = ref(null)
 const loading = ref(false)
 const errorMessage = ref('')
 const search = ref('')
@@ -30,18 +26,6 @@ const deletingId = ref(null)
 // ==========================================
 // Permissions
 // ==========================================
-
-const canCreate = computed(() =>
-    hasPermission('payments.create')
-)
-
-const canUpdate = computed(() =>
-    hasPermission('payments.update')
-)
-
-const canDelete = computed(() =>
-    hasPermission('payments.delete')
-)
 
 // ==========================================
 // Load Payments
@@ -118,47 +102,28 @@ const filteredPayments = computed(() => {
 // Navigation
 // ==========================================
 
-const goToCreate = () => {
-  router.push(CREATE_ROUTE)
+const viewPayment = async (id) => {
+  errorMessage.value = ''
+
+  try {
+    const response = await paymentApi.getPaymentById(id)
+    selectedPayment.value = response?.data?.data || response?.data || null
+  } catch (error) {
+    errorMessage.value =
+      error?.response?.data?.message ||
+      error?.message ||
+      'Failed to load payment details.'
+  }
 }
 
-const viewPayment = (id) => {
-  router.push(`${DETAIL_ROUTE}/${id}`)
-}
-
-const editPayment = (id) => {
-  router.push(`${DETAIL_ROUTE}/edit/${id}`)
+const closePaymentDetails = () => {
+  selectedPayment.value = null
 }
 
 // ==========================================
 // Delete Payment
 // ==========================================
 
-const deletePayment = async (id) => {
-  if (!confirm('Are you sure you want to delete this payment?')) {
-    return
-  }
-
-  deletingId.value = id
-
-  try {
-    await paymentApi.deletePayment(id)
-
-    payments.value = payments.value.filter(
-        payment => payment.id !== id
-    )
-
-  } catch (error) {
-    console.error('Failed to delete payment:', error)
-
-    errorMessage.value =
-        error?.response?.data?.message ||
-        error?.message ||
-        'Failed to delete payment.'
-  } finally {
-    deletingId.value = null
-  }
-}
 
 // ==========================================
 // Formatting
@@ -281,16 +246,7 @@ onMounted(loadPayments)
           Manage and monitor customer payment transactions.
         </p>
       </div>
-
-      <button
-          v-if="canCreate"
-          type="button"
-          class="btn-primary"
-          @click="goToCreate"
-      >
-        + Create Payment
-      </button>
-    </div>
+</div>
 
     <!-- Statistics -->
     <div class="stats-grid">
@@ -549,31 +505,7 @@ onMounted(loadPayments)
               >
                 View
               </button>
-
-              <button
-                  v-if="canUpdate"
-                  type="button"
-                  class="action-button edit"
-                  @click="editPayment(payment.id)"
-              >
-                Edit
-              </button>
-
-              <button
-                  v-if="canDelete"
-                  type="button"
-                  class="action-button delete"
-                  :disabled="deletingId === payment.id"
-                  @click="deletePayment(payment.id)"
-              >
-                {{
-                  deletingId === payment.id
-                      ? 'Deleting...'
-                      : 'Delete'
-                }}
-              </button>
-
-            </div>
+</div>
           </td>
 
         </tr>
@@ -601,6 +533,101 @@ onMounted(loadPayments)
     </div>
 
   </div>
+
+    <!-- Read-only Payment Details -->
+    <div
+      v-if="selectedPayment"
+      class="payment-detail-overlay"
+      @click.self="closePaymentDetails"
+    >
+      <section
+        class="payment-detail-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="payment-detail-title"
+      >
+        <div class="payment-detail-header">
+          <div>
+            <h2 id="payment-detail-title">Payment Details</h2>
+            <p>{{ selectedPayment.payment_reference || 'Payment' }}</p>
+          </div>
+
+          <button
+            type="button"
+            class="action-button"
+            @click="closePaymentDetails"
+          >
+            Close
+          </button>
+        </div>
+
+        <dl class="payment-detail-grid">
+          <div>
+            <dt>Payment Reference</dt>
+            <dd>{{ selectedPayment.payment_reference || '-' }}</dd>
+          </div>
+
+          <div>
+            <dt>Order Number</dt>
+            <dd>{{ selectedPayment.order?.order_number || '-' }}</dd>
+          </div>
+
+          <div>
+            <dt>Amount</dt>
+            <dd>Rs. {{ formatAmount(selectedPayment.amount) }}</dd>
+          </div>
+
+          <div>
+            <dt>Payment Method</dt>
+            <dd>{{ formatMethod(selectedPayment.payment_method) }}</dd>
+          </div>
+
+          <div>
+            <dt>Payment Status</dt>
+            <dd>
+              <span
+                class="status-badge"
+                :class="statusClass(selectedPayment.payment_status)"
+              >
+                {{ formatStatus(selectedPayment.payment_status) }}
+              </span>
+            </dd>
+          </div>
+
+          <div>
+            <dt>Transaction Reference</dt>
+            <dd>{{ selectedPayment.transaction_reference || '-' }}</dd>
+          </div>
+
+          <div>
+            <dt>Payment Date</dt>
+            <dd>{{ formatDateTime(selectedPayment.payment_date) }}</dd>
+          </div>
+
+          <div>
+            <dt>Processed By</dt>
+            <dd>
+              {{
+                selectedPayment.processor?.email ||
+                selectedPayment.processor?.username ||
+                '-'
+              }}
+            </dd>
+          </div>
+
+          <div class="payment-detail-full">
+            <dt>Notes</dt>
+            <dd>{{ selectedPayment.notes || '-' }}</dd>
+          </div>
+        </dl>
+
+        <p class="payment-detail-readonly">
+          Payment details are read-only. Changes to financial records must
+          follow the authorized payment workflow.
+        </p>
+      </section>
+    </div>
+
 </template>
 
 <style scoped>
@@ -1042,4 +1069,88 @@ tbody tr:last-child td {
     width: 100%;
   }
 }
+
+.payment-detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.payment-detail-panel {
+  width: min(620px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text-primary, #111827);
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.12);
+}
+
+.payment-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.payment-detail-header h2 {
+  margin: 0 0 6px;
+}
+
+.payment-detail-header p {
+  margin: 0;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.payment-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 0;
+}
+
+.payment-detail-grid > div {
+  min-width: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.payment-detail-grid dt {
+  margin-bottom: 6px;
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 0.85rem;
+}
+
+.payment-detail-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+
+.payment-detail-grid .payment-detail-full {
+  grid-column: 1 / -1;
+}
+
+.payment-detail-readonly {
+  margin-top: 24px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--color-surface-secondary, #f3f4f6);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 480px) {
+  .payment-detail-panel {
+    padding: 16px;
+  }
+
+  .payment-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 </style>

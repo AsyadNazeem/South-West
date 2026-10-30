@@ -1,6 +1,7 @@
 'use strict';
 
-const { Warranty, Item } = require('../models');
+const { Warranty, Item, sequelize } = require('../models');
+const { QueryTypes } = require('sequelize');
 const { recordAuditLog } = require('../services/auditLogService');
 
 const AUDIT_MODULE = 'WARRANTY';
@@ -171,13 +172,12 @@ const getWarrantyById = async (req, res) => {
 // CREATE WARRANTY
 const createWarranty = async (req, res) => {
     try {
-        const {
-            name,
-            code,
-            duration_value,
-            duration_unit,
-            description
-        } = req.body;
+const {
+    name,
+    duration_value,
+    duration_unit,
+    description
+} = req.body;
 
         if (typeof name !== 'string' || !name.trim()) {
             await auditWarranty(req, {
@@ -187,17 +187,6 @@ const createWarranty = async (req, res) => {
 
             return res.status(400).json({
                 message: 'Warranty name is required'
-            });
-        }
-
-        if (typeof code !== 'string' || !code.trim()) {
-            await auditWarranty(req, {
-                action: 'WARRANTY_CREATE_REJECTED',
-                description: 'Warranty creation rejected: invalid code'
-            });
-
-            return res.status(400).json({
-                message: 'Warranty code is required'
             });
         }
 
@@ -224,7 +213,6 @@ const createWarranty = async (req, res) => {
         }
 
         const normalizedName = name.trim();
-        const normalizedCode = code.trim();
 
         const existingName = await Warranty.findOne({
             where: { name: normalizedName }
@@ -241,32 +229,59 @@ const createWarranty = async (req, res) => {
             });
         }
 
-        const existingCode = await Warranty.findOne({
-            where: { code: normalizedCode }
-        });
+    const durationUnitMap = {
+    days: 'Days',
+    months: 'Months',
+    years: 'Years',
+};
 
-        if (existingCode) {
-            await auditWarranty(req, {
-                action: 'WARRANTY_CREATE_REJECTED',
-                description: 'Warranty creation rejected: duplicate code'
-            });
+const normalizedDurationUnit =
+    durationUnitMap[String(duration_unit).trim().toLowerCase()];
 
-            return res.status(409).json({
-                message: 'Warranty code already exists'
-            });
+if (!normalizedDurationUnit) {
+    return res.status(400).json({
+        message: 'Warranty duration unit is invalid'
+    });
+}
+
+const warranty = await sequelize.transaction(async (transaction) => {
+    const [sequence] = await sequelize.query(
+        `SELECT next_value
+         FROM warranty_code_sequences
+         WHERE id = 1
+         FOR UPDATE`,
+        {
+            type: QueryTypes.SELECT,
+            transaction,
         }
+    );
 
-        const warranty = await Warranty.create({
-            name: normalizedName,
-            code: normalizedCode,
-            duration_value: Number(duration_value),
-            duration_unit: duration_unit.trim().toLowerCase(),
-            description:
-                typeof description === 'string'
-                    ? description.trim()
-                    : description ?? null,
-            is_active: true
-        });
+    if (!sequence) {
+        throw new Error('Warranty code sequence is missing. Run migrations first.');
+    }
+
+    const nextValue = Number(sequence.next_value);
+    const generatedCode = `WAR-${String(nextValue).padStart(4, '0')}`;
+
+    await sequelize.query(
+        `UPDATE warranty_code_sequences
+         SET next_value = next_value + 1
+         WHERE id = 1`,
+        { transaction }
+    );
+
+    return Warranty.create({
+        name: normalizedName,
+        code: generatedCode,
+        duration_value: Number(duration_value),
+        duration_unit: normalizedDurationUnit,
+        description:
+            typeof description === 'string'
+                ? description.trim()
+                : description ?? null,
+        is_active: true
+    }, { transaction });
+});
 
         await auditWarranty(req, {
             action: 'WARRANTY_CREATED',

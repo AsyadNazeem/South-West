@@ -26,16 +26,6 @@ router.get(
     deliveryController.getDeliveryById
 );
 
-
-// Create delivery
-router.post(
-    '/',
-    authMiddleware,
-    requirePermission('deliveries.create'),
-    deliveryController.createDelivery
-);
-
-
 // Update delivery
 router.put(
     '/:id',

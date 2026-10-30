@@ -1,6 +1,7 @@
 
 const { ItemSpecification, ItemType, sequelize } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
+const { QueryTypes } = require('sequelize');
 
 const VALID_DATA_TYPES = [
     'text',
@@ -16,6 +17,7 @@ const ALLOWED_FIELDS = [
     'code',
     'data_type',
     'unit',
+    'options',
     'description',
     'is_required',
     'is_active'
@@ -44,6 +46,7 @@ const specificationValues = specification => ({
     code: specification.code,
     data_type: specification.data_type,
     unit: specification.unit ?? null,
+    options: Array.isArray(specification.options) ? specification.options : [],
     description: specification.description ?? null,
     is_required: specification.is_required,
     is_active: specification.is_active
@@ -74,7 +77,7 @@ const validateBody = (body, creating = false) => {
         }
     }
 
-    if (creating || body.code !== undefined) {
+if (!creating && body.code !== undefined) {
         if (
             typeof body.code !== 'string' ||
             !body.code.trim() ||
@@ -111,6 +114,20 @@ const validateBody = (body, creating = false) => {
     ) {
         errors.description =
             'Description must be a string of at most 255 characters or null';
+    }
+
+    if (body.options !== undefined) {
+        if (
+            !Array.isArray(body.options) ||
+            body.options.length > 100 ||
+            body.options.some(option =>
+                typeof option !== 'string' ||
+                !option.trim() ||
+                option.trim().length > 100
+            )
+        ) {
+            errors.options = 'Options must be an array of up to 100 non-empty strings, each at most 100 characters';
+        }
     }
 
     for (const field of ['is_required', 'is_active']) {
@@ -206,37 +223,76 @@ const createItemSpecification = async (req, res) => {
 
         const values = {
             name: req.body.name.trim(),
-            code: req.body.code.trim(),
             data_type: req.body.data_type ?? 'text',
             unit: req.body.unit?.trim() || null,
+            options: (req.body.data_type ?? 'text') === 'select'
+                ? [...new Set((req.body.options || []).map(option => option.trim()))]
+                : [],
             description: req.body.description?.trim() || null,
             is_required: req.body.is_required ?? false,
             is_active: true
         };
 
-        transaction = await sequelize.transaction();
+transaction = await sequelize.transaction();
 
-        const existing = await ItemSpecification.findOne({
-            where: {
-                [sequelize.Sequelize.Op.or]: [
-                    { name: values.name },
-                    { code: values.code }
-                ]
-            },
-            transaction
-        });
+const existingName = await ItemSpecification.findOne({
+    where: { name: values.name },
+    transaction
+});
 
-        if (existing) {
-            await transaction.rollback();
+if (existingName) {
+    await transaction.rollback();
 
-            return res.status(409).json({
-                message: 'A specification with this name or code already exists'
-            });
-        }
+    return res.status(409).json({
+        message: 'A specification with this name already exists'
+    });
+}
 
-        const specification = await ItemSpecification.create(values, {
-            transaction
-        });
+if (existingName) {
+    await transaction.rollback();
+
+    return res.status(409).json({
+        message: 'A specification with this name already exists'
+    });
+}
+
+const sequences = await sequelize.query(
+    `SELECT next_value
+     FROM item_specification_code_sequences
+     WHERE id = 1
+     FOR UPDATE`,
+    {
+        type: QueryTypes.SELECT,
+        transaction
+    }
+);
+
+if (!sequences.length) {
+    throw new Error(
+        'Item specification code sequence is not initialized'
+    );
+}
+
+const nextValue = Number(sequences[0].next_value);
+
+if (!Number.isSafeInteger(nextValue) || nextValue < 1) {
+    throw new Error(
+        'Item specification code sequence value is invalid'
+    );
+}
+
+values.code = `SPEC-${String(nextValue).padStart(4, '0')}`;
+
+await sequelize.query(
+    `UPDATE item_specification_code_sequences
+     SET next_value = next_value + 1
+     WHERE id = 1`,
+    { transaction }
+);
+
+const specification = await ItemSpecification.create(values, {
+    transaction
+});
 
         await recordAuditLog({
             userId: getUserId(req),
@@ -321,6 +377,10 @@ const updateItemSpecification = async (req, res) => {
             if (changes[field] !== undefined) {
                 changes[field] = changes[field]?.trim() || null;
             }
+        }
+
+        if (changes.options !== undefined) {
+            changes.options = [...new Set(changes.options.map(option => option.trim()))];
         }
 
         transaction = await sequelize.transaction();

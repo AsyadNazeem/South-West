@@ -166,7 +166,60 @@ const uploadItemVideo = createUploader({
     sizeMessage: 'Video must be smaller than 15MB'
 });
 
+
+const uploadBannerImage = createUploader({
+    field: 'image',
+    folder: 'homepage/banners',
+    allowedTypes: {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+    },
+    allowedExtensions: {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+    },
+    maxSize: 5 * MB,
+    typeMessage: 'Only PNG and JPG banner images are allowed',
+    sizeMessage: 'Banner image must be smaller than 5MB',
+});
+
+
+const uploadCategoryImage = createUploader({
+    field: 'image',
+    folder: 'categories/images',
+    allowedTypes: {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+    },
+    allowedExtensions: {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+    },
+    maxSize: 5 * MB,
+    typeMessage: 'Only PNG and JPG category images are allowed',
+    sizeMessage: 'Category image must be smaller than 5MB',
+});
+
+const uploadBrandImage = createUploader({
+    field: 'image',
+    folder: 'brands/images',
+    allowedTypes: {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+    },
+    allowedExtensions: {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+    },
+    maxSize: 5 * MB,
+    typeMessage: 'Only PNG and JPG brand images are allowed',
+    sizeMessage: 'Brand image must be smaller than 5MB',
+});
+
 module.exports = {
     uploadItemImage,
-    uploadItemVideo
+    uploadItemVideo,
+    uploadCategoryImage,
+    uploadBannerImage,
+    uploadBrandImage,
 };

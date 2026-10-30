@@ -9,7 +9,11 @@ const getActorId = (req) =>
     req.user?.id ?? req.user?.user_id ?? req.user?.userId ?? null;
 
 const getCustomerIdFromUser = (req) =>
-    req.user?.customer_id ?? req.user?.customerId ?? null;
+    req.customer?.id ??
+    req.customer?.customer_id ??
+    req.user?.customer_id ??
+    req.user?.customerId ??
+    null;
 
 const getWishlistSnapshot = (wishlist) => {
     if (!wishlist) return null;
@@ -70,16 +74,27 @@ const isValidId = (value) =>
  * - Never trust a customer ID supplied only by the request body.
  */
 const canAccessCustomer = (req, customerId) => {
-    if (!req.user) return false;
+    // Customer-authenticated requests may access only their own wishlist.
+    if (req.customer) {
+        const authenticatedCustomerId = String(req.customer.id);
 
-    // Adapt these role names to your actual role/permission model.
+        return authenticatedCustomerId === String(customerId);
+    }
+
+    // Staff requests must have passed the staff authentication middleware.
+    if (!req.user?.id) {
+        return false;
+    }
+
     const roleName = String(
         req.user.role?.name ?? req.user.role ?? ''
     ).toLowerCase();
 
     const isStaff = ['admin', 'super_admin', 'staff'].includes(roleName);
 
-    if (isStaff) return true;
+    if (isStaff) {
+        return true;
+    }
 
     const authenticatedCustomerId = getCustomerIdFromUser(req);
 
@@ -108,7 +123,15 @@ const getWishlistIncludes = () => [
     },
     {
         model: Item,
-        as: 'item'
+        as: 'item',
+        attributes: [
+            'id',
+            'public_id',
+            'slug',
+            'item_name',
+            'item_code',
+            'is_active'
+        ]
     }
 ];
 

@@ -3,9 +3,14 @@
 const {
     Promotion,
     User,
+    Item,
+    Category,
+    Brand,
     PromotionItem,
     PromotionCategory,
-    OrderPromotion
+    PromotionBrand,
+    OrderPromotion,
+    sequelize
 } = require('../models');
 
 const { recordAuditLog } = require('../services/auditLogService');
@@ -24,6 +29,7 @@ const getPromotionSnapshot = (promotion) => {
         promotion_name: promotion.promotion_name,
         promotion_type: promotion.promotion_type,
         discount_value: promotion.discount_value,
+        eligibility_type: promotion.eligibility_type,
         minimum_order_amount: promotion.minimum_order_amount,
         maximum_discount_amount: promotion.maximum_discount_amount,
         usage_limit: promotion.usage_limit,
@@ -35,6 +41,161 @@ const getPromotionSnapshot = (promotion) => {
         is_active: promotion.is_active,
         created_by: promotion.created_by
     };
+};
+
+const ELIGIBILITY_TYPES = [
+    'all_products',
+    'selected_products',
+    'selected_categories',
+    'selected_brands'
+];
+
+const normalizeIds = (value) => {
+    if (value === undefined || value === null) return [];
+
+    if (!Array.isArray(value)) {
+        throw new Error('Selected IDs must be an array');
+    }
+
+    const ids = value.map((id) => String(id));
+
+    if (
+        ids.some((id) => !/^[1-9]\d*$/.test(id)) ||
+        new Set(ids).size !== ids.length
+    ) {
+        throw new Error('Selected IDs must be valid and unique');
+    }
+
+    return ids;
+};
+
+const validateEligibility = async (body, transaction) => {
+    const eligibilityType = body.eligibility_type ?? 'all_products';
+
+    if (!ELIGIBILITY_TYPES.includes(eligibilityType)) {
+        throw new Error('Invalid eligibility_type');
+    }
+
+    const itemIds = normalizeIds(body.selected_item_ids);
+    const categoryIds = normalizeIds(body.selected_category_ids);
+    const brandIds = normalizeIds(body.selected_brand_ids);
+
+    const hasItems = itemIds.length > 0;
+    const hasCategories = categoryIds.length > 0;
+    const hasBrands = brandIds.length > 0;
+
+    if (
+        (eligibilityType !== 'selected_products' && hasItems) ||
+        (eligibilityType !== 'selected_categories' && hasCategories) ||
+        (eligibilityType !== 'selected_brands' && hasBrands)
+    ) {
+        throw new Error(
+            'Selections must match the chosen eligibility_type'
+        );
+    }
+
+    let Model;
+    let ids;
+
+    switch (eligibilityType) {
+        case 'selected_products':
+            Model = Item;
+            ids = itemIds;
+            break;
+        case 'selected_categories':
+            Model = Category;
+            ids = categoryIds;
+            break;
+        case 'selected_brands':
+            Model = Brand;
+            ids = brandIds;
+            break;
+        default:
+            ids = [];
+    }
+
+    if (eligibilityType !== 'all_products' && ids.length === 0) {
+        throw new Error(
+            'Select at least one target for the chosen eligibility type'
+        );
+    }
+
+    if (ids.length > 0) {
+        const records = await Model.findAll({
+            attributes: ['id'],
+            where: { id: ids },
+            transaction
+        });
+
+        if (records.length !== ids.length) {
+            throw new Error(
+                'One or more selected products, categories, or brands do not exist'
+            );
+        }
+    }
+
+    return {
+        eligibility_type: eligibilityType,
+        itemIds,
+        categoryIds,
+        brandIds
+    };
+};
+
+const savePromotionEligibility = async (
+    promotion,
+    eligibility,
+    transaction
+) => {
+    await Promise.all([
+        PromotionItem.destroy({
+            where: { promotion_id: promotion.id },
+            transaction
+        }),
+        PromotionCategory.destroy({
+            where: { promotion_id: promotion.id },
+            transaction
+        }),
+        PromotionBrand.destroy({
+            where: { promotion_id: promotion.id },
+            transaction
+        })
+    ]);
+
+    if (eligibility.eligibility_type === 'selected_products') {
+        await PromotionItem.bulkCreate(
+            eligibility.itemIds.map((item_id) => ({
+                promotion_id: promotion.id,
+                item_id
+            })),
+            { transaction }
+        );
+    }
+
+    if (eligibility.eligibility_type === 'selected_categories') {
+        await PromotionCategory.bulkCreate(
+            eligibility.categoryIds.map((category_id) => ({
+                promotion_id: promotion.id,
+                category_id
+            })),
+            { transaction }
+        );
+    }
+
+    if (eligibility.eligibility_type === 'selected_brands') {
+        await PromotionBrand.bulkCreate(
+            eligibility.brandIds.map((brand_id) => ({
+                promotion_id: promotion.id,
+                brand_id
+            })),
+            { transaction }
+        );
+    }
+
+    await promotion.update(
+        { eligibility_type: eligibility.eligibility_type },
+        { transaction }
+    );
 };
 
 const auditPromotion = async (
@@ -83,7 +244,11 @@ const getPromotionIncludes = (includeOrderPromotions = false) => {
         {
             model: PromotionCategory,
             as: 'categories'
-        }
+        },
+        {
+    model: PromotionBrand,
+    as: 'brands'
+}
     ];
 
     if (includeOrderPromotions) {
@@ -183,6 +348,7 @@ exports.getPromotionById = async (req, res) => {
 };
 
 // CREATE PROMOTION
+
 exports.createPromotion = async (req, res) => {
     const {
         promotion_code,
@@ -199,6 +365,8 @@ exports.createPromotion = async (req, res) => {
         status,
         is_active
     } = req.body;
+
+    let transaction;
 
     try {
         if (!promotion_code || !promotion_name || !promotion_type) {
@@ -253,6 +421,21 @@ exports.createPromotion = async (req, res) => {
             });
         }
 
+        let eligibility;
+
+        try {
+            eligibility = await validateEligibility(req.body);
+        } catch (error) {
+            await auditPromotion(req, {
+                action: 'PROMOTION_CREATE_REJECTED',
+                description: 'Creation rejected: invalid eligibility settings'
+            });
+
+            return res.status(400).json({
+                message: error.message
+            });
+        }
+
         const existingPromotion = await Promotion.findOne({
             where: { promotion_code }
         });
@@ -269,14 +452,15 @@ exports.createPromotion = async (req, res) => {
             });
         }
 
-        // created_by is derived from the authenticated user,
-        // not from the client-submitted request body.
         const createdBy = getActorId(req);
+
+        transaction = await sequelize.transaction();
 
         const promotion = await Promotion.create({
             promotion_code,
             promotion_name,
             description: description || null,
+            eligibility_type: eligibility.eligibility_type,
             promotion_type,
             discount_value: discount_value ?? null,
             minimum_order_amount: minimum_order_amount ?? null,
@@ -289,20 +473,37 @@ exports.createPromotion = async (req, res) => {
             status: status || 'draft',
             is_active: is_active ?? true,
             created_by: createdBy
+        }, { transaction });
+
+        await savePromotionEligibility(
+            promotion,
+            eligibility,
+            transaction
+        );
+
+        await transaction.commit();
+        transaction = null;
+
+        const savedPromotion = await Promotion.findByPk(promotion.id, {
+            include: getPromotionIncludes()
         });
 
         await auditPromotion(req, {
             action: 'PROMOTION_CREATED',
             entityId: promotion.id,
             description: 'Created a promotion',
-            newValues: getPromotionSnapshot(promotion)
+            newValues: getPromotionSnapshot(savedPromotion)
         });
 
         return res.status(201).json({
             message: 'Promotion created successfully',
-            data: promotion
+            data: savedPromotion
         });
     } catch (error) {
+        if (transaction) {
+            await transaction.rollback();
+        }
+
         console.error('Create promotion error:', error);
 
         await auditPromotion(req, {
@@ -314,15 +515,24 @@ exports.createPromotion = async (req, res) => {
             }
         });
 
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(409).json({
+                message: 'Promotion code already exists'
+            });
+        }
+
         return res.status(500).json({
             message: 'Failed to create promotion'
         });
     }
 };
 
+
 // UPDATE PROMOTION
+
 exports.updatePromotion = async (req, res) => {
     const { id } = req.params;
+    let transaction;
 
     try {
         const promotion = await Promotion.findByPk(id);
@@ -421,6 +631,43 @@ exports.updatePromotion = async (req, res) => {
             });
         }
 
+        const eligibilityFields = [
+            'eligibility_type',
+            'selected_item_ids',
+            'selected_category_ids',
+            'selected_brand_ids'
+        ];
+
+        const hasEligibilityUpdate = eligibilityFields.some(
+            field => Object.prototype.hasOwnProperty.call(req.body, field)
+        );
+
+        let eligibility;
+
+        if (hasEligibilityUpdate) {
+            try {
+                eligibility = await validateEligibility({
+                    ...req.body,
+                    eligibility_type:
+                        req.body.eligibility_type ??
+                        promotion.eligibility_type
+                });
+            } catch (error) {
+                await auditPromotion(req, {
+                    action: 'PROMOTION_UPDATE_REJECTED',
+                    entityId: promotion.id,
+                    description: 'Update rejected: invalid eligibility settings',
+                    oldValues
+                });
+
+                return res.status(400).json({
+                    message: error.message
+                });
+            }
+        }
+
+        transaction = await sequelize.transaction();
+
         await promotion.update({
             promotion_code: promotion_code ?? promotion.promotion_code,
             promotion_name: promotion_name ?? promotion.promotion_name,
@@ -438,6 +685,21 @@ exports.updatePromotion = async (req, res) => {
             end_date: newEndDate,
             status: status ?? promotion.status,
             is_active: is_active ?? promotion.is_active
+        }, { transaction });
+
+        if (hasEligibilityUpdate) {
+            await savePromotionEligibility(
+                promotion,
+                eligibility,
+                transaction
+            );
+        }
+
+        await transaction.commit();
+        transaction = null;
+
+        const savedPromotion = await Promotion.findByPk(promotion.id, {
+            include: getPromotionIncludes()
         });
 
         await auditPromotion(req, {
@@ -445,14 +707,18 @@ exports.updatePromotion = async (req, res) => {
             entityId: promotion.id,
             description: 'Updated a promotion',
             oldValues,
-            newValues: getPromotionSnapshot(promotion)
+            newValues: getPromotionSnapshot(savedPromotion)
         });
 
         return res.status(200).json({
             message: 'Promotion updated successfully',
-            data: promotion
+            data: savedPromotion
         });
     } catch (error) {
+        if (transaction) {
+            await transaction.rollback();
+        }
+
         console.error('Update promotion error:', error);
 
         await auditPromotion(req, {
@@ -461,11 +727,18 @@ exports.updatePromotion = async (req, res) => {
             description: 'Failed to update promotion'
         });
 
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(409).json({
+                message: 'Promotion code already exists'
+            });
+        }
+
         return res.status(500).json({
             message: 'Failed to update promotion'
         });
     }
 };
+
 
 // UPDATE PROMOTION STATUS
 exports.updatePromotionStatus = async (req, res) => {

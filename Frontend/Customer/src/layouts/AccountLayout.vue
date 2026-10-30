@@ -85,7 +85,10 @@ onMounted(loadCustomer)
 <style scoped>
 .account {
   min-height: 70vh;
+  min-height: 70dvh;
   padding: var(--space-8) 0 var(--space-16);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   background: var(--color-store-bg);
 }
 
@@ -100,6 +103,7 @@ onMounted(loadCustomer)
   font-family: var(--font-family-display);
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
+  overflow-wrap: anywhere;
 }
 
 .account-layout {
@@ -115,6 +119,8 @@ onMounted(loadCustomer)
   background: var(--color-surface);
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-md);
+  overflow-wrap: anywhere;
+  overflow-x: auto; /* wide tables/forms scroll instead of breaking the page */
 }
 
 .status {
@@ -134,7 +140,24 @@ onMounted(loadCustomer)
   cursor: pointer;
 }
 
+/* ---------- Small laptops / tablet landscape ---------- */
+@media (max-width: 1024px) {
+  .account-layout {
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+
+  .content {
+    padding: var(--space-5);
+  }
+}
+
+/* ---------- Tablet portrait / unfolded foldables: stacked ---------- */
 @media (max-width: 850px) {
+  .account {
+    padding: var(--space-6) 0 var(--space-8);
+  }
+
   .account-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-5);
@@ -142,6 +165,80 @@ onMounted(loadCustomer)
 
   .content {
     padding: var(--space-5);
+  }
+}
+
+/* ---------- Phones ---------- */
+@media (max-width: 600px) {
+  .account {
+    padding: var(--space-5) 0 var(--space-8);
+  }
+
+  .page-title {
+    margin-bottom: var(--space-4);
+    font-size: calc(var(--font-size-lg) * 0.88);
+  }
+
+  .account-layout {
+    gap: var(--space-4);
+  }
+
+  .content {
+    padding: var(--space-4);
+  }
+}
+
+/* ---------- Small phones / fold cover screens (≈280–360px) ---------- */
+@media (max-width: 360px) {
+  .account-container {
+    width: 96%;
+  }
+
+  .page-title {
+    font-size: calc(var(--font-size-lg) * 0.8);
+  }
+
+  .content {
+    padding: 12px;
+    border-radius: var(--radius-sm);
+  }
+}
+
+/* ---------- Dual-screen foldables spanned across the hinge ---------- */
+@media (horizontal-viewport-segments: 2) {
+  .account-container {
+    width: 100%;
+  }
+
+  .account-layout {
+    grid-template-columns:
+        env(viewport-segment-width 0 0)
+        env(viewport-segment-width 1 0);
+    gap: calc(
+        env(viewport-segment-left 1 0) -
+        env(viewport-segment-right 0 0)
+    );
+  }
+}
+
+/* ---------- Landscape phones (short viewport) ---------- */
+@media (max-height: 480px) and (orientation: landscape) {
+  .account {
+    min-height: auto;
+    padding-top: var(--space-4);
+    padding-bottom: var(--space-6);
+  }
+
+  .page-title {
+    margin-bottom: var(--space-3, 12px);
+  }
+}
+
+/* ---------- Touch targets ---------- */
+@media (pointer: coarse) {
+  .retry {
+    min-height: 44px;
+    padding: 0 var(--space-3, 12px);
   }
 }
 </style>

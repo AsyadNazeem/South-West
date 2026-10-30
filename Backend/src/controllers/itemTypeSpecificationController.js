@@ -492,6 +492,7 @@ const getSpecificationsByItemType = async (req, res) => {
                         'code',
                         'data_type',
                         'unit',
+                        'options',
                         'is_required'
                     ],
                     required: true,

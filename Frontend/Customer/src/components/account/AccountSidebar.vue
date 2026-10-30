@@ -10,6 +10,7 @@ const sections = [
   { label: 'Address Book', path: '/account/addresses' },
   { label: 'Change Password', path: '/account/change-password' },
   { label: 'My Orders', path: '/account/orders' },
+  { label: 'Notifications', path: '/account/notifications' },
   { label: 'Wishlist', path: '/account/wishlist' },
   { label: 'My Reviews', path: '/account/reviews' },
   { label: 'Returns & Cancellations', path: '/account/returns' },

@@ -15,7 +15,8 @@ defineProps({
   },
 })
 
-const skeletonCount = 8
+// 12 divides evenly into 1, 2, 3 and 4 columns, so the last row is never partial.
+const skeletonCount = 12
 </script>
 
 <template>
@@ -61,39 +62,59 @@ const skeletonCount = 8
 </template>
 
 <style scoped>
-/* Grid view: four across on desktop, fewer on smaller screens */
+/*
+ * Grid view: up to four columns. The column count follows the width the grid
+ * actually gets (with or without the filter sidebar), so it works on any
+ * screen, including foldables, without viewport breakpoints.
+ */
 .product-grid {
+  --card-min: 160px;
+  --max-cols: 5;
+  --grid-gap: var(--space-5);
+
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-5);
+  grid-template-columns: repeat(
+      auto-fill,
+      minmax(
+          min(
+              100%,
+              max(
+                  var(--card-min),
+                  calc((100% - (var(--max-cols) - 1) * var(--grid-gap)) / var(--max-cols))
+              )
+          ),
+          1fr
+      )
+  );
+  gap: var(--grid-gap);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 860px) {
   .product-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    --grid-gap: var(--space-4);
   }
 }
 
-@media (max-width: 860px) {
+/* Phones: two columns down to ≈300px wide. Fold cover screens below that get one. */
+@media (max-width: 600px) {
   .product-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-4);
+    --card-min: 140px;
   }
 }
 
 @media (max-width: 420px) {
   .product-grid {
-    gap: var(--space-3);
+    --grid-gap: var(--space-3);
   }
 }
 
 /* List view: one wide card per row at every screen size */
 .product-grid.is-list {
+  --grid-gap: var(--space-4);
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
 }
 
 /* Loading placeholders */
@@ -102,6 +123,16 @@ const skeletonCount = 8
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-md);
   background: var(--color-surface);
+}
+
+/* List view: image beside the text, not a full-width square */
+.product-grid.is-list .skeleton-card {
+  display: grid;
+  grid-template-columns: clamp(110px, 28%, 200px) minmax(0, 1fr);
+}
+
+.product-grid.is-list .skeleton-body {
+  align-content: center;
 }
 
 .skeleton-image,
@@ -155,6 +186,12 @@ const skeletonCount = 8
   text-align: center;
 }
 
+@media (max-width: 600px) {
+  .state {
+    padding: var(--space-8) var(--space-4);
+  }
+}
+
 .state-title {
   margin: 0 0 var(--space-1);
   color: var(--color-text);
@@ -167,6 +204,7 @@ const skeletonCount = 8
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
 }
 
 @media (prefers-reduced-motion: reduce) {

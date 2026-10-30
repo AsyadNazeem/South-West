@@ -17,7 +17,12 @@ const loading = ref(true)
 const error = ref('')
 const hoveredCategoryId = ref(null)
 const navRef = ref(null)
+const menuRef = ref(null)
 const dropdownLeft = ref(0)
+
+// Last input type used on the nav: 'mouse', 'touch', 'pen' or 'keyboard'.
+// Hover opens the dropdown for a real mouse only; touch and pen use taps.
+const lastPointerType = ref('mouse')
 
 const activeCategory = defineModel('activeCategory', {
   default: 'All Products',
@@ -36,8 +41,19 @@ const subcategories = computed(() =>
     hoveredCategory.value?.children || []
 )
 
-// Position the dropdown underneath the hovered category.
-watch(hoveredCategoryId, async (id) => {
+// Without a mouse there is no way to click the main category once its
+// dropdown is open, so the dropdown gets an "All <category>" entry.
+const showViewAll = computed(() => lastPointerType.value !== 'mouse')
+
+function isOpen(category) {
+  return (
+      String(hoveredCategoryId.value) === String(category.id) &&
+      category.children.length > 0
+  )
+}
+
+// Position the dropdown underneath the open category.
+async function positionDropdown(id) {
   if (id == null) return
 
   await nextTick()
@@ -53,7 +69,9 @@ watch(hoveredCategoryId, async (id) => {
 
   const navRect = nav.getBoundingClientRect()
   const itemRect = item.getBoundingClientRect()
-  const dropdownWidth = Math.min(360, window.innerWidth * 0.92)
+  // Measure the real dropdown; fall back to an estimate before it renders.
+  const dropdownWidth =
+      menuRef.value?.offsetWidth ?? Math.min(360, window.innerWidth * 0.92)
 
   const desiredLeft = itemRect.left - navRect.left
 
@@ -64,7 +82,9 @@ watch(hoveredCategoryId, async (id) => {
           nav.clientWidth - dropdownWidth
       )
   )
-})
+}
+
+watch(hoveredCategoryId, positionDropdown)
 
 async function loadCategories() {
   loading.value = true
@@ -130,19 +150,64 @@ function closeMenu() {
   hoveredCategoryId.value = null
 }
 
+/* ---------- Pointer handling ---------- */
+function trackPointer(event) {
+  lastPointerType.value = event.pointerType || 'mouse'
+}
+
+function trackKeyboard() {
+  lastPointerType.value = 'keyboard'
+}
+
+function onCategoryEnter(event, category) {
+  if (event.pointerType === 'mouse') hoveredCategoryId.value = category.id
+}
+
+function onCategoryClick(category) {
+  const usesTap = ['touch', 'pen'].includes(lastPointerType.value)
+
+  // Touch: a tap on a category with subcategories opens or closes its dropdown.
+  if (usesTap && category.children.length > 0) {
+    hoveredCategoryId.value = isOpen(category) ? null : category.id
+    return
+  }
+
+  selectMainCategory(category)
+}
+
+function onNavLeave(event) {
+  if (event.pointerType === 'mouse') closeMenu()
+}
+
+function onAllProductsEnter(event) {
+  if (event.pointerType === 'mouse') closeMenu()
+}
+
+function onMenuEnter(event) {
+  if (event.pointerType === 'mouse' && hoveredCategory.value) {
+    hoveredCategoryId.value = hoveredCategory.value.id
+  }
+}
+
+function handleOutsidePointer(event) {
+  if (
+      hoveredCategoryId.value != null &&
+      navRef.value &&
+      !navRef.value.contains(event.target)
+  ) {
+    closeMenu()
+  }
+}
+
 function handleEscape(event) {
   if (event.key === 'Escape') closeMenu()
 }
 
 function handleResize() {
+  // Recalculate the position only. Closing and reopening the menu here made it
+  // flicker on phones, where scrolling resizes the viewport.
   if (hoveredCategoryId.value != null) {
-    // Recalculate position after the browser resizes.
-    const id = hoveredCategoryId.value
-    hoveredCategoryId.value = null
-
-    nextTick(() => {
-      hoveredCategoryId.value = id
-    })
+    positionDropdown(hoveredCategoryId.value)
   }
 }
 
@@ -150,11 +215,13 @@ onMounted(() => {
   loadCategories()
   window.addEventListener('keydown', handleEscape)
   window.addEventListener('resize', handleResize)
+  document.addEventListener('pointerdown', handleOutsidePointer)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleEscape)
   window.removeEventListener('resize', handleResize)
+  document.removeEventListener('pointerdown', handleOutsidePointer)
 })
 </script>
 
@@ -163,14 +230,16 @@ onUnmounted(() => {
       ref="navRef"
       class="category-nav"
       aria-label="Product categories"
-      @mouseleave="closeMenu"
+      @pointerdown="trackPointer"
+      @keydown="trackKeyboard"
+      @pointerleave="onNavLeave"
   >
-    <div class="category-inner">
+    <div class="category-inner" @scroll.passive="closeMenu">
       <button
           type="button"
           class="category-button"
           :class="{ active: activeCategory === 'All Products' }"
-          @mouseenter="closeMenu"
+          @pointerenter="onAllProductsEnter"
           @focus="closeMenu"
           @click="selectMainCategory({
           id: null,
@@ -190,17 +259,15 @@ onUnmounted(() => {
             :key="category.id"
             class="category-item"
             :data-category-id="category.id"
-            @mouseenter="hoveredCategoryId = category.id"
+            @pointerenter="onCategoryEnter($event, category)"
         >
           <button
               type="button"
               class="category-button"
               :class="{ active: activeCategory === category.name }"
-              :aria-expanded="
-              String(hoveredCategoryId) === String(category.id) &&
-              category.children.length > 0
-            "
-              @click="selectMainCategory(category)"
+              :aria-haspopup="category.children.length ? 'true' : undefined"
+              :aria-expanded="category.children.length ? isOpen(category) : undefined"
+              @click="onCategoryClick(category)"
           >
             {{ category.name }}
 
@@ -218,14 +285,24 @@ onUnmounted(() => {
       </template>
     </div>
 
-    <!-- Dropdown positioned under the hovered category -->
+    <!-- Dropdown positioned under the open category -->
     <div
         v-if="hoveredCategory && subcategories.length"
+        ref="menuRef"
         class="mega-menu"
-        :style="{ left: `${dropdownLeft}px` }"
-        @mouseenter="hoveredCategoryId = hoveredCategory.id"
+        :style="{ '--menu-left': `${dropdownLeft}px` }"
+        @pointerenter="onMenuEnter"
     >
       <div class="subcategory-grid">
+        <button
+            v-if="showViewAll"
+            type="button"
+            class="subcategory-link view-all"
+            @click.stop="selectMainCategory(hoveredCategory)"
+        >
+          All {{ hoveredCategory.name }}
+        </button>
+
         <button
             v-for="subcategory in subcategories"
             :key="subcategory.id"
@@ -258,6 +335,7 @@ onUnmounted(() => {
   display: flex;
   gap: var(--space-6);
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   scrollbar-width: thin;
 }
 
@@ -285,8 +363,9 @@ onUnmounted(() => {
   transition: color var(--transition-fast);
 }
 
-.category-button:hover,
-.category-button.active {
+/* aria-expanded also marks the open category on touch screens */
+.category-button.active,
+.category-button[aria-expanded='true'] {
   color: var(--color-primary);
 }
 
@@ -313,8 +392,13 @@ onUnmounted(() => {
 .mega-menu {
   position: absolute;
   top: 100%;
+  left: var(--menu-left, 0px);
   width: 360px;
   max-width: 92vw;
+  max-height: 60vh;
+  max-height: 60dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px;
   background: var(--color-surface);
   border: 1px solid var(--color-border-soft);
@@ -347,9 +431,24 @@ onUnmounted(() => {
   transition: color var(--transition-fast);
 }
 
-/* Text colour change only, no background */
-.subcategory-link:hover {
+/* Shown on touch only: opens the main category itself */
+.subcategory-link.view-all {
+  grid-column: 1 / -1;
   color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Text colour change only, no background */
+.subcategory-link:active {
+  color: var(--color-primary);
+}
+
+/* Hover colours only where hover exists, so taps do not leave a stuck highlight */
+@media (hover: hover) {
+  .category-button:hover,
+  .subcategory-link:hover {
+    color: var(--color-primary);
+  }
 }
 
 .nav-error {
@@ -360,17 +459,44 @@ onUnmounted(() => {
   font-size: var(--font-size-xs);
 }
 
+/* ---------- Touch devices: 44px targets, no scrollbar on the category row ---------- */
+@media (pointer: coarse) {
+  .category-inner {
+    scrollbar-width: none;
+  }
+
+  .category-inner::-webkit-scrollbar {
+    display: none;
+  }
+
+  .category-button {
+    min-height: 44px;
+  }
+
+  .subcategory-link {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+/* ---------- Phones and small tablets: dropdown spans the content width ---------- */
 @media (max-width: 650px) {
   .category-inner {
     gap: var(--space-5);
   }
 
   .mega-menu {
-    width: 300px;
+    left: 3%;
+    right: 3%;
+    width: auto;
+    max-width: none;
   }
 
   .subcategory-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
 }
 </style>

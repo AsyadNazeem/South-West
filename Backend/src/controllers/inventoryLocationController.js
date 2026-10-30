@@ -47,7 +47,7 @@ const validateLocationFields = (body, { creating = false } = {}) => {
         errors.fields = `Unsupported fields: ${unknownFields.join(', ')}`;
     }
 
-    if (creating || body.code !== undefined) {
+if (body.code !== undefined) {
         if (typeof body.code !== 'string' || !body.code.trim()) {
             errors.code = 'Code is required and must be a non-empty string';
         } else if (body.code.trim().length > 50) {
@@ -145,11 +145,14 @@ const getInventoryLocationById = async (req, res) => {
 };
 
 // CREATE INVENTORY LOCATION
+
 const createInventoryLocation = async (req, res) => {
     let transaction;
 
     try {
-        const errors = validateLocationFields(req.body, { creating: true });
+        const errors = validateLocationFields(req.body, {
+            creating: true
+        });
 
         if (Object.keys(errors).length) {
             return res.status(400).json({
@@ -158,27 +161,64 @@ const createInventoryLocation = async (req, res) => {
             });
         }
 
+        transaction = await sequelize.transaction();
+
+        // Lock the sequence row to prevent duplicate codes
+        // when multiple locations are created concurrently.
+        const sequences = await sequelize.query(
+            `SELECT next_value
+             FROM inventory_location_code_sequences
+             WHERE id = 1
+             FOR UPDATE`,
+            { transaction }
+        );
+
+        const sequenceRows = sequences[0];
+
+        if (!sequenceRows || sequenceRows.length === 0) {
+            throw new Error(
+                'Inventory location code sequence is not initialized.'
+            );
+        }
+
+        const nextValue = Number(sequenceRows[0].next_value);
+
+        if (
+            !Number.isSafeInteger(nextValue) ||
+            nextValue < 1
+        ) {
+            throw new Error(
+                'Inventory location code sequence is invalid.'
+            );
+        }
+
+        const generatedCode =
+            `LOC-${String(nextValue).padStart(4, '0')}`;
+
+        await sequelize.query(
+            `UPDATE inventory_location_code_sequences
+             SET next_value = next_value + 1
+             WHERE id = 1`,
+            { transaction }
+        );
+
         const values = {
-            code: req.body.code.trim(),
+            code: generatedCode,
             name: req.body.name.trim(),
             location_type: req.body.location_type ?? 'store',
             address: req.body.address?.trim() || null,
             is_active: true
         };
 
-        transaction = await sequelize.transaction();
-
         const existingLocation = await InventoryLocation.findOne({
-            where: { code: values.code },
+            where: { code: generatedCode },
             transaction
         });
 
         if (existingLocation) {
-            await transaction.rollback();
-
-            return res.status(409).json({
-                message: 'Inventory location code already exists'
-            });
+            throw new Error(
+                `Generated inventory location code ${generatedCode} already exists.`
+            );
         }
 
         const location = await InventoryLocation.create(values, {
@@ -222,6 +262,7 @@ const createInventoryLocation = async (req, res) => {
         });
     }
 };
+
 
 // UPDATE INVENTORY LOCATION
 const updateInventoryLocation = async (req, res) => {

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 const filters = defineModel('filters', {
   default: () => ({
@@ -27,6 +27,9 @@ const emit = defineEmits(['apply', 'reset'])
 const PREVIEW_COUNT = 5
 const expanded = reactive({})
 
+// Tablet and phone: the filter panel is collapsed behind a toggle bar.
+const panelOpen = ref(false)
+
 const ratings = [5, 4, 3, 2, 1]
 
 const priceMin = computed(() => Number(props.minAvailablePrice))
@@ -41,6 +44,21 @@ const lowerPercent = computed(() =>
 const upperPercent = computed(() =>
     ((maxPrice.value - priceMin.value) / (priceMax.value - priceMin.value)) * 100,
 )
+
+// Number of active filters, shown as a badge on the mobile toggle bar.
+const activeCount = computed(() => {
+  const f = filters.value
+  const priceActive = minPrice.value > priceMin.value || maxPrice.value < priceMax.value
+
+  return (
+      (priceActive ? 1 : 0) +
+      (Number(f.minRating) > 0 ? 1 : 0) +
+      (f.brands?.length ?? 0) +
+      (f.warranties?.length ?? 0) +
+      (f.colors?.length ?? 0) +
+      (f.inStock ? 1 : 0)
+  )
+})
 
 function visibleItems(key, items) {
   return expanded[key] ? items : items.slice(0, PREVIEW_COUNT)
@@ -96,166 +114,190 @@ function formatPrice(value) {
 
 <template>
   <aside class="filters">
-    <div class="filters-head">
-      <h2>Filters</h2>
-      <button type="button" class="text-link" @click="clearFilters">Clear all</button>
-    </div>
+    <!-- Tablet / phone toggle (hidden on desktop) -->
+    <button
+        type="button"
+        class="filters-toggle"
+        aria-controls="filters-body"
+        :aria-expanded="panelOpen"
+        @click="panelOpen = !panelOpen"
+    >
+      <span class="filters-toggle-label">Filters</span>
 
-    <!-- Price -->
-    <section class="group">
-      <h3>Price</h3>
+      <span v-if="activeCount" class="filters-count">
+        {{ activeCount }}
+        <span class="sr-only"> active</span>
+      </span>
 
-      <p class="range-values">
-        Rs. {{ formatPrice(minPrice) }} – Rs. {{ formatPrice(maxPrice) }}
-      </p>
+      <span class="filters-chevron" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </span>
+    </button>
 
-      <div
-          class="range-track"
-          :style="{
-            '--range-start': `${lowerPercent}%`,
-            '--range-end': `${upperPercent}%`,
-          }"
-      >
-        <input
-            class="range-input"
-            type="range"
-            :min="priceMin"
-            :max="priceMax"
-            :step="100"
-            :value="minPrice"
-            aria-label="Minimum price"
-            @input="updateMinPrice($event.target.value)"
-        />
-        <input
-            class="range-input"
-            type="range"
-            :min="priceMin"
-            :max="priceMax"
-            :step="100"
-            :value="maxPrice"
-            aria-label="Maximum price"
-            @input="updateMaxPrice($event.target.value)"
-        />
+    <div id="filters-body" class="filters-body" :class="{ open: panelOpen }">
+      <div class="filters-head">
+        <h2>Filters</h2>
+        <button type="button" class="text-link" @click="clearFilters">Clear all</button>
       </div>
 
-      <button type="button" class="text-link apply" @click="emit('apply')">
-        Apply price
-      </button>
-    </section>
+      <!-- Price -->
+      <section class="group">
+        <h3>Price</h3>
 
-    <!-- Rating -->
-    <section class="group">
-      <h3>Customer rating</h3>
-      <ul class="options">
-        <li v-for="rating in ratings" :key="rating">
-          <label class="option" :class="{ selected: Number(filters.minRating) === rating }">
-            <input
-                type="radio"
-                name="minimum-rating"
-                :checked="Number(filters.minRating) === rating"
-                @click="selectRating(rating)"
-            />
-            <span class="stars" aria-hidden="true">
-              {{ '★'.repeat(rating) }}{{ '☆'.repeat(5 - rating) }}
-            </span>
-            <span>& up</span>
-          </label>
-        </li>
-      </ul>
-    </section>
+        <p class="range-values">
+          Rs. {{ formatPrice(minPrice) }} – Rs. {{ formatPrice(maxPrice) }}
+        </p>
 
-    <!-- Brand -->
-    <section v-if="brands.length" class="group">
-      <h3>Brand</h3>
-      <ul class="options">
-        <li v-for="brand in visibleItems('brands', brands)" :key="brand.id ?? brand">
-          <label class="option" :class="{ selected: isSelected('brands', brand) }">
-            <input
-                type="checkbox"
-                :checked="isSelected('brands', brand)"
-                @change="toggleOption('brands', brand)"
-            />
-            <span>{{ brand.name ?? brand }}</span>
-          </label>
-        </li>
-      </ul>
-      <button
-          v-if="hasMore(brands)"
-          type="button"
-          class="view-more"
-          @click="toggleExpanded('brands')"
-      >
-        {{ expanded.brands ? 'View less' : 'View more' }}
-      </button>
-    </section>
+        <div
+            class="range-track"
+            :style="{
+              '--range-start': `${lowerPercent}%`,
+              '--range-end': `${upperPercent}%`,
+            }"
+        >
+          <input
+              class="range-input"
+              type="range"
+              :min="priceMin"
+              :max="priceMax"
+              :step="100"
+              :value="minPrice"
+              aria-label="Minimum price"
+              @input="updateMinPrice($event.target.value)"
+          />
+          <input
+              class="range-input"
+              type="range"
+              :min="priceMin"
+              :max="priceMax"
+              :step="100"
+              :value="maxPrice"
+              aria-label="Maximum price"
+              @input="updateMaxPrice($event.target.value)"
+          />
+        </div>
 
-    <!-- Warranty -->
-    <section v-if="warrantyOptions.length" class="group">
-      <h3>Warranty</h3>
-      <ul class="options">
-        <li v-for="warranty in visibleItems('warranties', warrantyOptions)" :key="warranty.id ?? warranty">
-          <label class="option" :class="{ selected: isSelected('warranties', warranty) }">
-            <input
-                type="checkbox"
-                :checked="isSelected('warranties', warranty)"
-                @change="toggleOption('warranties', warranty)"
-            />
-            <span>{{ warranty.name ?? warranty }}</span>
-          </label>
-        </li>
-      </ul>
-      <button
-          v-if="hasMore(warrantyOptions)"
-          type="button"
-          class="view-more"
-          @click="toggleExpanded('warranties')"
-      >
-        {{ expanded.warranties ? 'View less' : 'View more' }}
-      </button>
-    </section>
+        <button type="button" class="text-link apply" @click="emit('apply')">
+          Apply price
+        </button>
+      </section>
 
-    <!-- Colour -->
-    <section v-if="colors.length" class="group">
-      <h3>Colour</h3>
-      <ul class="options">
-        <li v-for="color in visibleItems('colors', colors)" :key="color.id ?? color.name ?? color">
-          <label class="option" :class="{ selected: isSelected('colors', color) }">
-            <input
-                type="checkbox"
-                :checked="isSelected('colors', color)"
-                @change="toggleOption('colors', color)"
-            />
-            <span
-                class="swatch"
-                :style="{ backgroundColor: color.hex ?? 'transparent' }"
-                aria-hidden="true"
-            />
-            <span>{{ color.name ?? color }}</span>
-          </label>
-        </li>
-      </ul>
-      <button
-          v-if="hasMore(colors)"
-          type="button"
-          class="view-more"
-          @click="toggleExpanded('colors')"
-      >
-        {{ expanded.colors ? 'View less' : 'View more' }}
-      </button>
-    </section>
+      <!-- Rating -->
+      <section class="group">
+        <h3>Customer rating</h3>
+        <ul class="options">
+          <li v-for="rating in ratings" :key="rating">
+            <label class="option" :class="{ selected: Number(filters.minRating) === rating }">
+              <input
+                  type="radio"
+                  name="minimum-rating"
+                  :checked="Number(filters.minRating) === rating"
+                  @click="selectRating(rating)"
+              />
+              <span class="stars" aria-hidden="true">
+                {{ '★'.repeat(rating) }}{{ '☆'.repeat(5 - rating) }}
+              </span>
+              <span>& up</span>
+            </label>
+          </li>
+        </ul>
+      </section>
 
-    <!-- Availability -->
-    <section class="group">
-      <h3>Availability</h3>
-      <ul class="options">
-        <li>
-          <label class="option" :class="{ selected: filters.inStock }">
-            <input v-model="filters.inStock" type="checkbox" />
-            <span>In stock only</span>
-          </label>
-        </li>
-      </ul>
-    </section>
+      <!-- Brand -->
+      <section v-if="brands.length" class="group">
+        <h3>Brand</h3>
+        <ul class="options">
+          <li v-for="brand in visibleItems('brands', brands)" :key="brand.id ?? brand">
+            <label class="option" :class="{ selected: isSelected('brands', brand) }">
+              <input
+                  type="checkbox"
+                  :checked="isSelected('brands', brand)"
+                  @change="toggleOption('brands', brand)"
+              />
+              <span>{{ brand.name ?? brand }}</span>
+            </label>
+          </li>
+        </ul>
+        <button
+            v-if="hasMore(brands)"
+            type="button"
+            class="view-more"
+            @click="toggleExpanded('brands')"
+        >
+          {{ expanded.brands ? 'View less' : 'View more' }}
+        </button>
+      </section>
+
+      <!-- Warranty -->
+      <section v-if="warrantyOptions.length" class="group">
+        <h3>Warranty</h3>
+        <ul class="options">
+          <li v-for="warranty in visibleItems('warranties', warrantyOptions)" :key="warranty.id ?? warranty">
+            <label class="option" :class="{ selected: isSelected('warranties', warranty) }">
+              <input
+                  type="checkbox"
+                  :checked="isSelected('warranties', warranty)"
+                  @change="toggleOption('warranties', warranty)"
+              />
+              <span>{{ warranty.name ?? warranty }}</span>
+            </label>
+          </li>
+        </ul>
+        <button
+            v-if="hasMore(warrantyOptions)"
+            type="button"
+            class="view-more"
+            @click="toggleExpanded('warranties')"
+        >
+          {{ expanded.warranties ? 'View less' : 'View more' }}
+        </button>
+      </section>
+
+      <!-- Colour -->
+      <section v-if="colors.length" class="group">
+        <h3>Colour</h3>
+        <ul class="options">
+          <li v-for="color in visibleItems('colors', colors)" :key="color.id ?? color.name ?? color">
+            <label class="option" :class="{ selected: isSelected('colors', color) }">
+              <input
+                  type="checkbox"
+                  :checked="isSelected('colors', color)"
+                  @change="toggleOption('colors', color)"
+              />
+              <span
+                  class="swatch"
+                  :style="{ backgroundColor: color.hex ?? 'transparent' }"
+                  aria-hidden="true"
+              />
+              <span>{{ color.name ?? color }}</span>
+            </label>
+          </li>
+        </ul>
+        <button
+            v-if="hasMore(colors)"
+            type="button"
+            class="view-more"
+            @click="toggleExpanded('colors')"
+        >
+          {{ expanded.colors ? 'View less' : 'View more' }}
+        </button>
+      </section>
+
+      <!-- Availability -->
+      <section class="group">
+        <h3>Availability</h3>
+        <ul class="options">
+          <li>
+            <label class="option" :class="{ selected: filters.inStock }">
+              <input v-model="filters.inStock" type="checkbox" />
+              <span>In stock only</span>
+            </label>
+          </li>
+        </ul>
+      </section>
+    </div>
   </aside>
 </template>
 
@@ -263,11 +305,29 @@ function formatPrice(value) {
 /* No container: the filters sit directly on the page background. */
 .filters {
   width: 100%;
+  min-width: 0;
   padding: 0;
   border: 0;
   background: none;
   box-shadow: none;
   color: var(--color-text);
+}
+
+/* Toggle bar: only visible on tablet and phone (see media query) */
+.filters-toggle {
+  display: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .filters-head {
@@ -311,10 +371,12 @@ function formatPrice(value) {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   padding: 4px 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
   line-height: var(--line-height-base);
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -409,6 +471,7 @@ function formatPrice(value) {
   appearance: none;
   background: none;
   pointer-events: none;
+  touch-action: pan-y; /* horizontal drag moves the thumb, vertical still scrolls the page */
 }
 
 .range-input::-webkit-slider-thumb {
@@ -435,8 +498,163 @@ function formatPrice(value) {
 .option input:focus-visible,
 .view-more:focus-visible,
 .text-link:focus-visible,
-.range-input:focus-visible {
+.range-input:focus-visible,
+.filters-toggle:focus-visible {
   outline: 2px solid var(--color-focus-outline);
   outline-offset: 2px;
+}
+
+/* ---------- Touch devices: larger tap targets, same look ---------- */
+@media (pointer: coarse) {
+  .option {
+    min-height: 44px;
+    padding: 6px 0;
+    gap: var(--space-3, 12px);
+  }
+
+  .option input {
+    width: 20px;
+    height: 20px;
+  }
+
+  .swatch {
+    width: 18px;
+    height: 18px;
+  }
+
+  .text-link,
+  .view-more {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Bigger slider thumbs; track and input offsets are recalculated to match */
+  .range-track {
+    margin: 14px 12px;
+  }
+
+  .range-input {
+    top: -13px;
+    left: -12px;
+    width: calc(100% + 24px);
+    height: 28px;
+  }
+
+  .range-input::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  .range-input::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+/* ---------- Tablet portrait / unfolded foldables / phones: collapsible panel ---------- */
+@media (max-width: 850px) {
+  .filters-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-height: 48px;
+    padding: 0 var(--space-4);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .filters-toggle-label {
+    margin-right: auto;
+  }
+
+  .filters-count {
+    display: grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: var(--radius-pill);
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    font-size: 11px;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1;
+  }
+
+  .filters-chevron {
+    display: grid;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    transition: transform var(--transition-fast);
+  }
+
+  .filters-chevron svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .filters-toggle[aria-expanded="true"] .filters-chevron {
+    transform: rotate(180deg);
+  }
+
+  .filters-body {
+    display: none;
+    margin-top: var(--space-2);
+    padding: var(--space-4);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  .filters-body.open {
+    display: block;
+  }
+
+  /* The toggle bar already says "Filters" */
+  .filters-head {
+    justify-content: flex-end;
+    padding-bottom: var(--space-2);
+  }
+
+  .filters-head h2 {
+    display: none;
+  }
+
+  /* Use the extra width: options flow into columns */
+  .options {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    column-gap: var(--space-4);
+  }
+
+  .option {
+    font-size: var(--font-size-sm);
+  }
+}
+
+/* ---------- Fold cover screens (≈280–360px) ---------- */
+@media (max-width: 360px) {
+  .filters-body {
+    padding: 12px;
+  }
+
+  .options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .filters-chevron {
+    transition: none;
+  }
 }
 </style>

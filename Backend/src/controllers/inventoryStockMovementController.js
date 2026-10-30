@@ -4,7 +4,8 @@ const {
     InventoryStock,
     Item,
     InventoryLocation,
-    User
+    User,
+    ItemVariant
 } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
 
@@ -130,15 +131,16 @@ const createInventoryStockMovement = async (req, res) => {
 
     try {
         transaction = await sequelize.transaction();
-        const {
-            item_id,
-            location_id,
-            movement_type,
-            quantity,
-            reference_type,
-            reference_id,
-            notes
-        } = req.body;
+   const {
+    item_id,
+    variant_id,
+    location_id,
+    movement_type,
+    quantity,
+    reference_type,
+    reference_id,
+    notes
+} = req.body;
 
         // Check item
         const item = await Item.findByPk(item_id, {
@@ -152,6 +154,43 @@ const createInventoryStockMovement = async (req, res) => {
                 message: 'Item not found'
             });
         }
+
+        // A stock movement must always belong to an active variant of this item.
+if (
+    variant_id === undefined ||
+    variant_id === null ||
+    variant_id === '' ||
+    !Number.isSafeInteger(Number(variant_id)) ||
+    Number(variant_id) <= 0
+) {
+    await transaction.rollback();
+    return res.status(400).json({
+        message: 'A valid variant is required for every stock movement.'
+    });
+}
+
+const variant = await ItemVariant.findOne({
+    where: {
+        id: Number(variant_id),
+        item_id: item.id
+    },
+    transaction,
+    lock: transaction.LOCK.UPDATE
+});
+
+if (!variant) {
+    await transaction.rollback();
+    return res.status(400).json({
+        message: 'The selected variant does not belong to this item.'
+    });
+}
+
+if (!variant.is_active) {
+    await transaction.rollback();
+    return res.status(409).json({
+        message: 'Stock movements cannot be recorded for inactive variants.'
+    });
+}
 
         // Check location
         const location = await InventoryLocation.findByPk(location_id, {
@@ -186,6 +225,7 @@ const createInventoryStockMovement = async (req, res) => {
 
         const validMovementTypes = [
             'purchase',
+            'goods_receipt',
             'sale',
             'customer_return',
             'supplier_return',
@@ -207,6 +247,7 @@ const createInventoryStockMovement = async (req, res) => {
 
         switch (movement_type) {
             case 'purchase':
+            case 'goods_receipt':
             case 'customer_return':
             case 'transfer_in':
                 quantityChange = Number(quantity);
@@ -230,6 +271,7 @@ const createInventoryStockMovement = async (req, res) => {
         let stock = await InventoryStock.findOne({
             where: {
                 item_id,
+                  variant_id,
                 location_id
             },
             transaction,
@@ -241,6 +283,7 @@ const createInventoryStockMovement = async (req, res) => {
                 {
                     item_id,
                     location_id,
+                    variant_id: Number(variant_id),
                     quantity_on_hand: 0,
                     quantity_reserved: 0
                 },
@@ -273,22 +316,21 @@ const createInventoryStockMovement = async (req, res) => {
         );
 
         // Create movement
-        const movement = await InventoryStockMovement.create(
-            {
-                item_id,
-                location_id,
-                movement_type,
-                quantity,
-                reference_type,
-                reference_id,
-                notes,
-                created_by: req.user.id,
-                created_at: new Date()
-            },
-            {
-                transaction
-            }
-        );
+   const movement = await InventoryStockMovement.create(
+    {
+        item_id,
+        variant_id: Number(variant_id),
+        location_id,
+        movement_type,
+        quantity,
+        reference_type,
+        reference_id,
+        notes,
+        created_by: req.user.id,
+        created_at: new Date()
+    },
+    { transaction }
+);
 
 
         await recordAuditLog({

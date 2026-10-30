@@ -5,3 +5,17 @@ node_modules/
 .env.*
 !.env.example
 npm-debug.log*
+
+# Local backup files
+*.bak
+*.bak*
+*.backup
+*.backup-*
+*.before-*
+
+# Local Mailpit binaries and archives
+Backend/mailpit
+Backend/mailpit.tar.gz
+
+# Uploaded product media (keep files locally, not in Git)
+Backend/src/uploads/

@@ -38,6 +38,40 @@ const filteredPrices = computed(() => {
   })
 })
 
+// Group filtered price records by item.
+const groupedPrices = computed(() => {
+  const groups = new Map()
+
+  for (const price of filteredPrices.value) {
+    const itemId = price.item_id ?? price.item?.id
+    const key = itemId != null
+      ? String(itemId)
+      : `unknown-${price.item?.item_code || price.item?.item_name || price.id}`
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        itemId,
+        itemName: price.item?.item_name || "Unknown item",
+        itemCode: price.item?.item_code || "-",
+        prices: []
+      })
+    }
+
+    groups.get(key).prices.push(price)
+  }
+
+  return Array.from(groups.values())
+})
+
+const expandedGroups = ref({})
+
+const isGroupExpanded = (key) => expandedGroups.value[key] !== false
+
+const toggleGroup = (key) => {
+  expandedGroups.value[key] = !isGroupExpanded(key)
+}
+
 // Load prices
 const loadPrices = async () => {
   try {
@@ -194,6 +228,7 @@ onMounted(loadPrices)
     </div>
 
 
+
     <!-- Table -->
     <div class="table-card">
 
@@ -227,9 +262,7 @@ onMounted(loadPrices)
 
           <tr>
 
-            <th>#</th>
-
-            <th>
+<th>
               Product
             </th>
 
@@ -263,112 +296,106 @@ onMounted(loadPrices)
 
 
           <tbody>
-
-          <tr
-              v-for="(price,index) in filteredPrices"
-              :key="price.id"
-          >
-
-            <td>{{index+1}}</td>
-            <!-- Product -->
-            <td>
-
-              <strong>
-                {{ price.item?.item_name || "-" }}
-              </strong>
-
-            </td>
-
-
-            <!-- Code -->
-            <td>
-
-              {{ price.item?.item_code || "-" }}
-
-            </td>
-
-
-            <!-- Price Type -->
-            <td>
-
-                                <span
-                                    class="type-badge"
-                                    :class="price.price_type?.toLowerCase()"
-                                >
-                                    {{ price.price_type || "-" }}
-                                </span>
-
-            </td>
-
-
-            <!-- Price -->
-            <td>
-
-              <strong>
-                {{ formatPrice(price.price) }}
-              </strong>
-
-            </td>
-
-
-            <!-- Currency -->
-            <td>
-
-              {{ price.currency || "LKR" }}
-
-            </td>
-
-
-            <!-- Status -->
-            <td>
-
-                                <span
-                                    class="status-badge"
-                                    :class="
-                                        price.is_active
-                                            ? 'active'
-                                            : 'inactive'
-                                    "
-                                >
-                                    {{
-                                    price.is_active
-                                        ? "Active"
-                                        : "Inactive"
-                                  }}
-                                </span>
-
-            </td>
-
-
-            <!-- Actions -->
-            <td>
-
-              <div class="action-buttons">
-
-                <!-- Edit -->
-                <router-link
-                    :to="`/admin/products/item-prices/edit/${price.id}`"
-                    class="action-button edit"
+          <template v-for="group in groupedPrices" :key="group.key">
+            <tr class="item-group-row">
+              <td colspan="7">
+                <div class="group-heading-row">
+<button
+                  type="button"
+                  class="group-toggle"
+                  :aria-expanded="isGroupExpanded(group.key)"
+                  @click="toggleGroup(group.key)"
                 >
-                  Edit
-                </router-link>
+                  <span
+                    class="group-chevron"
+                    :class="{ expanded: isGroupExpanded(group.key) }"
+                  >&#9656;</span>
 
+                  <span class="group-item-details">
+                    <strong>{{ group.itemName }}</strong>
+                    <span class="group-item-code">Code: {{ group.itemCode }}</span>
+                  </span>
 
-                <!-- Delete -->
-                <button
-                    class="action-button delete"
-                    @click="deletePrice(price.id)"
-                >
-                  Delete
+                  <span class="group-count">
+                    {{ group.prices.length }}
+                    {{ group.prices.length === 1 ? 'price' : 'prices' }}
+                  </span>
                 </button>
+                <router-link
+                  v-if="group.itemId"
+                  class="action-button edit group-edit-all"
+                  :to="`/admin/products/item-prices/edit-all/${group.itemId}`"
+                >
+                  Edit All
+                </router-link>
+                </div>
+              </td>
+            </tr>
 
-              </div>
+            <template v-if="isGroupExpanded(group.key)">
+              <tr
+                v-for="(price, index) in group.prices"
+                :key="price.id"
+                class="item-price-row"
+              >
+                <td>{{ index + 1 }}</td>
 
-            </td>
+                <td>
+                  <strong>{{ price.item?.item_name || '-' }}</strong>
+                </td>
 
-          </tr>
+                <td>
+                  <strong>
+                    {{ price.variant?.variant_sku || price.item?.item_code || '-' }}
+                  </strong>
+                </td>
 
-          </tbody>
+                <td>
+                  <span
+                    class="type-badge"
+                    :class="price.price_type?.toLowerCase()"
+                  >
+                    {{ price.price_type || '-' }}
+                  </span>
+                </td>
+
+                <td>
+                  <strong>{{ formatPrice(price.price) }}</strong>
+                </td>
+
+                <td>{{ price.currency || 'LKR' }}</td>
+
+                <td>
+                  <span
+                    class="status-badge"
+                    :class="price.is_active ? 'active' : 'inactive'"
+                  >
+                    {{ price.is_active ? 'Active' : 'Inactive' }}
+                  </span>
+                </td>
+
+                <td>
+                  <div class="action-buttons">
+                    <router-link
+                      :to="`/admin/products/item-prices/edit/${price.id}`"
+                      class="action-button edit"
+                    >
+                      Edit
+                    </router-link>
+
+                    <button
+                      type="button"
+                      class="action-button delete"
+                      @click="deletePrice(price.id)"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </template>
+        </tbody>
 
         </table>
 
@@ -380,7 +407,47 @@ onMounted(loadPrices)
 
 </template>
 
+
 <style scoped>
+.group-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.group-edit-all {
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+
+.bulk-edit-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.bulk-edit-table {
+  min-width: 1050px;
+}
+
+.bulk-edit-table input:not([type="checkbox"]),
+.bulk-edit-table select {
+  width: 130px;
+  min-width: 100px;
+  height: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.bulk-edit-table td small {
+  display: block;
+  margin-top: 5px;
+  color: var(--color-text-secondary);
+}
+
 .page-container {
   width: 100%;
   font-family: var(--font-family);
@@ -525,6 +592,70 @@ onMounted(loadPrices)
 .filter-card select:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* =========================
+   Item Groups
+   ========================= */
+
+.item-group-row td {
+  padding: 0;
+  background: var(--color-hover-bg);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px var(--spacing-lg);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.group-toggle:hover {
+  background: var(--color-surface-hover);
+}
+
+.group-chevron {
+  display: inline-block;
+  font-size: 20px;
+  transition: transform var(--transition-fast);
+}
+
+.group-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.group-item-details {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.group-item-code {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.group-count {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.item-price-row td:first-child {
+  padding-left: 42px;
 }
 
 /* =========================
@@ -682,4 +813,132 @@ tbody tr:last-child td {
     width: 100%;
   }
 }
+
+/* Bulk price editor */
+.bulk-toolbar,
+.bulk-editor-heading,
+.bulk-toolbar-actions,
+.bulk-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.bulk-toolbar,
+.bulk-editor-card {
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.bulk-editor-heading {
+  margin-bottom: var(--spacing-lg);
+}
+
+.bulk-editor-heading h2 {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+}
+
+.bulk-editor-heading p {
+  margin-top: 5px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.bulk-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-lg);
+}
+
+.bulk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.bulk-field > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.bulk-field input:not([type="checkbox"]),
+.bulk-field select {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.bulk-field input:disabled,
+.bulk-field select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.bulk-editor-actions {
+  justify-content: flex-end;
+  margin-top: var(--spacing-lg);
+}
+
+.bulk-message {
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+}
+
+.success-message {
+  color: var(--color-text-primary);
+  background: var(--color-hover-bg);
+}
+
+.group-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-heading-row > input,
+.price-row-selection > input {
+  flex: 0 0 auto;
+}
+
+.price-row-selection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 800px) {
+  .bulk-fields-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .bulk-fields-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bulk-toolbar,
+  .bulk-editor-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 </style>

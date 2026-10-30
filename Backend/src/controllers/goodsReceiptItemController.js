@@ -3,6 +3,7 @@ const {
     GoodsReceipt,
     PurchaseOrderItem,
     Item,
+    ItemVariant,
     sequelize
 } = require('../models');
 
@@ -134,6 +135,7 @@ const getGoodsReceiptItemById = async (req, res) => {
 
 // CREATE
 
+
 const createGoodsReceiptItem = async (req, res) => {
     let transaction;
 
@@ -144,25 +146,26 @@ const createGoodsReceiptItem = async (req, res) => {
             goods_receipt_id,
             purchase_order_item_id,
             item_id,
+            variant_id,
             quantity_received,
             unit_cost,
             condition,
             notes
         } = req.body;
 
+        // Validate receipt ID.
         if (
-            notes !== undefined &&
-            notes !== null &&
-            typeof notes !== 'string'
+            !/^\d+$/.test(String(goods_receipt_id ?? '')) ||
+            Number(goods_receipt_id) <= 0
         ) {
             await transaction.rollback();
-
             return res.status(400).json({
-                message: 'Notes must be a string or null'
+                message: 'A valid goods receipt ID is required'
             });
         }
 
-        // 1. Lock the receipt and ensure it is still editable.
+        // Lock the parent receipt. This also serializes item additions
+        // to the same draft receipt.
         const goodsReceipt = await GoodsReceipt.findByPk(
             goods_receipt_id,
             {
@@ -173,7 +176,6 @@ const createGoodsReceiptItem = async (req, res) => {
 
         if (!goodsReceipt) {
             await transaction.rollback();
-
             return res.status(404).json({
                 message: 'Goods receipt not found'
             });
@@ -181,60 +183,141 @@ const createGoodsReceiptItem = async (req, res) => {
 
         if (goodsReceipt.status !== 'draft') {
             await transaction.rollback();
-
             return res.status(400).json({
                 message: 'Only draft goods receipts can have items added'
             });
         }
 
-        // 2. Lock the purchase order item.
-        const purchaseOrderItem = await PurchaseOrderItem.findByPk(
-            purchase_order_item_id,
-            {
-                transaction,
-                lock: transaction.LOCK.UPDATE
-            }
-        );
-
-        if (!purchaseOrderItem) {
-            await transaction.rollback();
-
-            return res.status(404).json({
-                message: 'Purchase order item not found'
-            });
-        }
-
+        // Validate product ID.
         if (
-            Number(purchaseOrderItem.purchase_order_id) !==
-            Number(goodsReceipt.purchase_order_id)
+            !/^\d+$/.test(String(item_id ?? '')) ||
+            Number(item_id) <= 0
         ) {
             await transaction.rollback();
-
             return res.status(400).json({
-                message: 'Purchase order item does not belong to this purchase order'
+                message: 'A valid item ID is required'
             });
         }
 
-        // 3. Validate item.
         const item = await Item.findByPk(item_id, { transaction });
 
         if (!item) {
             await transaction.rollback();
-
             return res.status(404).json({
                 message: 'Item not found'
             });
         }
 
-        if (Number(purchaseOrderItem.item_id) !== Number(item_id)) {
+        // A variant is mandatory for every new goods-receipt line.
+        if (variant_id === undefined || variant_id === null || variant_id === '') {
             await transaction.rollback();
-
             return res.status(400).json({
-                message: 'Item does not match the purchase order item'
+                message: 'A variant is required for each goods receipt item'
             });
         }
 
-        // 4. Validate quantity.
+        let normalizedVariantId = null;
+
+        if (
+            variant_id !== undefined &&
+            variant_id !== null &&
+            variant_id !== ''
+        ) {
+            if (
+                !/^\d+$/.test(String(variant_id)) ||
+                Number(variant_id) <= 0
+            ) {
+                await transaction.rollback();
+                return res.status(400).json({
+                    message: 'Invalid variant ID'
+                });
+            }
+
+            const variant = await ItemVariant.findByPk(variant_id, {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+
+            if (!variant) {
+                await transaction.rollback();
+                return res.status(404).json({
+                    message: 'Item variant not found'
+                });
+            }
+
+            if (Number(variant.item_id) !== Number(item.id)) {
+                await transaction.rollback();
+                return res.status(400).json({
+                    message: 'The selected variant does not belong to this item'
+                });
+            }
+
+            if (!variant.is_active) {
+                await transaction.rollback();
+                return res.status(409).json({
+                    message: 'Cannot receive stock for an inactive variant'
+                });
+            }
+
+            normalizedVariantId = variant.id;
+        }
+
+        // Link PO-backed receipt lines to their exact purchase-order item.
+        let normalizedPOItemId = null;
+
+        if (goodsReceipt.purchase_order_id) {
+            if (
+                !/^\d+$/.test(String(purchase_order_item_id ?? '')) ||
+                !Number.isSafeInteger(Number(purchase_order_item_id)) ||
+                Number(purchase_order_item_id) <= 0
+            ) {
+                await transaction.rollback();
+                return res.status(400).json({
+                    message: 'A valid purchase order item is required for this receipt'
+                });
+            }
+
+            const poItem = await PurchaseOrderItem.findByPk(
+                purchase_order_item_id,
+                {
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                }
+            );
+
+            if (
+                !poItem ||
+                Number(poItem.purchase_order_id) !== Number(goodsReceipt.purchase_order_id)
+            ) {
+                await transaction.rollback();
+                return res.status(400).json({
+                    message: 'The selected purchase order item does not belong to this receipt purchase order'
+                });
+            }
+
+            if (
+                Number(poItem.item_id) !== Number(item.id) ||
+                Number(poItem.variant_id) !== Number(normalizedVariantId)
+            ) {
+                await transaction.rollback();
+                return res.status(400).json({
+                    message: 'The receipt item and variant must match the selected purchase order item'
+                });
+            }
+
+            normalizedPOItemId = poItem.id;
+        } else if (
+            purchase_order_item_id !== undefined &&
+            purchase_order_item_id !== null &&
+            purchase_order_item_id !== ''
+        ) {
+            await transaction.rollback();
+            return res.status(400).json({
+                message: 'A standalone receipt cannot reference a purchase order item'
+            });
+        }
+
+        // Validate quantity: positive, maximum 3 decimal places.
         if (
             quantity_received === undefined ||
             quantity_received === null ||
@@ -248,17 +331,14 @@ const createGoodsReceiptItem = async (req, res) => {
             ) >= 1e-7
         ) {
             await transaction.rollback();
-
             return res.status(400).json({
-                message: 'Quantity received must be a positive number with at most 3 decimal places'
+                message: 'Quantity received must be positive with at most 3 decimal places'
             });
         }
 
-
         const receivedQuantity = Number(quantity_received);
 
-
-        // 5. Validate unit cost.
+        // Keep unit cost required for compatibility with the current schema.
         if (
             unit_cost === undefined ||
             unit_cost === null ||
@@ -272,76 +352,82 @@ const createGoodsReceiptItem = async (req, res) => {
             ) >= 1e-7
         ) {
             await transaction.rollback();
-
             return res.status(400).json({
                 message: 'Unit cost must be a non-negative amount with at most 2 decimal places'
             });
         }
 
         const receivedUnitCost = Number(unit_cost);
-
-        // 6. Validate condition.
         const receiptCondition = condition ?? 'good';
-        const validConditions = ['good', 'damaged', 'defective'];
 
-        if (!validConditions.includes(receiptCondition)) {
+        if (!['good', 'damaged', 'defective'].includes(receiptCondition)) {
             await transaction.rollback();
-
             return res.status(400).json({
                 message: 'Condition must be good, damaged, or defective'
             });
         }
 
-        // 7. Prevent duplicate receipt items.
+        if (
+            notes !== undefined &&
+            notes !== null &&
+            typeof notes !== 'string'
+        ) {
+            await transaction.rollback();
+            return res.status(400).json({
+                message: 'Notes must be a string or null'
+            });
+        }
+
+        // Prevent duplicate product/variant lines in the same receipt.
+        // The parent receipt lock serializes additions to this receipt.
+        const duplicateWhere = {
+            goods_receipt_id: goodsReceipt.id,
+            item_id,
+            variant_id: normalizedVariantId
+        };
+
         const existingItem = await GoodsReceiptItem.findOne({
-            where: {
-                goods_receipt_id: goodsReceipt.id,
-                purchase_order_item_id,
-                item_id
-            },
+            where: duplicateWhere,
             transaction
         });
 
         if (existingItem) {
             await transaction.rollback();
-
             return res.status(409).json({
-                message: 'This purchase order item is already added to this goods receipt'
+                message: 'This product and variant are already on this goods receipt'
             });
         }
 
-        // 8. Create receipt item.
         const receiptItem = await GoodsReceiptItem.create(
             {
                 goods_receipt_id: goodsReceipt.id,
-                purchase_order_item_id,
-                item_id,
+                purchase_order_item_id: normalizedPOItemId,
+                item_id: item.id,
+                variant_id: normalizedVariantId,
                 quantity_received: receivedQuantity,
                 unit_cost: receivedUnitCost,
                 condition: receiptCondition,
-                notes
+                notes: notes ?? null
             },
             { transaction }
         );
 
-
-        // 10. Audit the creation in the same transaction.
         await recordAuditLog({
             userId: req.user.id,
             action: 'GOODS_RECEIPT_ITEM_CREATED',
             module: 'inventory',
             entityType: 'goods_receipt_item',
             entityId: receiptItem.id,
-            description: `Item ${item_id} added to goods receipt ${goodsReceipt.receipt_number}`,
+            description: `Item ${item.id} added to goods receipt ${goodsReceipt.receipt_number}`,
             oldValues: null,
             newValues: {
                 goods_receipt_id: goodsReceipt.id,
-                purchase_order_item_id: purchase_order_item_id,
-                item_id,
+                item_id: item.id,
+                variant_id: normalizedVariantId,
                 quantity_received: receivedQuantity,
                 unit_cost: receivedUnitCost,
                 condition: receiptCondition,
-                notes: notes ?? null,
+                notes: notes ?? null
             },
             ipAddress: req.ip || null,
             userAgent: req.get('user-agent') || null,
@@ -349,42 +435,30 @@ const createGoodsReceiptItem = async (req, res) => {
             transaction
         });
 
-        // 11. Retrieve the created item.
-        const createdItem = await GoodsReceiptItem.findByPk(
-            receiptItem.id,
-            {
-                include: [
-                    {
-                        model: GoodsReceipt,
-                        as: 'goodsReceipt',
-                        attributes: [
-                            'id',
-                            'receipt_number',
-                            'receipt_date',
-                            'status'
-                        ]
-                    },
-                    {
-                        model: PurchaseOrderItem,
-                        as: 'purchaseOrderItem',
-                        attributes: [
-                            'id',
-                            'purchase_order_id',
-                            'item_id',
-                            'quantity_ordered',
-                            'quantity_received',
-                            'unit_cost'
-                        ]
-                    },
-                    {
-                        model: Item,
-                        as: 'item',
-                        attributes: ['id', 'item_code', 'item_name']
-                    }
-                ],
-                transaction
-            }
-        );
+        const createdItem = await GoodsReceiptItem.findByPk(receiptItem.id, {
+            include: [
+                {
+                    model: GoodsReceipt,
+                    as: 'goodsReceipt',
+                    attributes: [
+                        'id',
+                        'receipt_number',
+                        'receipt_date',
+                        'status'
+                    ]
+                },
+                {
+                    model: Item,
+                    as: 'item',
+                    attributes: ['id', 'item_code', 'item_name']
+                },
+                {
+                    model: ItemVariant,
+                    as: 'variant'
+                }
+            ],
+            transaction
+        });
 
         await transaction.commit();
 
@@ -404,6 +478,7 @@ const createGoodsReceiptItem = async (req, res) => {
         });
     }
 };
+
 
 
 
@@ -476,22 +551,6 @@ const updateGoodsReceiptItem = async (req, res) => {
 
             return res.status(409).json({
                 message: 'Goods receipt item changed during the request; please retry'
-            });
-        }
-
-        const purchaseOrderItem = await PurchaseOrderItem.findByPk(
-            receiptItem.purchase_order_item_id,
-            {
-                transaction,
-                lock: transaction.LOCK.UPDATE
-            }
-        );
-
-        if (!purchaseOrderItem) {
-            await transaction.rollback();
-
-            return res.status(404).json({
-                message: 'Purchase order item not found'
             });
         }
 
@@ -644,11 +703,17 @@ const updateGoodsReceiptItem = async (req, res) => {
                         'unit_cost'
                     ]
                 },
-                {
-                    model: Item,
-                    as: 'item',
-                    attributes: ['id', 'item_code', 'item_name']
-                }
+              {
+    model: Item,
+    as: 'item',
+    attributes: ['id', 'item_code', 'item_name']
+},
+{
+    model: ItemVariant,
+    as: 'variant',
+    attributes: ['id', 'item_id', 'sku', 'barcode'],
+    required: false
+}
             ],
             transaction
         });
@@ -746,32 +811,17 @@ const deleteGoodsReceiptItem = async (req, res) => {
             });
         }
 
-        const purchaseOrderItem = await PurchaseOrderItem.findByPk(
-            receiptItem.purchase_order_item_id,
-            {
-                transaction,
-                lock: transaction.LOCK.UPDATE
-            }
-        );
-
-        if (!purchaseOrderItem) {
-            await transaction.rollback();
-
-            return res.status(404).json({
-                message: 'Purchase order item not found'
-            });
-        }
-
         // Capture the details before deleting the item.
-        const oldValues = {
-            goods_receipt_id: receiptItem.goods_receipt_id,
-            purchase_order_item_id: receiptItem.purchase_order_item_id,
-            item_id: receiptItem.item_id,
-            quantity_received: Number(receiptItem.quantity_received),
-            unit_cost: Number(receiptItem.unit_cost),
-            condition: receiptItem.condition,
-            notes: receiptItem.notes
-        };
+const oldValues = {
+    goods_receipt_id: receiptItem.goods_receipt_id,
+    purchase_order_item_id: receiptItem.purchase_order_item_id,
+    item_id: receiptItem.item_id,
+    variant_id: receiptItem.variant_id,
+    quantity_received: Number(receiptItem.quantity_received),
+    unit_cost: Number(receiptItem.unit_cost),
+    condition: receiptItem.condition,
+    notes: receiptItem.notes
+};
 
         // Delete the receipt item.
         await receiptItem.destroy({ transaction });

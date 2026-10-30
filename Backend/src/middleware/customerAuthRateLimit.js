@@ -52,6 +52,20 @@ const customerPasswordSetupLimiter = rateLimit({
     limit: 5,
 });
 
+
+const customerPasswordChangeCodeLimiter = rateLimit({
+    ...commonOptions,
+    windowMs: 15 * 60 * 1000,
+    limit: 3,
+});
+
+const customerPasswordChangeLimiter = rateLimit({
+    ...commonOptions,
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+});
+
+
 module.exports = {
     customerLoginLimiter,
     customerRegistrationLimiter,
@@ -59,4 +73,7 @@ module.exports = {
     customerActivationLimiter,
     customerPasswordSetupValidationLimiter,
     customerPasswordSetupLimiter,
+    customerPasswordChangeCodeLimiter,
+    customerPasswordChangeLimiter,
+
 };

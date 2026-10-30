@@ -7,13 +7,13 @@ const ORDER_BASE = '/admin/sales/orders'
 
 const statuses = [
   { value: 'pending', label: 'Pending' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'processing', label: 'Processing' },
+  { value: 'confirmed', label: 'Order Confirmed' },
+  { value: 'processing', label: 'Order Ready to Deliver' },
   { value: 'partially_shipped', label: 'Partially Shipped' },
-  { value: 'shipped', label: 'Shipped' },
-  { value: 'delivered', label: 'Delivered' },
-  { value: 'cancelled', label: 'Cancelled' },
-  { value: 'returned', label: 'Returned' }
+  { value: 'shipped', label: 'Order Handed Over to Courier' },
+  { value: 'delivered', label: 'Order Completed' },
+  { value: 'cancelled', label: 'Order Cancelled' },
+  { value: 'returned', label: 'Order Returned' }
 ]
 
 const paymentStatuses = [
@@ -35,6 +35,130 @@ const error = ref('')
 const search = ref('')
 const statusFilter = ref('')
 const paymentFilter = ref('')
+
+const savingOrderId = ref(null)
+const statusDrafts = ref({})
+const statusMessage = ref('')
+const statusError = ref('')
+
+const transitionMap = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['processing', 'cancelled'],
+  processing: ['shipped', 'cancelled'],
+  partially_shipped: ['shipped', 'cancelled'],
+  shipped: ['delivered', 'returned'],
+  delivered: ['returned'],
+  cancelled: [],
+  returned: []
+}
+
+const availableStatuses = (order) => {
+  const allowed = transitionMap[order.status] || []
+
+  return statuses.filter(status =>
+    status.value === order.status || allowed.includes(status.value)
+  )
+}
+
+const statusDialogOpen = ref(false)
+const selectedOrder = ref(null)
+const modalStatus = ref('')
+const statusReason = ref('')
+const courierName = ref('')
+const trackingNumber = ref('')
+const expectedDeliveryDate = ref('')
+
+const resetStatusDialog = () => {
+  statusDialogOpen.value = false
+  selectedOrder.value = null
+  modalStatus.value = ''
+  statusReason.value = ''
+  courierName.value = ''
+  trackingNumber.value = ''
+  expectedDeliveryDate.value = ''
+}
+
+const saveOrderStatus = (order) => {
+  statusMessage.value = ''
+  statusError.value = ''
+
+  const nextStatus = statusDrafts.value[order.id] ?? order.status
+
+  if (nextStatus === order.status) return
+
+  const allowed = transitionMap[order.status] || []
+
+  if (!allowed.includes(nextStatus)) {
+    statusError.value = 'This status transition is not allowed.'
+    statusDrafts.value[order.id] = order.status
+    return
+  }
+
+  selectedOrder.value = order
+  modalStatus.value = nextStatus
+  statusReason.value = ''
+  courierName.value = ''
+  trackingNumber.value = ''
+  expectedDeliveryDate.value = ''
+  statusDialogOpen.value = true
+}
+
+const confirmOrderStatus = async () => {
+  const order = selectedOrder.value
+  if (!order) return
+
+  statusMessage.value = ''
+  statusError.value = ''
+
+  const payload = { status: modalStatus.value }
+
+  if (['cancelled', 'returned'].includes(modalStatus.value)) {
+    if (!statusReason.value.trim()) {
+      statusError.value = 'Enter a reason before continuing.'
+      return
+    }
+    payload.reason = statusReason.value.trim()
+  }
+
+  if (modalStatus.value === 'shipped') {
+    if (!courierName.value.trim() || !trackingNumber.value.trim()) {
+      statusError.value = 'Courier name and tracking number are required.'
+      return
+    }
+
+    payload.courier_name = courierName.value.trim()
+    payload.tracking_number = trackingNumber.value.trim()
+
+    if (expectedDeliveryDate.value) {
+      payload.expected_delivery_date = expectedDeliveryDate.value
+    }
+  }
+
+  savingOrderId.value = order.id
+
+  try {
+    const response = await orderApi.updateOrderStatus(order.id, payload)
+
+    order.status = modalStatus.value
+    statusDrafts.value[order.id] = modalStatus.value
+
+    const emailStatus = response?.email_status
+
+    statusMessage.value = emailStatus === 'failed'
+      ? `Order ${order.order_number} updated, but the customer email failed.`
+      : emailStatus === 'skipped_missing_customer_email'
+        ? `Order ${order.order_number} updated, but the customer has no email address.`
+        : `Order ${order.order_number} status updated successfully.`
+
+    resetStatusDialog()
+  } catch (err) {
+    statusError.value =
+      err?.response?.data?.message ||
+      `Failed to update order ${order.order_number}.`
+  } finally {
+    savingOrderId.value = null
+  }
+}
 
 // ==========================================
 // Load
@@ -144,13 +268,6 @@ const formatType = (type) => {
         <p>Manage customer orders and order status.</p>
       </div>
 
-      <router-link
-          :to="`${ORDER_BASE}/create`"
-          class="primary-button"
-      >
-        + Create Order
-      </router-link>
-
     </div>
 
 
@@ -170,6 +287,14 @@ const formatType = (type) => {
       </button>
     </div>
 
+
+    <div v-if="statusMessage" class="success-message">
+      {{ statusMessage }}
+    </div>
+
+    <div v-if="statusError" class="error-state">
+      {{ statusError }}
+    </div>
 
     <!-- Filters -->
     <div class="filter-card">
@@ -242,13 +367,6 @@ const formatType = (type) => {
         <strong>No orders found</strong>
 
         <span>There are no orders matching your search.</span>
-
-        <router-link
-            :to="`${ORDER_BASE}/create`"
-            class="primary-button"
-        >
-          Create Order
-        </router-link>
       </div>
 
 
@@ -302,14 +420,32 @@ const formatType = (type) => {
               </span>
             </td>
 
-            <!-- Status -->
+            <!-- Order status: payment status remains separate -->
             <td>
-              <span
-                  class="status-badge"
-                  :class="`status-${order.status}`"
-              >
-                {{ formatStatus(order.status) }}
-              </span>
+              <div class="order-status-editor">
+                <select
+                  :value="statusDrafts[order.id] ?? order.status"
+                  :disabled="savingOrderId === order.id"
+                  @change="statusDrafts[order.id] = $event.target.value"
+                  aria-label="Order status"
+                >
+                  <option
+                    v-for="status in availableStatuses(order)"
+                    :key="status.value"
+                    :value="status.value"
+                  >
+                    {{ status.label }}
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  class="action-button"
+                  :disabled="savingOrderId === order.id || (statusDrafts[order.id] ?? order.status) === order.status"
+                  @click="saveOrderStatus(order)"
+                >
+                  {{ savingOrderId === order.id ? 'Saving...' : 'Save' }}
+                </button>
+              </div>
             </td>
 
             <!-- Payment -->
@@ -340,14 +476,6 @@ const formatType = (type) => {
                   View
                 </router-link>
 
-                <!-- Edit -->
-                <router-link
-                    :to="`${ORDER_BASE}/edit/${order.id}`"
-                    class="action-button edit"
-                >
-                  Edit
-                </router-link>
-
               </div>
 
             </td>
@@ -360,6 +488,105 @@ const formatType = (type) => {
 
       </div>
 
+    </div>
+
+    <!-- Status update dialog -->
+    <div
+      v-if="statusDialogOpen"
+      class="status-modal-backdrop"
+      @click.self="resetStatusDialog"
+    >
+      <section
+        class="status-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="status-modal-title"
+      >
+        <h2 id="status-modal-title">
+          Update {{ selectedOrder?.order_number }}
+        </h2>
+
+        <p class="modal-description">
+          New status:
+          <strong>
+            {{ statuses.find(s => s.value === modalStatus)?.label || modalStatus }}
+          </strong>
+        </p>
+
+        <div
+          v-if="['cancelled', 'returned'].includes(modalStatus)"
+          class="modal-field"
+        >
+          <label for="status-reason">Reason *</label>
+          <textarea
+            id="status-reason"
+            v-model="statusReason"
+            rows="4"
+            maxlength="2000"
+            required
+            placeholder="Enter the reason"
+          />
+        </div>
+
+        <template v-if="modalStatus === 'shipped'">
+          <div class="modal-field">
+            <label for="courier-name">Courier name *</label>
+            <input
+              id="courier-name"
+              v-model="courierName"
+              type="text"
+              maxlength="150"
+              required
+              placeholder="Enter courier name"
+            />
+          </div>
+
+          <div class="modal-field">
+            <label for="tracking-number">Tracking number *</label>
+            <input
+              id="tracking-number"
+              v-model="trackingNumber"
+              type="text"
+              maxlength="150"
+              required
+              placeholder="Enter tracking number"
+            />
+          </div>
+
+          <div class="modal-field">
+            <label for="expected-delivery-date">Expected delivery date</label>
+            <input
+              id="expected-delivery-date"
+              v-model="expectedDeliveryDate"
+              type="date"
+            />
+          </div>
+        </template>
+
+        <p v-if="statusError" class="modal-error">
+          {{ statusError }}
+        </p>
+
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="action-button"
+            :disabled="savingOrderId === selectedOrder?.id"
+            @click="resetStatusDialog"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            class="primary-button"
+            :disabled="savingOrderId === selectedOrder?.id"
+            @click="confirmOrderStatus"
+          >
+            {{ savingOrderId === selectedOrder?.id ? 'Saving...' : 'Confirm Status' }}
+          </button>
+        </div>
+      </section>
     </div>
 
   </div>
@@ -718,4 +945,121 @@ tbody tr.row-cancelled td:not(:last-child) {
     align-items: flex-start;
   }
 }
+
+.order-status-editor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 250px;
+}
+
+.order-status-editor select {
+  min-width: 145px;
+  padding: 8px;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: var(--radius-md, 6px);
+  background-color: #ffffff;
+  color: #1f2937;
+  font-family: inherit;
+  font-size: var(--font-size-sm, 13px);
+  -webkit-text-fill-color: #1f2937;
+  cursor: pointer;
+}
+
+.order-status-editor select option {
+  background-color: #ffffff;
+  color: #1f2937;
+}
+.order-status-editor button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.success-message {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+
+.status-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.status-modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.status-modal h2 {
+  margin: 0 0 12px;
+  font-size: var(--font-size-xl);
+}
+
+.modal-description {
+  margin-bottom: 20px;
+  color: var(--color-text-secondary);
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 16px;
+}
+
+.modal-field label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.modal-field input,
+.modal-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.modal-field input:focus,
+.modal-field textarea:focus {
+  outline: 2px solid var(--color-primary-light);
+  border-color: var(--color-primary);
+}
+
+.modal-error {
+  margin: 12px 0;
+  color: #b91c1c;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
 </style>

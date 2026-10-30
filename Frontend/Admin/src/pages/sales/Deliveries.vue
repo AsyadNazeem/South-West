@@ -7,7 +7,6 @@ import {hasPermission} from '../../auth/authorization.js'
 
 const router = useRouter()
 
-const CREATE_ROUTE = '/admin/sales/deliveries/create'
 const DETAIL_ROUTE = '/admin/sales/deliveries'
 
 const deliveries = ref([])
@@ -23,10 +22,6 @@ const deletingId = ref(null)
 // ==========================================
 // Permissions
 // ==========================================
-
-const canCreate = computed(() =>
-    hasPermission('deliveries.create')
-)
 
 const canUpdate = computed(() =>
     hasPermission('deliveries.update')
@@ -281,10 +276,6 @@ const viewDelivery = id => {
   router.push(`${DETAIL_ROUTE}/${id}`)
 }
 
-const createDelivery = () => {
-  router.push(CREATE_ROUTE)
-}
-
 const editDelivery = id => {
   router.push(`${DETAIL_ROUTE}/edit/${id}`)
 }
@@ -367,15 +358,6 @@ onMounted(() => {
           couriers and delivery status.
         </p>
       </div>
-
-      <button
-          v-if="canCreate"
-          type="button"
-          class="btn-primary"
-          @click="createDelivery"
-      >
-        + Create Delivery
-      </button>
 
     </div>
 

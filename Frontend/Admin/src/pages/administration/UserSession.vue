@@ -181,7 +181,7 @@
 
 <script setup>
 
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
@@ -229,7 +229,12 @@ const API_URL = import.meta.env.VITE_API_URL
 |--------------------------------------------------------------------------
 */
 
-const userId = route.params.userId
+const userId = computed(() =>
+  route.params.userId ??
+  route.params.id ??
+  route.query.userId ??
+  route.query.id
+)
 
 
 /*
@@ -267,18 +272,24 @@ const fetchSessions = async () => {
       )
     }
 
+    const id = userId.value
+
+if (!id || !/^[1-9]\d*$/.test(String(id))) {
+  throw new Error(
+    'User ID is missing from the route. Open sessions from the Users page.'
+  )
+}
+
     const response = await fetch(
-        `${API_URL}/users/${userId}/sessions`,
-        {
-          method: 'GET',
-
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
-    )
-
+  `${API_URL}/users/${id}/sessions`,
+  {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  }
+)
     const result = await response.json()
 
     if (!response.ok) {
@@ -460,7 +471,7 @@ const revokeAll = async () => {
 
 
     const response = await fetch(
-        `${API_URL}/users/${userId}/sessions/revoke-all`,
+`${API_URL}/users/${userId.value}/sessions/revoke-all`,
         {
           method: 'PUT',
 

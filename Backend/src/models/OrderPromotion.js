@@ -14,6 +14,11 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'promotion_id',
                 as: 'promotion'
             });
+
+            OrderPromotion.belongsTo(models.Customer, {
+    foreignKey: 'customer_id',
+    as: 'customer'
+});
         }
     }
 
@@ -36,6 +41,11 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false
             },
 
+customer_id: {
+    type: DataTypes.BIGINT.UNSIGNED,
+    allowNull: false
+},
+            
             promotion_code: {
                 type: DataTypes.STRING(100),
                 allowNull: false

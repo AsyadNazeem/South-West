@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+const { getPublicBanners } = require('./controllers/homepageBannerController');
+
 
 const sequelize = require("./config/database");
 const authRoutes = require("./routes/authRoutes");
@@ -65,21 +67,37 @@ const myNotificationRoutes = require('./routes/myNotificationRoutes');
 const myNotificationPreferenceRoutes = require('./routes/myNotificationPreferenceRoutes');
 const storeCategoryRoutes = require('./routes/storeCategoryRoutes');
 const storeProductRoutes = require('./routes/storeProductRoutes');
+const customerWishlistRoutes = require('./routes/customerWishlistRoutes');
+const homepageBannerRoutes = require('./routes/homepageBannerRoutes');
+const publicHomepageBannerRoutes = require('./routes/publicHomepageBannerRoutes');
+const customerProductReviewRoutes = require('./routes/customerProductReviewRoutes');
+
+const discountCampaignRoutes = require('./routes/discountCampaignRoutes');
+const storeBrandRoutes = require('./routes/storeBrandRoutes');
+const itemPaymentPriceRoutes = require('./routes/itemPaymentPriceRoutes');
+
+const reportRoutes = require('./routes/reportRoutes');
 
 const app = express();
 
-app.use(
-    cors({
-        origin: [
-            'http://localhost:5173',
-            'http://localhost:5174'
-        ],
 
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization']
-    })
+app.use(
+  cors({
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:5174'
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Idempotency-Key'
+    ]
+  })
 )
+
+
 app.use(express.json({ limit: '100kb' }));
 
 app.use((req, res, next) => {
@@ -151,6 +169,7 @@ app.use('/api/customer-cart', customerCartRoutes);
 app.use('/api/customer-checkout', customerCheckoutRoutes);
 app.use('/api/customer-orders', customerOrderRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
+app.use('/api/item-payment-prices', itemPaymentPriceRoutes);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/item-videos', require('./routes/itemVideoRoutes'));
@@ -160,6 +179,15 @@ app.use('/api/my/notifications', myNotificationRoutes);
 app.use('/api/my/notification-preferences', myNotificationPreferenceRoutes);
 app.use('/api/store/categories', storeCategoryRoutes);
 app.use('/api/store/products', storeProductRoutes);
+app.use('/api/customer-wishlist', customerWishlistRoutes);
+app.use('/api/homepage-banners', homepageBannerRoutes);
+app.get('/api/store/banners', getPublicBanners);
+app.use('/api/store/homepage-banners', publicHomepageBannerRoutes);
+app.use('/api/discount-campaigns', discountCampaignRoutes);
+app.use('/api/store/brands', storeBrandRoutes);
+app.use('/api/customer-reviews', customerProductReviewRoutes);
+
+app.use('/api/reports', reportRoutes);
 
 const PORT = process.env.PORT || 5001;
 
@@ -191,49 +219,10 @@ startServer();
 // "email": "admin@southwest.lk",
 //     "password": "SouthWest@2026!"
 // }'
-//
-// For the Staff user:
-//
-//     curl -X POST http://localhost:5001/api/auth/login \
-//     -H "Content-Type: application/json" \
-//   -d '{
-// "email": "staff@southwest.lk",
-//     "password": "Staff@2026!"
-// }'
-//
-// For the Manager user:
-//
-//     curl -X POST http://localhost:5001/api/auth/login \
-//     -H "Content-Type: application/json" \
-//   -d '{
-// "email": "manager@southwest.lk",
-//     "password": "Manager@2026!"
-// }'
-
-// curl -X POST http://localhost:5001/api/users \
-//     -H "Content-Type: application/json" \
-//   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
-//   -d '{
-// "email": "sales@southwest.lk",
-//     "password": "Sales@2026!",
-//     "role_id": 4
-// }'
-
-
 
 // curl -i -X POST http://localhost:5001/api/customer-auth/login \
 //     -H "Content-Type: application/json" \
 //   -d '{
 // "identifier": "asyad.test001@example.com",
 //     "password": "SouthWestTest@2026"
-// }'
-
-// curl -i -X POST http://localhost:5001/api/customer-auth/register \
-//     -H "Content-Type: application/json" \
-//   -d '{
-// "first_name": "Cart",
-//     "last_name": "SecurityTest",
-//     "email": "test@gmail.com",
-//     "phone": "0778276627",
-//     "password": "Test@123"
 // }'

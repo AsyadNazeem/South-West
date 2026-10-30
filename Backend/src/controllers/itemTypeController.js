@@ -1,6 +1,7 @@
 'use strict';
 
 const { sequelize, ItemType } = require('../models');
+const { QueryTypes } = require('sequelize');
 const { recordAuditLog } = require('../services/auditLogService');
 
 const ALLOWED_FIELDS = [
@@ -35,13 +36,9 @@ const validateBody = (body, isCreate = false) => {
         return `Unsupported fields: ${unsupported.join(', ')}`;
     }
 
-    if (isCreate && (!('name' in body) || !('code' in body))) {
-        return 'Name and code are required';
-    }
-
-    if (isCreate && !('name' in body && 'code' in body)) {
-        return 'Name and code are required';
-    }
+if (isCreate && !('name' in body)) {
+    return 'Name is required';
+}
 
     if (Object.keys(body).length === 0) {
         return 'At least one field must be provided';
@@ -192,6 +189,7 @@ const getItemTypeById = async (req, res) => {
 };
 
 // CREATE
+
 const createItemType = async (req, res) => {
     let transaction;
 
@@ -207,7 +205,6 @@ const createItemType = async (req, res) => {
 
         const fields = {
             name: body.name.trim(),
-            code: body.code.trim(),
             description:
                 typeof body.description === 'string'
                     ? body.description.trim() || null
@@ -220,6 +217,57 @@ const createItemType = async (req, res) => {
         }
 
         transaction = await sequelize.transaction();
+
+        // Check for duplicate names before generating a code.
+        const existingName = await ItemType.findOne({
+            where: { name: fields.name },
+            transaction
+        });
+
+        if (existingName) {
+            await transaction.rollback();
+            transaction = null;
+
+            return res.status(409).json({
+                message: 'An item type with this name already exists'
+            });
+        }
+
+        // Lock the sequence row so concurrent requests cannot
+        // generate the same code.
+        const sequences = await sequelize.query(
+            `SELECT next_value
+             FROM item_type_code_sequences
+             WHERE id = 1
+             FOR UPDATE`,
+            {
+                type: QueryTypes.SELECT,
+                transaction
+            }
+        );
+
+        if (!sequences.length) {
+            throw new Error(
+                'Item type code sequence is not initialized'
+            );
+        }
+
+        const nextValue = Number(sequences[0].next_value);
+
+        if (!Number.isSafeInteger(nextValue) || nextValue < 1) {
+            throw new Error(
+                'Item type code sequence value is invalid'
+            );
+        }
+
+        fields.code = `TYPE-${String(nextValue).padStart(4, '0')}`;
+
+        await sequelize.query(
+            `UPDATE item_type_code_sequences
+             SET next_value = next_value + 1
+             WHERE id = 1`,
+            { transaction }
+        );
 
         const itemType = await ItemType.create(fields, {
             transaction
@@ -256,6 +304,7 @@ const createItemType = async (req, res) => {
         );
     }
 };
+
 
 // UPDATE
 const updateItemType = async (req, res) => {

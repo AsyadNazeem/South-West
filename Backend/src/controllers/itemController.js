@@ -10,6 +10,8 @@ const {
     ItemSpecification
 } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
+const { generateItemCode } = require('../services/itemCodeService');
+const { randomUUID } = require('crypto');
 
 const getItems = async (req, res) => {
     try {
@@ -116,39 +118,53 @@ const createItem = async (req, res) => {
     const transaction = await sequelize.transaction();
 
     try {
-        const {
-            category_id,
-            brand_id,
-            unit_id,
-            item_type_id,
-            warranty_id,
-            item_code,
-            item_name,
-            description,
-            shipping_weight,
-            shipping_weight_unit,
-            condition,
-            is_serialized,
-            is_active
-        } = req.body;
+       const {
+    category_id,
+    brand_id,
+    unit_id,
+    item_type_id,
+    warranty_id,
+    item_name,
+    description,
+    shipping_weight,
+    shipping_weight_unit,
+    condition,
+    is_serialized,
+    is_active
+} = req.body;
 
-        if (!item_code || !item_name) {
-            return res.status(400).json({
-                message: 'item_code and item_name are required'
-            });
-        }
+      if (!item_name || !item_name.trim()) {
+    await transaction.rollback();
 
-        const existingItem = await Item.findOne({
-            where: {
-                item_code
-            }
-        });
+    return res.status(400).json({
+        message: 'item_name is required'
+    });
+}
 
-        if (existingItem) {
-            return res.status(409).json({
-                message: 'Item code already exists'
-            });
-        }
+const item_code = await generateItemCode(transaction);
+
+const public_id = randomUUID();
+
+const slugBase = item_name
+    .trim()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 180)
+    .replace(/-+$/g, '') || 'product';
+
+let slug = slugBase;
+let suffix = 2;
+
+while (await Item.findOne({
+    where: { slug },
+    transaction,
+    attributes: ['id'],
+})) {
+    slug = `${slugBase}-${suffix++}`;
+}
 
         const item = await Item.create({
             category_id: category_id || null,
@@ -157,8 +173,11 @@ const createItem = async (req, res) => {
             item_type_id: item_type_id || null,
             warranty_id: warranty_id || null,
 
-            item_code,
-            item_name,
+           item_code,
+               public_id,
+    slug,
+qb_item_code: null,
+item_name: item_name.trim(),
 
             description: description || null,
 
@@ -260,14 +279,13 @@ const updateItem = async (req, res) => {
             })
         }
 
-        const {
-            category_id,
-            brand_id,
-            unit_id,
-            item_type_id,
-            warranty_id,
-            item_code,
-            item_name,
+       const {
+    category_id,
+    brand_id,
+    unit_id,
+    item_type_id,
+    warranty_id,
+    item_name,
             description,
             shipping_weight,
             shipping_weight_unit,
@@ -275,21 +293,6 @@ const updateItem = async (req, res) => {
             is_serialized,
             is_active
         } = req.body
-
-        // Check duplicate item code
-        if (item_code && item_code !== item.item_code) {
-            const existingItem = await Item.findOne({
-                where: {
-                    item_code
-                }
-            })
-
-            if (existingItem) {
-                return res.status(409).json({
-                    message: 'Item code already exists'
-                })
-            }
-        }
 
         const oldValues = {
             item_code: item.item_code,
@@ -322,9 +325,9 @@ const updateItem = async (req, res) => {
                 ? warranty_id
                 : item.warranty_id,
 
-            item_code: item_code !== undefined
-                ? item_code
-                : item.item_code,
+            // Item Code is system-generated and cannot be changed here.
+// QuickBooks item codes are no longer managed by this application.
+            qb_item_code: null,
 
             item_name: item_name !== undefined
                 ? item_name

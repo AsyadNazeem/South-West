@@ -15,15 +15,8 @@ const orderApi = {
         return response.data
     },
 
-    createOrder: async (data) => {
-        const response = await api.post('/orders', data)
-
-        return response.data
-    },
-
-    updateOrder: async (id, data) => {
-        const response = await api.put(`/orders/${id}`, data)
-
+    updateOrderStatus: async (id, payload) => {
+        const response = await api.patch(`/orders/${id}/status`, payload)
         return response.data
     },
 

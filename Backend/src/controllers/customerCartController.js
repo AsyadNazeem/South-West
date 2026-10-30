@@ -6,10 +6,18 @@ const {
     Cart,
     CartItem,
     Item,
+    ItemVariant,
     ItemPrice,
+    ItemImage,
     InventoryStock,
     InventoryLocation
 } = require('../models');
+
+const {
+    getActiveCampaigns,
+    campaignTargetsItem,
+    calculateDiscount
+} = require('../services/discountCampaignService');
 
 const { recordAuditLog } = require('../services/auditLogService');
 
@@ -60,34 +68,55 @@ function getCartItemSnapshot(cartItem) {
         id: cartItem.id,
         cart_id: cartItem.cart_id,
         item_id: cartItem.item_id,
+        variant_id: cartItem.variant_id ?? null,
         quantity: Number(cartItem.quantity),
         unit_price: Number(cartItem.unit_price)
     };
 }
 
-async function getCurrentSellingPrice(itemId, transaction) {
+async function getCurrentSellingPrice(itemId, variantId, transaction) {
     const now = new Date();
+
+    const effectiveWhere = {
+        price_type: PRICE_TYPE,
+        currency: CURRENCY,
+        is_active: true,
+        [Op.and]: [
+            {
+                [Op.or]: [
+                    { effective_from: null },
+                    { effective_from: { [Op.lte]: now } }
+                ]
+            },
+            {
+                [Op.or]: [
+                    { effective_to: null },
+                    { effective_to: { [Op.gte]: now } }
+                ]
+            }
+        ]
+    };
+
+    const variantPrice = await ItemPrice.findOne({
+        where: {
+            ...effectiveWhere,
+            item_id: itemId,
+            variant_id: variantId
+        },
+        order: [
+            ['effective_from', 'DESC'],
+            ['id', 'DESC']
+        ],
+        transaction
+    });
+
+    if (variantPrice) return variantPrice;
 
     return ItemPrice.findOne({
         where: {
+            ...effectiveWhere,
             item_id: itemId,
-            price_type: PRICE_TYPE,
-            currency: CURRENCY,
-            is_active: true,
-            [Op.and]: [
-                {
-                    [Op.or]: [
-                        { effective_from: null },
-                        { effective_from: { [Op.lte]: now } }
-                    ]
-                },
-                {
-                    [Op.or]: [
-                        { effective_to: null },
-                        { effective_to: { [Op.gte]: now } }
-                    ]
-                }
-            ]
+            variant_id: null
         },
         order: [
             ['effective_from', 'DESC'],
@@ -97,10 +126,10 @@ async function getCurrentSellingPrice(itemId, transaction) {
     });
 }
 
-async function getOnlineAvailableStock(itemId, transaction) {
+async function getOnlineAvailableStock(variantId, transaction) {
     const stocks = await InventoryStock.findAll({
         where: {
-            item_id: itemId,
+            variant_id: variantId,
             is_active: true
         },
         include: [{
@@ -168,13 +197,148 @@ async function loadCart(cartId) {
         include: [{
             model: CartItem,
             as: 'items',
-            include: [{
-                model: Item,
-                as: 'item',
-                attributes: ['id', 'item_code', 'item_name', 'is_active']
-            }]
+            include: [
+{
+    model: Item,
+    as: 'item',
+    attributes: [
+        'id',
+        'public_id',
+        'slug',
+        'item_code',
+        'item_name',
+        'category_id',
+        'brand_id',
+        'is_active'
+    ],
+    include: [
+        {
+            model: ItemImage,
+            as: 'images',
+            attributes: [
+                'id',
+                'file_name',
+                'file_path',
+                'url',
+                'alt_text',
+                'sort_order',
+                'is_primary'
+            ],
+            where: { is_active: true },
+            required: false
+        }
+    ]
+},
+    {
+        model: ItemVariant,
+        as: 'variant',
+        attributes: [
+            'id',
+            'variant_sku',
+            'variant_name',
+            'attributes',
+            'is_default',
+            'is_active'
+        ]
+    }
+]
         }]
     });
+}
+
+async function applyCampaignPricing(cart) {
+    if (!cart || !Array.isArray(cart.items)) {
+        return cart;
+    }
+
+    const campaigns = await getActiveCampaigns();
+    let totalDiscountAmount = 0;
+    let discountedSubtotal = 0;
+
+    for (const cartItem of cart.items) {
+        const item = cartItem.item;
+        const quantity = Number(cartItem.quantity) || 0;
+        const originalPrice = Number(cartItem.unit_price) || 0;
+
+        let bestDiscount = null;
+
+        if (item && item.is_active) {
+            for (const campaign of campaigns) {
+                if (!campaignTargetsItem(campaign, item)) {
+                    continue;
+                }
+
+                const pricing = calculateDiscount(
+                    campaign,
+                    originalPrice
+                );
+
+                if (
+                    pricing.discount_amount > 0 &&
+                    (
+                        !bestDiscount ||
+                        pricing.discount_amount >
+                            bestDiscount.discount_amount
+                    )
+                ) {
+                    bestDiscount = {
+                        campaign_id: campaign.id,
+                        campaign_name: campaign.campaign_name,
+                        ...pricing
+                    };
+                }
+            }
+        }
+
+        const discountAmount = bestDiscount
+            ? bestDiscount.discount_amount
+            : 0;
+
+        const discountedPrice = bestDiscount
+            ? bestDiscount.discounted_price
+            : Number(originalPrice.toFixed(2));
+
+        cartItem.setDataValue('original_price', originalPrice);
+        cartItem.setDataValue('discount_amount', discountAmount);
+        cartItem.setDataValue('discount_percentage',
+            bestDiscount ? bestDiscount.discount_percentage : 0);
+        cartItem.setDataValue('discounted_unit_price', discountedPrice);
+        cartItem.setDataValue(
+            'line_total',
+            Number((originalPrice * quantity).toFixed(2))
+        );
+        cartItem.setDataValue(
+            'discounted_line_total',
+            Number((discountedPrice * quantity).toFixed(2))
+        );
+        cartItem.setDataValue(
+            'total_discount_amount',
+            Number((discountAmount * quantity).toFixed(2))
+        );
+        cartItem.setDataValue(
+            'discount_campaign',
+            bestDiscount
+                ? {
+                    id: bestDiscount.campaign_id,
+                    name: bestDiscount.campaign_name
+                }
+                : null
+        );
+
+        totalDiscountAmount += discountAmount * quantity;
+        discountedSubtotal += discountedPrice * quantity;
+    }
+
+    cart.setDataValue(
+        'discount_amount',
+        Number(totalDiscountAmount.toFixed(2))
+    );
+    cart.setDataValue(
+        'discounted_subtotal',
+        Number(discountedSubtotal.toFixed(2))
+    );
+
+    return cart;
 }
 
 // GET THE AUTHENTICATED CUSTOMER'S ACTIVE CART
@@ -193,17 +357,61 @@ async function getMyCart(req, res) {
                 customer_id: customerId,
                 status: 'active'
             },
-            include: [{
-                model: CartItem,
-                as: 'items',
-                include: [{
-                    model: Item,
-                    as: 'item',
-                    attributes: ['id', 'item_code', 'item_name', 'is_active']
-                }]
-            }],
+          include: [
+    {
+        model: CartItem,
+        as: 'items',
+        include: [
+          {
+    model: Item,
+    as: 'item',
+    attributes: [
+        'id',
+        'public_id',
+        'slug',
+        'item_code',
+        'item_name',
+        'category_id',
+        'brand_id',
+        'is_active'
+    ],
+    include: [
+        {
+            model: ItemImage,
+            as: 'images',
+            attributes: [
+                'id',
+                'file_name',
+                'file_path',
+                'url',
+                'alt_text',
+                'sort_order',
+                'is_primary'
+            ],
+            where: { is_active: true },
+            required: false
+        }
+    ]
+},
+            {
+                model: ItemVariant,
+                as: 'variant',
+                attributes: [
+                    'id',
+                    'variant_sku',
+                    'variant_name',
+                    'attributes',
+                    'is_default',
+                    'is_active'
+                ]
+            }
+        ]
+    }
+],
             order: [['id', 'DESC']]
         });
+
+        await applyCampaignPricing(cart);
 
         await auditCartAction(req, {
             action: 'CUSTOMER_CART_VIEWED',
@@ -237,32 +445,29 @@ async function getMyCart(req, res) {
 
 // ADD AN ITEM. NEVER ACCEPT THE PRICE FROM THE CLIENT.
 async function addItem(req, res) {
-    const { item_id, quantity = 1 } = req.body;
+    const { item_id, variant_id, quantity = 1 } = req.body;
 
     if (!Number.isSafeInteger(Number(item_id)) || Number(item_id) <= 0) {
-        return res.status(400).json({
-            message: 'A valid item_id is required'
-        });
+        return res.status(400).json({ message: 'A valid item_id is required' });
+    }
+
+    if (variant_id !== undefined &&
+        (!Number.isSafeInteger(Number(variant_id)) || Number(variant_id) <= 0)) {
+        return res.status(400).json({ message: 'A valid variant_id is required' });
     }
 
     if (!validPositiveInteger(quantity)) {
-        return res.status(400).json({
-            message: 'Quantity must be a positive integer'
-        });
+        return res.status(400).json({ message: 'Quantity must be a positive integer' });
     }
 
     if (req.body.unit_price !== undefined) {
-        return res.status(400).json({
-            message: 'unit_price must not be provided by the client'
-        });
+        return res.status(400).json({ message: 'unit_price must not be provided by the client' });
     }
 
     const customerId = getCustomerId(req);
 
     if (!customerId) {
-        return res.status(401).json({
-            message: 'Customer authentication required'
-        });
+        return res.status(401).json({ message: 'Customer authentication required' });
     }
 
     try {
@@ -273,41 +478,75 @@ async function addItem(req, res) {
             });
 
             if (!item || !item.is_active) {
+                return { error: 404, message: 'Item not found or unavailable' };
+            }
+
+            let variant;
+
+            if (variant_id !== undefined) {
+                variant = await ItemVariant.findOne({
+                    where: { id: Number(variant_id), item_id: item.id },
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                });
+
+                if (!variant) {
+                    return { error: 404, message: 'Variant not found for this item' };
+                }
+
+                if (!variant.is_active) {
+                    return { error: 409, message: 'This variant is unavailable' };
+                }
+            } else {
+                const activeVariants = await ItemVariant.findAll({
+                    where: { item_id: item.id, is_active: true },
+                    order: [['is_default', 'DESC'], ['id', 'ASC']],
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                });
+
+                if (activeVariants.length > 1) {
+                    return {
+                        error: 400,
+                        message: 'Please select a variant',
+                        requires_variant_selection: true
+                    };
+                }
+
+                if (activeVariants.length === 1) {
+                    variant = activeVariants[0];
+                }
+            }
+
+            if (!variant) {
                 return {
-                    error: 404,
-                    message: 'Item not found or unavailable'
+                    error: 409,
+                    message: 'This item has no active variant configured'
                 };
             }
 
-            const price = await getCurrentSellingPrice(item.id, transaction);
+            const price = await getCurrentSellingPrice(item.id, variant.id, transaction);
 
             if (!price || Number(price.price) <= 0) {
                 return {
                     error: 409,
-                    message: 'No valid selling price is available for this item'
+                    message: 'No valid selling price is available for this variant'
                 };
             }
 
             const cart = await getOrCreateActiveCart(customerId, transaction);
 
             const existing = await CartItem.findOne({
-                where: {
-                    cart_id: cart.id,
-                    item_id: item.id
-                },
+                where: { cart_id: cart.id, variant_id: variant.id },
                 transaction,
                 lock: transaction.LOCK.UPDATE
             });
 
             const oldValues = getCartItemSnapshot(existing);
-
             const requestedQuantity =
                 Number(quantity) + (existing ? Number(existing.quantity) : 0);
 
-            const availableStock = await getOnlineAvailableStock(
-                item.id,
-                transaction
-            );
+            const availableStock = await getOnlineAvailableStock(variant.id, transaction);
 
             if (requestedQuantity > availableStock) {
                 return {
@@ -330,6 +569,7 @@ async function addItem(req, res) {
                 cartItem = await CartItem.create({
                     cart_id: cart.id,
                     item_id: item.id,
+                    variant_id: variant.id,
                     quantity: Number(quantity),
                     unit_price: price.price
                 }, { transaction });
@@ -340,7 +580,7 @@ async function addItem(req, res) {
                 cartItemId: cartItem.id,
                 oldValues,
                 newValues: getCartItemSnapshot(cartItem),
-                itemCode: item.item_code
+                variantId: variant.id
             };
         });
 
@@ -348,10 +588,11 @@ async function addItem(req, res) {
             await auditCartAction(req, {
                 action: 'CUSTOMER_CART_ITEM_ADD_REJECTED',
                 entityType: 'CartItem',
-                description: `Adding item ${item_id} to customer ${customerId}'s cart was rejected`,
+                description: 'Adding a product variant to the customer cart was rejected',
                 newValues: {
                     customer_id: customerId,
                     item_id: Number(item_id),
+                    variant_id: variant_id === undefined ? null : Number(variant_id),
                     requested_quantity: Number(quantity),
                     reason: result.message
                 }
@@ -361,6 +602,9 @@ async function addItem(req, res) {
                 message: result.message,
                 ...(result.available_quantity !== undefined
                     ? { available_quantity: result.available_quantity }
+                    : {}),
+                ...(result.requires_variant_selection
+                    ? { requires_variant_selection: true }
                     : {})
             });
         }
@@ -371,7 +615,7 @@ async function addItem(req, res) {
                 : 'CUSTOMER_CART_ITEM_ADDED',
             entityType: 'CartItem',
             entityId: result.cartItemId,
-            description: `Customer ${customerId} added item ${item_id} to their cart`,
+            description: `Customer ${customerId} added variant ${result.variantId} to their cart`,
             oldValues: result.oldValues,
             newValues: {
                 ...result.newValues,
@@ -379,11 +623,11 @@ async function addItem(req, res) {
             }
         });
 
-        const cart = await loadCart(result.cartId);
-
         return res.status(200).json({
             message: 'Item added to cart successfully',
-            data: cart
+data: await applyCampaignPricing(
+    await loadCart(result.cartId)
+)
         });
     } catch (error) {
         console.error('Add customer cart item error:', error);
@@ -391,22 +635,21 @@ async function addItem(req, res) {
         await auditCartAction(req, {
             action: 'CUSTOMER_CART_ITEM_ADD_FAILED',
             entityType: 'CartItem',
-            description: `Failed to add item ${item_id} to customer ${customerId}'s cart`,
+            description: 'Failed to add a product variant to the customer cart',
             newValues: {
                 customer_id: customerId,
-                item_id: Number(item_id)
+                item_id: Number(item_id),
+                variant_id: variant_id === undefined ? null : Number(variant_id)
             }
         });
 
         if (error.name === 'SequelizeUniqueConstraintError') {
             return res.status(409).json({
-                message: 'This item was added concurrently. Refresh the cart and try again.'
+                message: 'This variant was added concurrently. Refresh the cart and try again.'
             });
         }
 
-        return res.status(500).json({
-            message: 'Failed to add item to cart'
-        });
+        return res.status(500).json({ message: 'Failed to add item to cart' });
     }
 }
 
@@ -417,26 +660,21 @@ async function updateItem(req, res) {
     const customerId = getCustomerId(req);
 
     if (!customerId) {
-        return res.status(401).json({
-            message: 'Customer authentication required'
-        });
+        return res.status(401).json({ message: 'Customer authentication required' });
     }
 
     if (!validPositiveInteger(quantity)) {
-        return res.status(400).json({
-            message: 'Quantity must be a positive integer'
-        });
+        return res.status(400).json({ message: 'Quantity must be a positive integer' });
     }
 
     if (
         req.body.unit_price !== undefined ||
         req.body.cart_id !== undefined ||
         req.body.item_id !== undefined ||
+        req.body.variant_id !== undefined ||
         req.body.customer_id !== undefined
     ) {
-        return res.status(400).json({
-            message: 'Only quantity can be updated'
-        });
+        return res.status(400).json({ message: 'Only quantity can be updated' });
     }
 
     try {
@@ -448,10 +686,7 @@ async function updateItem(req, res) {
             );
 
             if (!cartItem) {
-                return {
-                    error: 404,
-                    message: 'Cart item not found'
-                };
+                return { error: 404, message: 'Cart item not found' };
             }
 
             const oldValues = getCartItemSnapshot(cartItem);
@@ -462,25 +697,40 @@ async function updateItem(req, res) {
             });
 
             if (!item || !item.is_active) {
+                return { error: 409, message: 'This item is no longer available' };
+            }
+
+            if (!cartItem.variant_id) {
                 return {
                     error: 409,
-                    message: 'This item is no longer available'
+                    message: 'This cart item has no variant assigned. Remove it and add the product again.'
                 };
             }
 
-            const price = await getCurrentSellingPrice(item.id, transaction);
+            const variant = await ItemVariant.findOne({
+                where: {
+                    id: cartItem.variant_id,
+                    item_id: item.id,
+                    is_active: true
+                },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+
+            if (!variant) {
+                return { error: 409, message: 'This variant is no longer available' };
+            }
+
+            const price = await getCurrentSellingPrice(item.id, variant.id, transaction);
 
             if (!price || Number(price.price) <= 0) {
                 return {
                     error: 409,
-                    message: 'No valid selling price is available for this item'
+                    message: 'No valid selling price is available for this variant'
                 };
             }
 
-            const availableStock = await getOnlineAvailableStock(
-                item.id,
-                transaction
-            );
+            const availableStock = await getOnlineAvailableStock(variant.id, transaction);
 
             if (Number(quantity) > availableStock) {
                 return {
@@ -538,7 +788,9 @@ async function updateItem(req, res) {
 
         return res.status(200).json({
             message: 'Cart item updated successfully',
-            data: await loadCart(result.cartId)
+data: await applyCampaignPricing(
+    await loadCart(result.cartId)
+)
         });
     } catch (error) {
         console.error('Update customer cart item error:', error);
@@ -554,9 +806,7 @@ async function updateItem(req, res) {
             }
         });
 
-        return res.status(500).json({
-            message: 'Failed to update cart item'
-        });
+        return res.status(500).json({ message: 'Failed to update cart item' });
     }
 }
 

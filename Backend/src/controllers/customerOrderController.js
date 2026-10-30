@@ -110,11 +110,13 @@ async function getMyOrders(req, res) {
                         {
                             model: Item,
                             as: 'item',
-                            attributes: [
-                                'id',
-                                'item_name',
-                                'item_code'
-                            ],
+                          attributes: [
+    'id',
+    'public_id',
+    'slug',
+    'item_name',
+    'item_code'
+],
                             required: false
                         }
                     ],

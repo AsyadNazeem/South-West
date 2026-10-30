@@ -274,11 +274,6 @@ const submitForm = async () => {
       return
     }
 
-    if (!form.value.code.trim()) {
-      errorMessage.value = 'Item type code is required.'
-      return
-    }
-
     updateSortOrders()
 
     /*
@@ -341,7 +336,7 @@ const submitForm = async () => {
 
       alert('Item type updated successfully.')
 
-      router.push('/item-types')
+      router.push('/admin/products/item-types')
 
       return
     }
@@ -358,12 +353,11 @@ const submitForm = async () => {
 
     if (!createdItemTypeId.value) {
 
-      const payload = {
-        name: form.value.name.trim(),
-        code: form.value.code.trim().toUpperCase(),
-        description: form.value.description.trim() || null,
-        is_active: form.value.is_active
-      }
+const payload = {
+  name: form.value.name.trim(),
+  description: form.value.description.trim() || null,
+  is_active: form.value.is_active
+}
 
       const response = await api.post('/item-types', payload)
 
@@ -581,6 +575,7 @@ onMounted(async () => {
                 maxlength="30"
                 :disabled="loading"
                 required
+                readonly
             />
 
             <small>

@@ -53,6 +53,11 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true
             },
 
+            image_url: {
+  type: DataTypes.STRING(500),
+  allowNull: true,
+},
+
             parent_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: true

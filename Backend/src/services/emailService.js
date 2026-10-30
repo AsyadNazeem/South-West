@@ -39,11 +39,20 @@ function getTransporter() {
     return transporter;
 }
 
+
 async function sendVerificationCode(email, code, purpose) {
-    const subject =
-        purpose === 'activation'
+    const isActivation = purpose === 'activation';
+    const isPasswordChange = purpose === 'password_change';
+
+    const subject = isPasswordChange
+        ? 'Your South West password-change code'
+        : isActivation
             ? 'Activate your South West customer account'
             : 'Verify your South West email address';
+
+    const message = isPasswordChange
+        ? `Your South West password-change code is: ${code}`
+        : `Your South West verification code is: ${code}`;
 
     await getTransporter().sendMail({
         from:
@@ -53,13 +62,14 @@ async function sendVerificationCode(email, code, purpose) {
         to: email,
         subject,
         text: [
-            `Your South West verification code is: ${code}`,
+            message,
             '',
             'This code expires in 10 minutes and can only be used once.',
             'If you did not request this code, you can ignore this email.',
         ].join('\n'),
     });
 }
+
 
 
 async function sendCustomerPasswordSetupInvitation(email, customerCode, token) {
@@ -93,8 +103,100 @@ async function sendCustomerPasswordSetupInvitation(email, customerCode, token) {
     });
 }
 
+async function sendDeliveryTrackingEmail({
+    email,
+    customerName,
+    orderNumber,
+    trackingNumber,
+    courierName,
+    expectedDeliveryDate,
+}) {
+    if (!email) {
+        throw new Error('Customer email is missing');
+    }
+
+    if (!trackingNumber || !courierName) {
+        throw new Error('Tracking number and courier are required');
+    }
+
+    const expectedDeliveryText = expectedDeliveryDate
+        ? new Date(expectedDeliveryDate).toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+          })
+        : 'Not yet available';
+
+    await getTransporter().sendMail({
+        from:
+            process.env.SMTP_FROM ||
+            process.env.SMTP_USER ||
+            'South West <noreply@southwest.local>',
+        to: email,
+        subject: `Your South West order ${orderNumber} has been dispatched`,
+        text: [
+            `Hi ${customerName || 'Customer'},`,
+            '',
+            `Your South West order ${orderNumber} has been handed over to the courier.`,
+            '',
+            `Courier: ${courierName}`,
+            `Tracking number: ${trackingNumber}`,
+            `Expected delivery: ${expectedDeliveryText}`,
+            '',
+            'You can view your order and tracking details in your South West customer account.',
+            '',
+            'Thank you for shopping with South West.',
+        ].join('\n'),
+    });
+}
+
+
+async function sendOrderStatusEmail({
+    email,
+    customerName,
+    orderNumber,
+    statusLabel,
+    reason
+}) {
+    if (!email) {
+        throw new Error('Customer email is missing');
+    }
+
+    const subject = `Update on your South West order ${orderNumber}`;
+
+    const lines = [
+        `Hi ${customerName || 'Customer'},`,
+        '',
+        `Your South West order ${orderNumber} has been updated.`,
+        '',
+        `New status: ${statusLabel}`,
+    ];
+
+    if (reason) {
+        lines.push('', `Reason: ${reason}`);
+    }
+
+    lines.push(
+        '',
+        'You can view your order in your South West customer account.',
+        '',
+        'Thank you for shopping with South West.'
+    );
+
+    await getTransporter().sendMail({
+        from:
+            process.env.SMTP_FROM ||
+            process.env.SMTP_USER ||
+            'South West <noreply@southwest.local>',
+        to: email,
+        subject,
+        text: lines.join('\n')
+    });
+}
 
 module.exports = {
     sendVerificationCode,
     sendCustomerPasswordSetupInvitation,
+    sendDeliveryTrackingEmail,
+    sendOrderStatusEmail,
 };

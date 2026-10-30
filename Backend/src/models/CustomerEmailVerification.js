@@ -29,7 +29,11 @@ module.exports = (sequelize) => {
             },
 
             purpose: {
-                type: DataTypes.ENUM('registration', 'activation'),
+type: DataTypes.ENUM(
+    'registration',
+    'activation',
+    'password_change'
+),
                 allowNull: false,
             },
 
