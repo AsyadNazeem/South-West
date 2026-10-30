@@ -19,3 +19,18 @@ Backend/mailpit.tar.gz
 
 # Uploaded product media (keep files locally, not in Git)
 Backend/src/uploads/
+
+# Uploaded files and media
+Backend/src/uploads/
+
+# Generated report exports
+Backend/daily-sales.xlsx
+Backend/monthly-sales.xlsx
+Backend/online-sales-test.xlsx
+
+# Temporary patch archives
+*.zip
+
+# Temporary editor and backup files
+*.save
+*.security-backup
