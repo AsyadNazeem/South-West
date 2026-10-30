@@ -12,7 +12,7 @@ const {
 } = require('../controllers/itemVideoController');
 
 const authenticate = require('../middleware/authMiddleware');
-const requirePermission = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
 const { uploadItemVideo } = require('../middleware/uploadMiddleware');
 
 

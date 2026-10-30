@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, onBeforeUnmount } from "vue"
 import { useRouter, useRoute } from "vue-router"
 import api from "../../api/axios"
 
@@ -22,6 +22,7 @@ const loading = ref(false)
 const pageLoading = ref(true)
 const errorMessage = ref("")
 
+
 /* =========================================================
    FORM
 ========================================================= */
@@ -33,6 +34,67 @@ const form = ref({
   website: "",
   is_active: true
 })
+
+// Brand image upload state
+const selectedImage = ref(null)
+const imagePreview = ref("")
+const existingImageUrl = ref("")
+
+const API_BASE_URL = (
+  import.meta.env.VITE_API_URL || "http://localhost:5001/api"
+).replace(/\/api\/?$/, "")
+
+const getImageUrl = (path) => {
+  if (!path) return ""
+
+  // Already a complete URL
+  if (/^https?:\/\//i.test(path)) {
+    return path
+  }
+
+  // Backend stores paths such as brands/images/example.jpg
+  const cleanPath = path
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/^uploads\//, "")
+
+  return `${API_BASE_URL}/uploads/${cleanPath}`
+}
+const handleImageChange = (event) => {
+  const file = event.target.files?.[0]
+
+  if (!file) return
+
+  if (!["image/jpeg", "image/png"].includes(file.type)) {
+    errorMessage.value = "Please select a JPG or PNG image."
+    event.target.value = ""
+    return
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    errorMessage.value = "Brand image must be smaller than 5MB."
+    event.target.value = ""
+    return
+  }
+
+  errorMessage.value = ""
+  selectedImage.value = file
+
+  if (imagePreview.value.startsWith("blob:")) {
+    URL.revokeObjectURL(imagePreview.value)
+  }
+
+  imagePreview.value = URL.createObjectURL(file)
+}
+
+const clearSelectedImage = () => {
+  if (imagePreview.value.startsWith("blob:")) {
+    URL.revokeObjectURL(imagePreview.value)
+  }
+
+  selectedImage.value = null
+  imagePreview.value = existingImageUrl.value
+}
 
 /* =========================================================
    LOAD BRAND
@@ -50,6 +112,12 @@ const loadBrand = async () => {
     )
 
     const brand = response.data.data
+
+    existingImageUrl.value = brand.image_url
+  ? getImageUrl(brand.image_url)
+  : ""
+
+imagePreview.value = existingImageUrl.value
 
     if (!brand) {
       throw new Error("Brand not found.")
@@ -102,79 +170,40 @@ const submitForm = async () => {
       return
     }
 
-    if (!form.value.code.trim()) {
-
-      errorMessage.value =
-          "Brand code is required."
-
-      loading.value = false
-
-      return
-    }
-
     /* -----------------------------------------
        Payload
     ----------------------------------------- */
 
-    const payload = {
+    const payload = new FormData()
 
-      name:
-          form.value.name.trim(),
+payload.append("name", form.value.name.trim())
+payload.append("description", form.value.description.trim())
+payload.append("website", form.value.website.trim())
+payload.append("is_active", String(form.value.is_active))
 
-      code:
-          form.value.code
-              .trim()
-              .toUpperCase(),
-
-      description:
-          form.value.description.trim() || null,
-
-      website:
-          form.value.website.trim() || null,
-
-      is_active:
-      form.value.is_active
-    }
+if (selectedImage.value) {
+  payload.append("image", selectedImage.value)
+}
 
     /* =====================================================
        CREATE
     ===================================================== */
 
-    if (!isEditMode.value) {
+ if (!isEditMode.value) {
+  await api.post("/brands", payload)
 
-      await api.post(
-          "/brands",
-          payload
-      )
+  alert("Brand created successfully.")
+} else {
+  await api.put(`/brands/${brandId.value}`, payload)
 
-      alert(
-          "Brand created successfully."
-      )
-
-    }
-
-    /* =====================================================
-       EDIT
-    ===================================================== */
-
-    else {
-
-      await api.put(
-          `/brands/${brandId.value}`,
-          payload
-      )
-
-      alert(
-          "Brand updated successfully."
-      )
-
-    }
+  alert("Brand updated successfully.")
+}
 
     /* -----------------------------------------
        Back to brands
     ----------------------------------------- */
 
-    router.push("/brands")
+    router.push("/admin/products/brands")
 
   } catch (error) {
 
@@ -246,6 +275,14 @@ onMounted(async () => {
 
   }
 
+
+
+})
+
+onBeforeUnmount(() => {
+  if (imagePreview.value.startsWith("blob:")) {
+    URL.revokeObjectURL(imagePreview.value)
+  }
 })
 </script>
 
@@ -299,6 +336,38 @@ onMounted(async () => {
           <p>Define the name, code and details of the brand.</p>
         </div>
 
+        <div class="brand-image-upload">
+  <label for="brand-image">Brand Image</label>
+
+  <div class="brand-image-preview">
+    <img
+      v-if="imagePreview"
+      :src="imagePreview"
+      alt="Brand image preview"
+    />
+
+    <span v-else>No image selected</span>
+  </div>
+
+  <input
+    id="brand-image"
+    type="file"
+    accept="image/png,image/jpeg"
+    @change="handleImageChange"
+  />
+
+  <small>JPG or PNG, maximum 5MB. A square image is recommended.</small>
+
+  <button
+    v-if="selectedImage"
+    type="button"
+    class="btn-secondary"
+    @click="clearSelectedImage"
+  >
+    Cancel image replacement
+  </button>
+</div>
+
         <div class="form-grid">
 
           <!-- Name -->
@@ -316,27 +385,6 @@ onMounted(async () => {
                 maxlength="100"
                 required
             />
-          </div>
-
-          <!-- Code -->
-          <div class="form-group">
-            <label for="code">
-              Brand Code
-              <span>*</span>
-            </label>
-
-            <input
-                id="code"
-                v-model="form.code"
-                type="text"
-                placeholder="e.g. HP"
-                maxlength="50"
-                required
-            />
-
-            <small>
-              A unique code used to identify this brand.
-            </small>
           </div>
 
           <!-- Website -->
@@ -662,6 +710,46 @@ onMounted(async () => {
 .btn-secondary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.brand-image-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xl);
+}
+
+.brand-image-upload > label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.brand-image-preview {
+  width: 160px;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.brand-image-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand-image-upload small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
 }
 
 /* =========================

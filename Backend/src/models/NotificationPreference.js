@@ -72,7 +72,14 @@ module.exports = (sequelize, DataTypes) => {
             tableName: 'notification_preferences',
             timestamps: true,
             createdAt: 'created_at',
-            updatedAt: 'updated_at'
+            updatedAt: 'updated_at',
+            indexes: [
+                {
+                    name: 'notification_preferences_customer_id',
+                    unique: true,
+                    fields: ['customer_id']
+                }
+            ],
         }
     );
 

@@ -1,14 +1,28 @@
+'use strict';
+
 const express = require('express');
 
 const authController = require('../controllers/authController');
 const authenticate = require('../middleware/authMiddleware');
 const { requirePermission } = require('../middleware/requirePermission');
+const {
+    loginLimiter,
+    registerLimiter
+} = require('../middleware/authRateLimit');
 
 const router = express.Router();
 
-router.post('/register', authController.register);
+router.post(
+    '/register',
+    registerLimiter,
+    authController.register
+);
 
-router.post('/login', authController.login);
+router.post(
+    '/login',
+    loginLimiter,
+    authController.login
+);
 
 router.post(
     '/logout',
@@ -25,25 +39,10 @@ router.get(
 router.get(
     '/admin-dashboard',
     authenticate,
-    requirePermission('admin.dashboard.view'),
+    requirePermission('dashboard.view'),
     (req, res) => {
         res.status(200).json({
             message: 'Admin dashboard access granted',
-            user: {
-                id: req.user.id,
-                email: req.user.email
-            }
-        });
-    }
-);
-
-router.get(
-    '/admin-test',
-    authenticate,
-    requirePermission('users.delete'),
-    (req, res) => {
-        res.status(200).json({
-            message: 'Admin-level permission granted',
             user: {
                 id: req.user.id,
                 email: req.user.email

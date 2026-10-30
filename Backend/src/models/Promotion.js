@@ -24,6 +24,11 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'promotion_id',
                 as: 'orderPromotions'
             });
+
+            Promotion.hasMany(models.PromotionBrand, {
+    foreignKey: 'promotion_id',
+    as: 'brands'
+});
         }
     }
 
@@ -51,6 +56,17 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.TEXT,
                 allowNull: true
             },
+
+            eligibility_type: {
+    type: DataTypes.ENUM(
+        'all_products',
+        'selected_products',
+        'selected_categories',
+        'selected_brands'
+    ),
+    allowNull: false,
+    defaultValue: 'all_products'
+},
 
             promotion_type: {
                 type: DataTypes.ENUM(

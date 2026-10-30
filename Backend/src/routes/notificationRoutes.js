@@ -1,19 +1,24 @@
+
 'use strict';
 
 const express = require('express');
 const router = express.Router();
+
+const authenticate = require('../middleware/authMiddleware');
+const { requirePermission } = require('../middleware/requirePermission');
 
 const {
     getNotifications,
     getNotificationById,
     createNotification,
     updateNotification,
-    deleteNotification
+    deleteNotification,
+    getMyNotifications,
+    getMyNotificationById,
+    markMyNotificationRead
 } = require('../controllers/notificationController');
 
-const authenticate = require('../middleware/authMiddleware');
-const { requirePermission } = require('../middleware/requirePermission');
-
+// Staff/admin endpoints
 router.get(
     '/',
     authenticate,

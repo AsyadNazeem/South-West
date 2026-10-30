@@ -14,6 +14,11 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'location_id',
                 as: 'location'
             });
+
+            InventoryStock.belongsTo(models.ItemVariant, {
+    foreignKey: 'variant_id',
+    as: 'variant'
+});
         }
     }
 
@@ -30,6 +35,11 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: false
             },
+
+variant_id: {
+    type: DataTypes.BIGINT.UNSIGNED,
+    allowNull: true
+},
 
             location_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
@@ -83,12 +93,13 @@ module.exports = (sequelize, DataTypes) => {
             timestamps: true,
             createdAt: 'created_at',
             updatedAt: 'updated_at',
-            indexes: [
-                {
-                    unique: true,
-                    fields: ['item_id', 'location_id']
-                }
-            ]
+           indexes: [
+    {
+        unique: true,
+        fields: ['variant_id', 'location_id'],
+        name: 'inventory_stock_variant_location_unique_idx'
+    }
+]
         }
     );
 

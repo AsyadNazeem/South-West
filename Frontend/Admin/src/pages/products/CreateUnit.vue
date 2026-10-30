@@ -70,17 +70,11 @@ const submitForm = async () => {
     return
   }
 
-  if (!form.value.code.trim()) {
-    errorMessage.value = 'Unit code is required.'
-    return
-  }
-
   loading.value = true
 
   try {
     const payload = {
       name: form.value.name.trim(),
-      code: form.value.code.trim().toUpperCase(),
       description: form.value.description.trim() || null,
       is_active: form.value.is_active
     }
@@ -95,7 +89,7 @@ const submitForm = async () => {
       alert('Unit created successfully.')
     }
 
-    router.push('/units')
+    router.push('/admin/products/units')
   } catch (error) {
     console.error(
         isEditMode.value
@@ -202,25 +196,20 @@ onMounted(() => {
 
           </div>
 
-          <!-- Code -->
-          <div class="form-group">
+          <!-- Generated Unit Code -->
+          <div v-if="isEditMode" class="form-group">
 
-            <label for="code">
-              Unit Code
-              <span>*</span>
-            </label>
+            <label for="unit-code">Unit Code</label>
 
             <input
-                id="code"
-                v-model="form.code"
+                id="unit-code"
+                :value="form.code"
                 type="text"
-                placeholder="e.g. PCS"
-                maxlength="20"
-                required
+                readonly
             />
 
             <small>
-              A unique code used to identify this unit.
+              Unit codes are generated automatically and cannot be changed.
             </small>
 
           </div>

@@ -1,8 +1,8 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { login as loginRequest } from '../../api/authApi'
-import { setAuthenticatedSession } from '../../auth/authorization'
+import {ref} from 'vue'
+import {useRouter} from 'vue-router'
+import {login as loginRequest} from '../../api/authApi'
+import {hasPermission, setAuthenticatedSession} from '../../auth/authorization'
 
 const router = useRouter()
 
@@ -29,7 +29,11 @@ const login = async () => {
 
     setAuthenticatedSession(session)
 
-    router.replace('/admin/dashboard')
+    const defaultRoute = hasPermission('dashboard.view')
+        ? '/admin/dashboard'
+        : '/admin/access-denied'
+
+    router.replace(defaultRoute)
   } catch (error) {
     errorMessage.value =
         error.response?.data?.message ||

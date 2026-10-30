@@ -12,7 +12,7 @@ const {
 } = require('../controllers/cartItemController');
 
 const authMiddleware = require('../middleware/authMiddleware');
-const requirePermission = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
 
 router.get(
     '/',

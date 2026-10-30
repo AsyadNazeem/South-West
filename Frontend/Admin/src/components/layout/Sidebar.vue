@@ -14,6 +14,7 @@ import {
   Warehouse,
   ShoppingCart,
   Banknote,
+  BarChart3,
   Megaphone,
   Settings,
   ChevronRight,
@@ -52,15 +53,16 @@ const menuDefinitions = [
     label: 'Products',
     icon: Package,
     children: [
-      { label: 'Items', to: '/admin/products/items', permissions: ['products.view'] },
       { label: 'Categories', to: '/admin/products/categories', permissions: ['products.view'] },
       { label: 'Brands', to: '/admin/products/brands', permissions: ['products.view'] },
       { label: 'Units', to: '/admin/products/units', permissions: ['products.view'] },
-      { label: 'Item Prices', to: '/admin/products/item-prices', permissions: ['products.view'] },
-      { label: 'Specifications', to: '/admin/products/item-specifications', permissions: ['products.view'] },
-      { label: 'Images', to: '/admin/products/item-images', permissions: ['item_images.view'] },
       { label: 'Warranty', to: '/admin/products/warranty', permissions: ['products.view'] },
-      { label: 'Item Type', to: '/admin/products/item-types', permissions: ['products.view'] }
+      { label: 'Item Type', to: '/admin/products/item-types', permissions: ['products.view'] },
+      { label: 'Specifications', to: '/admin/products/item-specifications', permissions: ['products.view'] },
+      { label: 'Items', to: '/admin/products/items', permissions: ['products.view'] },
+      { label: "Item Variants", to: "/admin/products/item-variants", permissions: ['products.view']},
+      { label: 'Item Prices', to: '/admin/products/item-prices', permissions: ['products.view'] },
+      { label: 'Images', to: '/admin/products/item-images', permissions: ['item_images.view'] }
     ]
   },
   {
@@ -68,19 +70,17 @@ const menuDefinitions = [
     label: 'Inventory',
     icon: Warehouse,
     children: [
-      { label: 'Locations', to: '/inventory/locations', permissions: ['inventory.view'] },
-      { label: 'Stock', to: '/inventory/stock', permissions: ['inventory.view'] },
-      { label: 'Stock Movements', to: '/inventory/movements', permissions: ['inventory.view'] }
+      { label: 'Locations', to: '/admin/inventory/locations', permissions: ['inventory.view'] },
+      { label: 'Stock', to: '/admin/inventory/stock', permissions: ['inventory.view'] },
+      { label: 'Stock Movements', to: '/admin/inventory/movements', permissions: ['inventory.view'] },
     ]
   },
   {
     key: 'purchasing',
-    label: 'Purchasing',
+    label: 'purchasing',
     icon: ShoppingCart,
     children: [
-      { label: 'Suppliers', to: '/purchasing/suppliers', permissions: ['products.view'] },
-      { label: 'Purchase Orders', to: '/purchasing/purchase-orders', permissions: ['products.view'] },
-      { label: 'Goods Receipts', to: '/purchasing/goods-receipts', permissions: ['products.view'] }
+      { label: 'Goods Receipts', to: '/admin/purchasing/goods-receipts', permissions: ['products.view'] },
     ]
   },
   {
@@ -88,10 +88,11 @@ const menuDefinitions = [
     label: 'Sales',
     icon: Banknote,
     children: [
-      { label: 'Orders', to: '/sales/orders', permissions: ['orders.view'] },
-      { label: 'Payments', to: '/sales/payments', permissions: ['payments.view'] },
-      { label: 'Invoices', to: '/sales/invoices', permissions: ['invoices.view'] },
-      { label: 'Deliveries', to: '/sales/deliveries', permissions: ['deliveries.view'] }
+      { label: 'Orders', to: '/admin/sales/orders', permissions: ['orders.view'] },
+      { label: 'Payments', to: '/admin/sales/payments', permissions: ['payments.view'] },
+      { label: 'Invoices', to: '/admin/sales/invoices', permissions: ['invoices.view'] },
+      { label: 'Deliveries', to: '/admin/sales/deliveries', permissions: ['deliveries.view'] },
+      { label: 'Delivery Charges', to: '/admin/sales/delivery-chargers', permissions: ['delivery_charges.view'] }
     ]
   },
   {
@@ -99,9 +100,17 @@ const menuDefinitions = [
     label: 'Marketing',
     icon: Megaphone,
     children: [
-      { label: 'Promotions', to: '/marketing/promotions', permissions: ['promotions.view'] },
-      { label: 'Categories', to: '/marketing/promotion-categories', permissions: ['promotion_categories.view'] },
-      { label: 'Products', to: '/marketing/promotion-items', permissions: ['promotion_items.view'] }
+      { label: 'Promotions', to: '/admin/marketing/promotions', permissions: ['promotions.view'] },
+      { label: 'Homepage Banners', to: '/admin/marketing/homepage-banners', permissions: ['homepage_banners.view']},
+      { label: 'Discount Campaigns', to: '/admin/marketing/discount-campaigns', permissions: ['discount_campaigns.view']},
+    ]
+  },
+  {
+    key: 'reports',
+    label: 'Reports',
+    icon: BarChart3,
+    children: [
+      { label: 'Reports & Analytics', to: '/admin/reports', permissions: ['reports.view'] }
     ]
   },
   {
@@ -111,8 +120,8 @@ const menuDefinitions = [
     children: [
       { label: 'Users', to: '/admin/administration/users', permissions: ['users.view'] },
       { label: 'Roles', to: '/admin/administration/roles', permissions: ['roles.view'] },
+      { label: 'Audit Logs', to: '/admin/administration/audit-log', permissions: ['audit_logs.view'] },
       { label: 'Permissions', to: '/admin/administration/assign-permissions', permissions: ['roles.view', 'roles.manage', 'permissions.view', 'permissions.manage'] },
-      { label: 'User Sessions', to: '/admin/administration/user-sessions', permissions: ['user_sessions.view'] }
     ]
   }
 ]

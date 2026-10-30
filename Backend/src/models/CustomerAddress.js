@@ -16,6 +16,16 @@ module.exports = (sequelize) => {
                 allowNull: false
             },
 
+            district_id: {
+                type: DataTypes.BIGINT.UNSIGNED,
+                allowNull: false
+            },
+
+            area_id: {
+                type: DataTypes.BIGINT.UNSIGNED,
+                allowNull: false
+            },
+
             address_type: {
                 type: DataTypes.STRING(30),
                 allowNull: false,
@@ -76,10 +86,22 @@ module.exports = (sequelize) => {
             updatedAt: 'updated_at'
         }
     );
+
     CustomerAddress.associate = (models) => {
+
         CustomerAddress.belongsTo(models.Customer, {
             foreignKey: 'customer_id',
             as: 'customer'
+        });
+
+        CustomerAddress.belongsTo(models.DeliveryDistrict, {
+            foreignKey: 'district_id',
+            as: 'district'
+        });
+
+        CustomerAddress.belongsTo(models.DeliveryArea, {
+            foreignKey: 'area_id',
+            as: 'area'
         });
     };
 

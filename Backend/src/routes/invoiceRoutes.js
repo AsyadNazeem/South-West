@@ -1,3 +1,4 @@
+
 'use strict';
 
 const express = require('express');
@@ -5,16 +6,13 @@ const router = express.Router();
 
 const {
     getInvoices,
-    getInvoiceById,
-    createInvoice,
-    updateInvoice,
-    deleteInvoice
+    getInvoiceById
 } = require('../controllers/invoiceController');
 
-
 const authenticate = require('../middleware/authMiddleware');
-const requirePermission = require('../middleware/permissionMiddleware');
+const { requirePermission } = require('../middleware/requirePermission');
 
+// GET ALL INVOICES
 router.get(
     '/',
     authenticate,
@@ -22,32 +20,12 @@ router.get(
     getInvoices
 );
 
+// GET INVOICE BY ID
 router.get(
     '/:id',
     authenticate,
     requirePermission('invoices.view'),
     getInvoiceById
-);
-
-router.post(
-    '/',
-    authenticate,
-    requirePermission('invoices.create'),
-    createInvoice
-);
-
-router.put(
-    '/:id',
-    authenticate,
-    requirePermission('invoices.update'),
-    updateInvoice
-);
-
-router.delete(
-    '/:id',
-    authenticate,
-    requirePermission('invoices.delete'),
-    deleteInvoice
 );
 
 module.exports = router;

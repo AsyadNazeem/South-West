@@ -327,6 +327,16 @@ onMounted(loadUsers)
                   Edit
                 </button>
 
+                <button
+    type="button"
+    class="action-button"
+    @click="router.push({
+      name: 'user-sessions-by-user',
+      params: { userId: user.id }
+    })"
+>
+  Sessions
+</button>
 
                 <button
                     type="button"

@@ -3,7 +3,8 @@ const express = require('express');
 const router = express.Router();
 
 const authenticate = require('../middleware/authMiddleware');
-const requirePermission = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
+const { uploadBrandImage } = require('../middleware/uploadMiddleware');
 
 const {
     getBrands,
@@ -34,6 +35,7 @@ router.post(
     '/',
     authenticate,
     requirePermission('products.create'),
+    uploadBrandImage,
     createBrand
 );
 
@@ -42,9 +44,9 @@ router.put(
     '/:id',
     authenticate,
     requirePermission('products.update'),
+    uploadBrandImage,
     updateBrand
 );
-
 // DELETE / DEACTIVATE BRAND
 router.delete(
     '/:id',

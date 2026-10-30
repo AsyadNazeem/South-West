@@ -3,17 +3,18 @@ const express = require('express');
 const router = express.Router();
 
 const authenticate = require('../middleware/authMiddleware');
-const requirePermission = require('../middleware/permissionMiddleware');
+const { requirePermission } = require('../middleware/requirePermission');
 
 const {
     getInventoryStocks,
     getInventoryStockById,
     createInventoryStock,
     updateInventoryStock,
-    deleteInventoryStock
+    deleteInventoryStock,
+    setOnlineStockCount
 } = require('../controllers/inventoryStockController');
 
-
+// Get all inventory stock records
 router.get(
     '/',
     authenticate,
@@ -21,7 +22,16 @@ router.get(
     getInventoryStocks
 );
 
+// Set the actual online stock count
+// Keep this BEFORE '/:id'
+router.put(
+    '/online-count',
+    authenticate,
+    requirePermission('inventory.update'),
+    setOnlineStockCount
+);
 
+// Get inventory stock by ID
 router.get(
     '/:id',
     authenticate,
@@ -29,7 +39,7 @@ router.get(
     getInventoryStockById
 );
 
-
+// Create inventory stock
 router.post(
     '/',
     authenticate,
@@ -37,7 +47,7 @@ router.post(
     createInventoryStock
 );
 
-
+// Update inventory stock settings
 router.put(
     '/:id',
     authenticate,
@@ -45,13 +55,12 @@ router.put(
     updateInventoryStock
 );
 
-
+// Delete inventory stock
 router.delete(
     '/:id',
     authenticate,
     requirePermission('inventory.delete'),
     deleteInventoryStock
 );
-
 
 module.exports = router;

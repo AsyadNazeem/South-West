@@ -1,20 +1,15 @@
 'use strict';
 
 const express = require('express');
-
 const router = express.Router();
 
 const {
     getDeliveryStatusHistories,
-    getDeliveryStatusHistoryById,
-    createDeliveryStatusHistory,
-    updateDeliveryStatusHistory,
-    deleteDeliveryStatusHistory
+    getDeliveryStatusHistoryById
 } = require('../controllers/deliveryStatusHistoryController');
 
 const authenticate = require('../middleware/authMiddleware');
-const {requirePermission} = require('../middleware/requirePermission');
-
+const { requirePermission } = require('../middleware/requirePermission');
 
 router.get(
     '/',
@@ -23,7 +18,6 @@ router.get(
     getDeliveryStatusHistories
 );
 
-
 router.get(
     '/:id',
     authenticate,
@@ -31,29 +25,7 @@ router.get(
     getDeliveryStatusHistoryById
 );
 
-
-router.post(
-    '/',
-    authenticate,
-    requirePermission('deliveries.update'),
-    createDeliveryStatusHistory
-);
-
-
-router.put(
-    '/:id',
-    authenticate,
-    requirePermission('deliveries.update'),
-    updateDeliveryStatusHistory
-);
-
-
-router.delete(
-    '/:id',
-    authenticate,
-    requirePermission('deliveries.delete'),
-    deleteDeliveryStatusHistory
-);
-
+// History entries are generated automatically when a delivery status changes.
+// Direct creation, editing and deletion are intentionally not exposed.
 
 module.exports = router;

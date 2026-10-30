@@ -92,6 +92,22 @@ module.exports = (sequelize, DataTypes) => {
                 as: 'reviews'
             });
 
+            Item.hasMany(models.ItemColor, {
+                foreignKey: 'item_id',
+                as: 'colors',
+                onDelete: 'CASCADE',
+                onUpdate: 'CASCADE'
+            });
+
+            Item.hasMany(models.ItemVariant, {
+    foreignKey: 'item_id',
+    as: 'variants'
+});
+
+Item.hasMany(models.ItemPaymentPrice, {
+    foreignKey: 'item_id',
+    as: 'paymentPrices'
+});
         }
     }
 
@@ -124,11 +140,29 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true
             },
 
-            item_code: {
-                type: DataTypes.STRING(50),
-                allowNull: false,
-                unique: true
-            },
+item_code: {
+    type: DataTypes.STRING(50),
+    allowNull: false,
+    unique: true
+},
+
+public_id: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    unique: true,
+},
+
+slug: {
+    type: DataTypes.STRING(191),
+    allowNull: false,
+    unique: true,
+},
+
+qb_item_code: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    unique: true
+},
 
             item_name: {
                 type: DataTypes.STRING(255),
@@ -138,6 +172,17 @@ module.exports = (sequelize, DataTypes) => {
             description: {
                 type: DataTypes.TEXT,
                 allowNull: true
+            },
+
+            shipping_weight: {
+                type: DataTypes.DECIMAL(10, 3),
+                allowNull: true
+            },
+
+            shipping_weight_unit: {
+                type: DataTypes.ENUM('g', 'kg'),
+                allowNull: false,
+                defaultValue: 'kg'
             },
 
             condition: {

@@ -31,21 +31,31 @@ router.get(
 );
 
 
+// TEMPORARILY DISABLED:
+// OAuth accounts must be created through a validated provider flow.
 router.post(
     '/',
     authenticate,
     requirePermission('oauth_accounts.create'),
-    createOAuthAccount
+    (req, res) => {
+        return res.status(405).json({
+            message: 'Use the authorized OAuth linking workflow.'
+        });
+    }
 );
 
-
+// TEMPORARILY DISABLED:
+// Credentials and account ownership cannot be changed through generic CRUD.
 router.put(
     '/:id',
     authenticate,
     requirePermission('oauth_accounts.update'),
-    updateOAuthAccount
+    (req, res) => {
+        return res.status(405).json({
+            message: 'OAuth accounts cannot be modified through this endpoint.'
+        });
+    }
 );
-
 
 router.delete(
     '/:id',

@@ -181,7 +181,7 @@
 
 <script setup>
 
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
@@ -229,7 +229,12 @@ const API_URL = import.meta.env.VITE_API_URL
 |--------------------------------------------------------------------------
 */
 
-const userId = route.params.userId
+const userId = computed(() =>
+  route.params.userId ??
+  route.params.id ??
+  route.query.userId ??
+  route.query.id
+)
 
 
 /*
@@ -267,18 +272,24 @@ const fetchSessions = async () => {
       )
     }
 
+    const id = userId.value
+
+if (!id || !/^[1-9]\d*$/.test(String(id))) {
+  throw new Error(
+    'User ID is missing from the route. Open sessions from the Users page.'
+  )
+}
+
     const response = await fetch(
-        `${API_URL}/users/${userId}/sessions`,
-        {
-          method: 'GET',
-
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
-    )
-
+  `${API_URL}/users/${id}/sessions`,
+  {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  }
+)
     const result = await response.json()
 
     if (!response.ok) {
@@ -460,7 +471,7 @@ const revokeAll = async () => {
 
 
     const response = await fetch(
-        `${API_URL}/users/${userId}/sessions/revoke-all`,
+`${API_URL}/users/${userId.value}/sessions/revoke-all`,
         {
           method: 'PUT',
 
@@ -629,117 +640,133 @@ onMounted(async () => {
 
 
 <style scoped>
-
 .user-sessions-page {
-  padding: 24px;
+  width: 100%;
+  font-family: var(--font-family);
 }
 
-
-/*
-|--------------------------------------------------------------------------
-| Header
-|--------------------------------------------------------------------------
-*/
+/* =========================
+   Page Header
+   ========================= */
 
 .page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 24px;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-2xl);
 }
 
 .page-header h1 {
-  margin: 0 0 6px;
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
 }
 
 .page-header p {
-  margin: 0;
-  color: #666;
+  margin: 5px 0 0;
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
 }
 
-
-/*
-|--------------------------------------------------------------------------
-| Card
-|--------------------------------------------------------------------------
-*/
+/* =========================
+   Card / Table
+   ========================= */
 
 .sessions-card {
   width: 100%;
   overflow-x: auto;
-  background: #fff;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
-
-
-/*
-|--------------------------------------------------------------------------
-| Table
-|--------------------------------------------------------------------------
-*/
 
 .sessions-table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.sessions-table th,
-.sessions-table td {
-  padding: 14px 16px;
-  text-align: left;
-  border-bottom: 1px solid #eee;
-}
-
 .sessions-table th {
-  font-weight: 600;
-  background: #f8f9fa;
+  padding: var(--spacing-md) var(--spacing-lg);
+  text-align: left;
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: var(--color-hover-bg);
+  border-bottom: 1px solid var(--color-border-light);
 }
 
+.sessions-table td {
+  padding: 14px var(--spacing-lg);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-light);
+  vertical-align: middle;
+}
 
-/*
-|--------------------------------------------------------------------------
-| Session Information
-|--------------------------------------------------------------------------
-*/
+.sessions-table tbody tr {
+  transition: background var(--transition-fast);
+}
+
+.sessions-table tbody tr:hover {
+  background: var(--color-surface-hover);
+}
+
+.sessions-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* =========================
+   Session Information
+   ========================= */
 
 .session-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+}
+
+.session-info strong {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
 }
 
 .session-info small {
-  color: #777;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
 }
-
-
-/*
-|--------------------------------------------------------------------------
-| User Agent
-|--------------------------------------------------------------------------
-*/
 
 .user-agent {
   max-width: 300px;
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
   word-break: break-word;
-  font-size: 13px;
 }
 
-
-/*
-|--------------------------------------------------------------------------
-| Buttons
-|--------------------------------------------------------------------------
-*/
+/* =========================
+   Buttons
+   ========================= */
 
 .btn {
-  border: none;
-  border-radius: 6px;
-  padding: 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: 6px var(--spacing-md);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
   cursor: pointer;
-  font-size: 14px;
+  transition: background var(--transition-fast),
+  color var(--transition-fast),
+  border-color var(--transition-fast);
 }
 
 .btn:disabled {
@@ -747,93 +774,121 @@ onMounted(async () => {
   cursor: not-allowed;
 }
 
+/* Row action: Revoke */
 .btn-warning {
-  background: #f59e0b;
-  color: #fff;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
 }
 
+.btn-warning:hover:not(:disabled) {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-light);
+  color: var(--color-danger);
+}
+
+/* Header action: Revoke All Sessions */
 .btn-danger {
-  background: #dc2626;
-  color: #fff;
+  height: 40px;
+  padding: 0 var(--spacing-lg);
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--color-danger);
+  color: var(--color-text-light);
+  font-size: var(--font-size-md);
 }
 
+.btn-danger:hover:not(:disabled) {
+  opacity: 0.9;
+}
 
-/*
-|--------------------------------------------------------------------------
-| Status
-|--------------------------------------------------------------------------
-*/
+/* =========================
+   Status Badge
+   ========================= */
 
 .status-badge {
-  display: inline-block;
-  padding: 5px 10px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
 }
 
 .status-badge.active {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--color-success-bg);
+  color: var(--color-success);
 }
 
 .status-badge.expired {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning, #92400e);
 }
 
 .status-badge.revoked {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
 }
 
-
-/*
-|--------------------------------------------------------------------------
-| Loading
-|--------------------------------------------------------------------------
-*/
+/* =========================
+   States
+   ========================= */
 
 .loading {
-  padding: 40px;
+  padding: 50px var(--spacing-xl);
   text-align: center;
-  color: #666;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
-
-
-/*
-|--------------------------------------------------------------------------
-| Error
-|--------------------------------------------------------------------------
-*/
 
 .error-message {
-  padding: 20px;
-  border-radius: 8px;
-  background: #fee2e2;
-  color: #991b1b;
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid var(--color-danger-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
 }
 
-
-/*
-|--------------------------------------------------------------------------
-| Empty
-|--------------------------------------------------------------------------
-*/
-
 .empty-state {
-  padding: 60px 20px;
+  padding: 50px var(--spacing-xl);
   text-align: center;
-  background: #f9fafb;
-  border-radius: 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .empty-state h3 {
-  margin-bottom: 8px;
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
 }
 
 .empty-state p {
-  color: #666;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
 }
 
+/* =========================
+   Responsive
+   ========================= */
+
+@media (max-width: 700px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn-danger {
+    width: 100%;
+  }
+}
 </style>

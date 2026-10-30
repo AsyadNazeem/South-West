@@ -3,6 +3,7 @@
 const { ItemImage, Item, sequelize } = require('../models');
 const { removeStoredFile } = require('../utils/fileStorage');
 const { HttpError, toBool, toInt } = require('../utils/requestHelpers');
+const { recordAuditLog } = require('../services/auditLogService');
 
 const MAX_IMAGES_PER_ITEM = 10;
 
@@ -158,7 +159,31 @@ const createItemImage = async (req, res) => {
             { transaction }
         );
 
+        await recordAuditLog({
+            userId: req.user.id,
+            action: 'ITEM_IMAGE_CREATED',
+            module: 'items',
+            entityType: 'item_image',
+            entityId: image.id,
+            description: `Image created for item ID ${item_id}`,
+            newValues: {
+                item_id: image.item_id,
+                file_name: image.file_name,
+                mime_type: image.mime_type,
+                file_size: image.file_size,
+                alt_text: image.alt_text,
+                sort_order: image.sort_order,
+                is_primary: image.is_primary,
+                is_active: image.is_active
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
+        });
+
         await transaction.commit();
+
 
         return res.status(201).json({
             message: 'Item image created successfully',
@@ -166,7 +191,15 @@ const createItemImage = async (req, res) => {
         });
     } catch (error) {
         await rollbackQuietly(transaction);
-        await removeStoredFile(file.relativePath);
+
+        const cleanup = await removeStoredFile(file.relativePath);
+
+        if (cleanup.status === 'failed') {
+            console.error(
+                'Image upload cleanup required:',
+                file.relativePath
+            );
+        }
 
         return sendError(
             res, error,
@@ -186,6 +219,13 @@ const updateItemImage = async (req, res) => {
             transaction,
             lock: transaction.LOCK.UPDATE
         });
+
+        const oldValues = {
+            alt_text: image.alt_text,
+            sort_order: image.sort_order,
+            is_primary: image.is_primary,
+            is_active: image.is_active
+        };
 
         if (!image) {
             throw new HttpError(404, 'Item image not found');
@@ -229,6 +269,26 @@ const updateItemImage = async (req, res) => {
 
         await image.update(updates, { transaction });
 
+        await recordAuditLog({
+            userId: req.user.id,
+            action: 'ITEM_IMAGE_UPDATED',
+            module: 'items',
+            entityType: 'item_image',
+            entityId: image.id,
+            description: `Image updated for item ID ${image.item_id}`,
+            oldValues,
+            newValues: {
+                alt_text: image.alt_text,
+                sort_order: image.sort_order,
+                is_primary: image.is_primary,
+                is_active: image.is_active
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
+        });
+
         await transaction.commit();
 
         const updated = await ItemImage.findByPk(image.id, {
@@ -241,6 +301,15 @@ const updateItemImage = async (req, res) => {
         });
     } catch (error) {
         await rollbackQuietly(transaction);
+
+        const cleanup = await removeStoredFile(file.relativePath);
+
+        if (cleanup.status === 'failed') {
+            console.error(
+                'Image upload cleanup required:',
+                file.relativePath
+            );
+        }
 
         return sendError(
             res, error,
@@ -267,6 +336,17 @@ const deleteItemImage = async (req, res) => {
 
         const { item_id, file_path, is_primary } = image;
 
+        const oldValues = {
+            item_id,
+            file_name: image.file_name,
+            mime_type: image.mime_type,
+            file_size: image.file_size,
+            alt_text: image.alt_text,
+            sort_order: image.sort_order,
+            is_primary: image.is_primary,
+            is_active: image.is_active
+        };
+
         await image.destroy({ transaction });
 
         // Keep one primary image: promote the next one in order
@@ -285,9 +365,29 @@ const deleteItemImage = async (req, res) => {
             }
         }
 
+        await recordAuditLog({
+            userId: req.user.id,
+            action: 'ITEM_IMAGE_DELETED',
+            module: 'items',
+            entityType: 'item_image',
+            entityId: image.id,
+            description: `Image deleted from item ID ${item_id}`,
+            oldValues,
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || null,
+            transaction
+        });
+
         await transaction.commit();
 
-        await removeStoredFile(file_path);
+        const cleanup = await removeStoredFile(file_path);
+
+        if (cleanup.status === 'failed') {
+            console.error(
+                `Image file cleanup required for image ID ${image.id}`
+            );
+        }
 
         return res.status(200).json({
             message: 'Item image deleted successfully'

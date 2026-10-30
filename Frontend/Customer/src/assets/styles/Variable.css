@@ -1,0 +1,125 @@
+/*
+  South-West storefront design tokens
+  src/assets/styles/Variable.css
+  Palette: metallic navy + black + white, steel-blue highlight.
+*/
+:root {
+    /* Brand */
+    --color-primary: #0b1d3a;
+    --color-primary-hover: #15305b;
+    --color-primary-light: #1f4a8a;
+    --color-on-primary: #ffffff;
+    --color-accent: #7fb2f0;
+    --color-accent-deep: #5a98e6;
+    --color-on-accent: #06101f;
+    --color-on-accent-muted: rgb(6 16 31 / 76%);
+    --color-on-accent-line: rgb(6 16 31 / 22%);
+    --color-black: #05080f;
+
+    /* Metallic finishes */
+    --gradient-metal: linear-gradient(135deg, #050b16 0%, #0d2142 30%, #1b3d6e 50%, #0c2040 70%, #050b16 100%);
+    --gradient-button: linear-gradient(180deg, #24569f 0%, #0f2a52 100%);
+    --highlight-inset: inset 0 1px 0 rgb(255 255 255 / 18%);
+
+    /* Surfaces */
+    --color-page-bg: #ffffff;
+    --color-store-bg: #f3f5f9;
+    --color-surface: #ffffff;
+    --color-surface-muted: #eef1f6;
+
+    /* Text */
+    --color-text: #0a1220;
+    --color-text-label: #0a1220;
+    --color-text-muted: #5a6677;
+
+    /* Borders and focus */
+    --color-border: #b8c2d0;
+    --color-border-soft: #e3e8ef;
+    --color-border-strong: #0a1220;
+    --color-focus: #1f4a8a;
+    --color-focus-outline: #7fb2f0;
+
+    /* Status */
+    --color-danger: #b42318;
+    --color-danger-bg: #fdf1ef;
+    --color-success: #067647;
+    --color-success-bg: #ecfdf3;
+
+    /* Typography */
+    --font-family-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+    --font-family-base: 'Manrope', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+    --font-size-xs: 0.78rem;
+    --font-size-sm: 0.9rem;
+    --font-size-md: 1rem;
+    --font-size-lg: 1.25rem;
+    --font-size-xl: clamp(2rem, 1.4rem + 1.6vw, 2.75rem);
+    --font-size-2xl: clamp(2rem, 1.2rem + 2vw, 3.1rem);
+    --font-weight-regular: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+    --line-height-tight: 1.1;
+    --line-height-base: 1.6;
+    --letter-spacing-heading: -0.025em;
+
+    /* Spacing scale */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
+    --space-16: 4rem;
+
+    /* Shape */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-pill: 999px;
+
+    /* Elevation */
+    --shadow-sm: 0 1px 2px rgb(8 20 40 / 6%);
+    --shadow-md: 0 6px 20px rgb(8 20 40 / 10%);
+    --shadow-lg: 0 18px 40px rgb(8 20 40 / 20%);
+
+    /* Layout */
+    --container-form: 460px;
+    --container-store: 1440px;
+    --strip-height: 34px;
+    --control-height: 52px;
+    --border-width-field: 1.5px;
+    --container-auth: 500px;
+    --field-height: 45px;
+
+
+    /* Motion */
+    --transition-fast: 160ms ease;
+    --transition-base: 220ms ease;
+}
+
+/* Base */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: var(--color-page-bg);
+    color: var(--color-text);
+    font-family: var(--font-family-base);
+    -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}

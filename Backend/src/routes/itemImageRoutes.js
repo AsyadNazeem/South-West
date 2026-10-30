@@ -12,7 +12,7 @@ const {
 } = require('../controllers/itemImageController');
 
 const authenticate = require('../middleware/authMiddleware');
-const requirePermission = require('../middleware/permissionMiddleware');
+const {requirePermission} = require('../middleware/requirePermission');
 const { uploadItemImage } = require('../middleware/uploadMiddleware');
 
 

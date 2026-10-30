@@ -19,6 +19,11 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'created_by',
                 as: 'creator'
             });
+
+            InventoryStockMovement.belongsTo(models.ItemVariant, {
+    foreignKey: 'variant_id',
+    as: 'variant'
+});
         }
     }
 
@@ -36,23 +41,29 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false
             },
 
+            variant_id: {
+    type: DataTypes.BIGINT.UNSIGNED,
+    allowNull: true
+},
+
             location_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: false
             },
 
-            movement_type: {
-                type: DataTypes.ENUM(
-                    'purchase',
-                    'sale',
-                    'customer_return',
-                    'supplier_return',
-                    'adjustment',
-                    'transfer_in',
-                    'transfer_out'
-                ),
-                allowNull: false
-            },
+         movement_type: {
+    type: DataTypes.ENUM(
+        'purchase',
+        'goods_receipt',
+        'sale',
+        'customer_return',
+        'supplier_return',
+        'adjustment',
+        'transfer_in',
+        'transfer_out'
+    ),
+    allowNull: false
+},
 
             quantity: {
                 type: DataTypes.DECIMAL(15, 3),

@@ -7,6 +7,11 @@ const multer = require('multer');
 
 const { UPLOAD_ROOT } = require('../utils/fileStorage');
 
+const detectFileType = async (filePath) => {
+    const { fileTypeFromFile } = await import('file-type');
+    return fileTypeFromFile(filePath);
+};
+
 class UploadError extends Error {}
 
 const MB = 1024 * 1024;
@@ -14,7 +19,8 @@ const MB = 1024 * 1024;
 const createUploader = ({
                             field,
                             folder,
-                            allowedTypes, // { mimeType: extension }
+                            allowedTypes,
+                            allowedExtensions,
                             maxSize,
                             typeMessage,
                             sizeMessage
@@ -48,6 +54,16 @@ const createUploader = ({
         upload(req, res, (error) => {
             if (error) {
                 if (error instanceof multer.MulterError) {
+                    if (error.storageErrors?.length) {
+                        for (const cleanupError of error.storageErrors) {
+                            console.error('Upload cleanup failed:', {
+                                code: cleanupError.code,
+                                field: cleanupError.field,
+                                message: cleanupError.message
+                            });
+                        }
+                    }
+
                     const message =
                         error.code === 'LIMIT_FILE_SIZE'
                             ? sizeMessage
@@ -67,12 +83,51 @@ const createUploader = ({
                 return res.status(500).json({ message: 'File upload failed' });
             }
 
-            if (req.file) {
-                // Path relative to UPLOAD_ROOT, saved in the database
-                req.file.relativePath = path.posix.join(folder, req.file.filename);
+            if (!req.file) {
+                return next();
             }
 
-            next();
+            req.file.relativePath = path.posix.join(folder, req.file.filename);
+
+            (async () => {
+                try {
+                    const detected = await detectFileType(req.file.path);
+
+                    if (
+                        !detected ||
+                        detected.ext !== allowedExtensions[req.file.mimetype] ||
+                        detected.mime !== req.file.mimetype
+                    ) {
+                        await fs.promises.unlink(req.file.path).catch(() => {});
+
+                        return res.status(400).json({
+                            message: typeMessage
+                        });
+                    }
+
+                    return next();
+                } catch (validationError) {
+                    try {
+                        await fs.promises.unlink(req.file.path);
+                    } catch (cleanupError) {
+                        if (cleanupError.code !== 'ENOENT') {
+                            console.error(
+                                'Rejected upload cleanup failed:',
+                                cleanupError.code || cleanupError.message
+                            );
+                        }
+                    }
+
+                    console.error(
+                        'File content validation failed:',
+                        validationError.message
+                    );
+
+                    return res.status(500).json({
+                        message: 'File validation failed'
+                    });
+                }
+            })();
         });
     };
 };
@@ -83,6 +138,10 @@ const uploadItemImage = createUploader({
     allowedTypes: {
         'image/jpeg': '.jpg',
         'image/png': '.png'
+    },
+    allowedExtensions: {
+        'image/jpeg': 'jpg',
+        'image/png': 'png'
     },
     maxSize: 5 * MB,
     typeMessage: 'Only PNG and JPG images are allowed',
@@ -97,12 +156,70 @@ const uploadItemVideo = createUploader({
         'video/webm': '.webm',
         'video/quicktime': '.mov'
     },
+    allowedExtensions: {
+        'video/mp4': 'mp4',
+        'video/webm': 'webm',
+        'video/quicktime': 'mov'
+    },
     maxSize: 15 * MB,
     typeMessage: 'Only MP4, WebM or MOV videos are allowed',
     sizeMessage: 'Video must be smaller than 15MB'
 });
 
+
+const uploadBannerImage = createUploader({
+    field: 'image',
+    folder: 'homepage/banners',
+    allowedTypes: {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+    },
+    allowedExtensions: {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+    },
+    maxSize: 5 * MB,
+    typeMessage: 'Only PNG and JPG banner images are allowed',
+    sizeMessage: 'Banner image must be smaller than 5MB',
+});
+
+
+const uploadCategoryImage = createUploader({
+    field: 'image',
+    folder: 'categories/images',
+    allowedTypes: {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+    },
+    allowedExtensions: {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+    },
+    maxSize: 5 * MB,
+    typeMessage: 'Only PNG and JPG category images are allowed',
+    sizeMessage: 'Category image must be smaller than 5MB',
+});
+
+const uploadBrandImage = createUploader({
+    field: 'image',
+    folder: 'brands/images',
+    allowedTypes: {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+    },
+    allowedExtensions: {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+    },
+    maxSize: 5 * MB,
+    typeMessage: 'Only PNG and JPG brand images are allowed',
+    sizeMessage: 'Brand image must be smaller than 5MB',
+});
+
 module.exports = {
     uploadItemImage,
-    uploadItemVideo
+    uploadItemVideo,
+    uploadCategoryImage,
+    uploadBannerImage,
+    uploadBrandImage,
 };

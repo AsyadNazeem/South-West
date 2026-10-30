@@ -14,6 +14,11 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'item_id',
                 as: 'item'
             });
+
+            OrderItem.belongsTo(models.ItemVariant, {
+    foreignKey: 'variant_id',
+    as: 'variant'
+});
         }
     }
 
@@ -36,6 +41,11 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false
             },
 
+            variant_id: {
+    type: DataTypes.BIGINT.UNSIGNED,
+    allowNull: true
+},
+
             quantity: {
                 type: DataTypes.DECIMAL(15, 3),
                 allowNull: false
@@ -48,6 +58,18 @@ module.exports = (sequelize, DataTypes) => {
 
             discount_amount: {
                 type: DataTypes.DECIMAL(15, 2),
+                allowNull: false,
+                defaultValue: 0
+            },
+
+            discount_percentage_mode: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false
+            },
+
+            discount_percentage: {
+                type: DataTypes.DECIMAL(5, 2),
                 allowNull: false,
                 defaultValue: 0
             },

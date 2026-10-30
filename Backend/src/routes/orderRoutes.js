@@ -1,56 +1,39 @@
-const express = require('express');
 
+const express = require('express');
 const router = express.Router();
 
 const orderController = require('../controllers/orderController');
-
+const orderStatusController = require('../controllers/orderStatusController');
 const authMiddleware = require('../middleware/authMiddleware');
-const permissionMiddleware = require('../middleware/permissionMiddleware');
+const { requirePermission } = require('../middleware/requirePermission');
 
-
-// Get all orders
 router.get(
     '/',
     authMiddleware,
-    permissionMiddleware('orders.view'),
+    requirePermission('orders.view'),
     orderController.getAllOrders
 );
 
-
-// Get order by ID
 router.get(
     '/:id',
     authMiddleware,
-    permissionMiddleware('orders.view'),
+    requirePermission('orders.view'),
     orderController.getOrderById
 );
 
 
-// Create order
-router.post(
-    '/',
+router.patch(
+    '/:id/status',
     authMiddleware,
-    permissionMiddleware('orders.create'),
-    orderController.createOrder
+    requirePermission('orders.update'),
+    orderStatusController.updateOrderStatus
 );
 
-
-// Update order
-router.put(
-    '/:id',
-    authMiddleware,
-    permissionMiddleware('orders.update'),
-    orderController.updateOrder
-);
-
-
-// Delete order
 router.delete(
     '/:id',
     authMiddleware,
-    permissionMiddleware('orders.cancel'),
+    requirePermission('orders.cancel'),
     orderController.deleteOrder
 );
-
 
 module.exports = router;

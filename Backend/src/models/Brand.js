@@ -9,6 +9,11 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'brand_id',
                 as: 'items'
             });
+
+            Brand.hasMany(models.PromotionBrand, {
+    foreignKey: 'brand_id',
+    as: 'promotionBrands'
+});
         }
     }
 
@@ -42,6 +47,12 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true
             },
+
+image_url: {
+    type: DataTypes.STRING(500),
+    allowNull: true,
+    defaultValue: null,
+},
 
             is_active: {
                 type: DataTypes.BOOLEAN,

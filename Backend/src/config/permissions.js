@@ -9,7 +9,7 @@ const permissionCatalog = [
     { name: 'roles.view', module: 'roles', description: 'View roles' },
     { name: 'roles.manage', module: 'roles', description: 'Create, update and delete roles' },
     { name: 'permissions.view', module: 'permissions', description: 'View permissions' },
-    { name: 'permissions.manage', module: 'permissions', description: 'Manage permissions' },
+    { name: 'permissions.privileged.manage', module: 'permissions', description: 'Grant sensitive permissions to roles' },
     { name: 'products.view', module: 'products', description: 'View products' },
     { name: 'products.create', module: 'products', description: 'Create products' },
     { name: 'products.update', module: 'products', description: 'Update products' },
@@ -24,7 +24,6 @@ const permissionCatalog = [
     { name: 'customers.update', module: 'customers', description: 'Update customers' },
     { name: 'customers.delete', module: 'customers', description: 'Delete customers' },
     { name: 'reports.view', module: 'reports', description: 'View reports' },
-    { name: 'admin.dashboard.view', module: 'admin', description: 'View the administrative dashboard' },
     { name: 'inventory.view', module: 'inventory', description: 'View inventory' },
     { name: 'inventory.create', module: 'inventory', description: 'Create inventory records' },
     { name: 'inventory.update', module: 'inventory', description: 'Update inventory records' },
@@ -34,9 +33,6 @@ const permissionCatalog = [
     { name: 'deliveries.update', module: 'deliveries', description: 'Update deliveries' },
     { name: 'deliveries.delete', module: 'deliveries', description: 'Delete deliveries' },
     { name: 'invoices.view', module: 'invoices', description: 'View invoices' },
-    { name: 'invoices.create', module: 'invoices', description: 'Create invoices' },
-    { name: 'invoices.update', module: 'invoices', description: 'Update invoices' },
-    { name: 'invoices.delete', module: 'invoices', description: 'Delete invoices' },
     { name: 'item_images.view', module: 'item_images', description: 'View item images and videos' },
     { name: 'item_images.create', module: 'item_images', description: 'Create item images and videos' },
     { name: 'item_images.update', module: 'item_images', description: 'Update item images and videos' },
@@ -85,6 +81,12 @@ const permissionCatalog = [
     { name: 'promotions.create', module: 'promotions', description: 'Create promotions' },
     { name: 'promotions.update', module: 'promotions', description: 'Update promotions' },
     { name: 'promotions.delete', module: 'promotions', description: 'Delete promotions' },
+
+    { name: 'homepage_banners.view', module: 'homepage_banners', description: 'View homepage banners' },
+    { name: 'homepage_banners.create', module: 'homepage_banners', description: 'Create homepage banners' },
+    { name: 'homepage_banners.update', module: 'homepage_banners', description: 'Update homepage banners' },
+    { name: 'homepage_banners.delete', module: 'homepage_banners', description: 'Delete homepage banners' },
+
     { name: 'user_roles.view', module: 'user_roles', description: 'View user roles' },
     { name: 'user_roles.create', module: 'user_roles', description: 'Create user role assignments' },
     { name: 'user_roles.update', module: 'user_roles', description: 'Update user role assignments' },
@@ -94,7 +96,13 @@ const permissionCatalog = [
     { name: 'user_sessions.cleanup', module: 'user_sessions', description: 'Clean up expired user sessions' },
     { name: 'wishlists.view', module: 'wishlists', description: 'View wishlists' },
     { name: 'wishlists.create', module: 'wishlists', description: 'Create wishlists' },
-    { name: 'wishlists.delete', module: 'wishlists', description: 'Delete wishlists' }
+    { name: 'wishlists.delete', module: 'wishlists', description: 'Delete wishlists' },
+    { name: 'audit_logs.view', module: 'audit_logs', description: 'View audit logs' },
+
+    { name: 'discount_campaigns.view', module: 'discount_campaigns', description: 'View discount campaigns' },
+    { name: 'discount_campaigns.create', module: 'discount_campaigns', description: 'Create discount campaigns' },
+    { name: 'discount_campaigns.update', module: 'discount_campaigns', description: 'Update discount campaigns' },
+    { name: 'discount_campaigns.delete', module: 'discount_campaigns', description: 'Delete discount campaigns' },
 ];
 
 const seededPermissionNames = new Set([
@@ -119,8 +127,7 @@ const seededPermissionNames = new Set([
     'customers.create',
     'customers.update',
     'customers.delete',
-    'reports.view',
-    'admin.dashboard.view'
+    'reports.view'
 ]);
 
 const additionalPermissionNames = permissionCatalog
@@ -148,7 +155,10 @@ const defaultRolePermissions = {
         'customers.view',
         'customers.create',
         'customers.update',
-        'reports.view'
+        'reports.view',
+                'discount_campaigns.view',
+        'discount_campaigns.create',
+        'discount_campaigns.update'
     ],
     Staff: [
         'dashboard.view',
@@ -156,6 +166,7 @@ const defaultRolePermissions = {
         'products.view',
         'orders.view',
         'customers.view',
+                'discount_campaigns.view',
         'reports.view'
     ],
     Sales: [
@@ -167,6 +178,7 @@ const defaultRolePermissions = {
         'orders.cancel',
         'customers.view',
         'customers.create',
+                'discount_campaigns.view',
         'customers.update'
     ]
 };

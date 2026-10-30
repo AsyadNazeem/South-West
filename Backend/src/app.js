@@ -2,12 +2,17 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+const { getPublicBanners } = require('./controllers/homepageBannerController');
+
+
 const sequelize = require("./config/database");
 const authRoutes = require("./routes/authRoutes");
 const customerRoutes = require("./routes/customerRoutes");
 const userRoutes = require('./routes/userRoutes');
 const roleRoutes = require('./routes/roleRoutes');
 const customerAddressRoutes = require("./routes/customerAddressRoutes");
+const deliveryDistrictRoutes = require("./routes/deliveryDistrictRoutes");
+const deliveryAreaRoutes = require("./routes/deliveryAreaRoutes");
 const permissionRoutes = require('./routes/permissionRoutes');
 const rolePermissionRoutes = require('./routes/rolePermissionRoutes');
 const itemRoutes = require('./routes/itemRoutes');
@@ -51,18 +56,54 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const customerAddressListRoutes = require('./routes/customerAddressListRoutes');
 const itemTypeRoutes = require('./routes/itemTypeRoutes');
 const warrantyRoutes = require('./routes/warrantyRoutes');
+const customerAuthRoutes = require("./routes/customerAuthRoutes");
+const customerCartRoutes = require('./routes/customerCartRoutes');
+const customerCheckoutRoutes = require('./routes/customerCheckoutRoutes');
+const customerOrderRoutes = require('./routes/customerOrderRoutes');
+const auditLogRoutes = require('./routes/auditLogRoutes');
+
+const customerSelfAddressRoutes = require('./routes/customerSelfAddressRoutes');
+const myNotificationRoutes = require('./routes/myNotificationRoutes');
+const myNotificationPreferenceRoutes = require('./routes/myNotificationPreferenceRoutes');
+const storeCategoryRoutes = require('./routes/storeCategoryRoutes');
+const storeProductRoutes = require('./routes/storeProductRoutes');
+const customerWishlistRoutes = require('./routes/customerWishlistRoutes');
+const homepageBannerRoutes = require('./routes/homepageBannerRoutes');
+const publicHomepageBannerRoutes = require('./routes/publicHomepageBannerRoutes');
+const customerProductReviewRoutes = require('./routes/customerProductReviewRoutes');
+
+const discountCampaignRoutes = require('./routes/discountCampaignRoutes');
+const storeBrandRoutes = require('./routes/storeBrandRoutes');
+const itemPaymentPriceRoutes = require('./routes/itemPaymentPriceRoutes');
+
+const reportRoutes = require('./routes/reportRoutes');
 
 const app = express();
 
+
 app.use(
-    cors({
-        origin: 'http://localhost:5173',
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization']
-    })
+  cors({
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:5174'
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Idempotency-Key'
+    ]
+  })
 )
-app.use(express.json());
+
+
+app.use(express.json({ limit: '100kb' }));
+
+app.use((req, res, next) => {
+    console.log(`[REQUEST] ${req.method} ${req.url}`);
+    next();
+});
 
 // Routes
 app.get("/", (req, res) => {
@@ -78,6 +119,8 @@ app.use("/api/customers", customerRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/roles', roleRoutes);
 app.use("/api/customers", customerAddressRoutes);
+app.use("/api/delivery-districts", deliveryDistrictRoutes);
+app.use("/api/delivery-areas", deliveryAreaRoutes);
 app.use('/api/permissions', permissionRoutes);
 app.use('/api', rolePermissionRoutes);
 app.use('/api/items', itemRoutes);
@@ -86,7 +129,7 @@ app.use('/api/item-specifications', itemSpecificationRoutes);
 app.use('/api/item-type-specifications', itemTypeSpecificationRoutes);
 app.use('/api/item-specification-values', itemSpecificationValueRoutes);
 app.use('/api/inventory-locations', inventoryLocationRoutes);
-app.use('/api/inventory-stocks', inventoryStockRoutes);
+app.use('/api/inventory-stock', inventoryStockRoutes);
 app.use('/api/inventory-stock-movements', inventoryStockMovementRoutes);
 app.use('/api/goods-receipts', goodsReceiptRoutes);
 app.use('/api/goods-receipt-items', goodsReceiptItemRoutes);
@@ -121,11 +164,34 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/customer-addresses', customerAddressListRoutes);
 app.use('/api/item-types', itemTypeRoutes);
 app.use('/api/warranties', warrantyRoutes);
+app.use("/api/customer-auth", customerAuthRoutes);
+app.use('/api/customer-cart', customerCartRoutes);
+app.use('/api/customer-checkout', customerCheckoutRoutes);
+app.use('/api/customer-orders', customerOrderRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
+app.use('/api/item-payment-prices', itemPaymentPriceRoutes);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/item-videos', require('./routes/itemVideoRoutes'));
 
+app.use('/api/customer/addresses', customerSelfAddressRoutes);
+app.use('/api/my/notifications', myNotificationRoutes);
+app.use('/api/my/notification-preferences', myNotificationPreferenceRoutes);
+app.use('/api/store/categories', storeCategoryRoutes);
+app.use('/api/store/products', storeProductRoutes);
+app.use('/api/customer-wishlist', customerWishlistRoutes);
+app.use('/api/homepage-banners', homepageBannerRoutes);
+app.get('/api/store/banners', getPublicBanners);
+app.use('/api/store/homepage-banners', publicHomepageBannerRoutes);
+app.use('/api/discount-campaigns', discountCampaignRoutes);
+app.use('/api/store/brands', storeBrandRoutes);
+app.use('/api/customer-reviews', customerProductReviewRoutes);
+
+app.use('/api/reports', reportRoutes);
+
 const PORT = process.env.PORT || 5001;
+
+
 
 async function startServer() {
     try {
@@ -144,36 +210,19 @@ async function startServer() {
 
 startServer();
 
+
+
+
 // curl -X POST http://localhost:5001/api/auth/login \
 //     -H "Content-Type: application/json" \
 //   -d '{
 // "email": "admin@southwest.lk",
 //     "password": "SouthWest@2026!"
 // }'
-//
-// For the Staff user:
-//
-//     curl -X POST http://localhost:5001/api/auth/login \
-//     -H "Content-Type: application/json" \
-//   -d '{
-// "email": "staff@southwest.lk",
-//     "password": "Staff@2026!"
-// }'
-//
-// For the Manager user:
-//
-//     curl -X POST http://localhost:5001/api/auth/login \
-//     -H "Content-Type: application/json" \
-//   -d '{
-// "email": "manager@southwest.lk",
-//     "password": "Manager@2026!"
-// }'
 
-// curl -X POST http://localhost:5001/api/users \
+// curl -i -X POST http://localhost:5001/api/customer-auth/login \
 //     -H "Content-Type: application/json" \
-//   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
 //   -d '{
-// "email": "sales@southwest.lk",
-//     "password": "Sales@2026!",
-//     "role_id": 4
+// "identifier": "asyad.test001@example.com",
+//     "password": "SouthWestTest@2026"
 // }'

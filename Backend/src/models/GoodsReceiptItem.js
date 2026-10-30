@@ -19,6 +19,11 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'item_id',
                 as: 'item'
             });
+
+            GoodsReceiptItem.belongsTo(models.ItemVariant, {
+    foreignKey: 'variant_id',
+    as: 'variant'
+});
         }
     }
 
@@ -38,13 +43,18 @@ module.exports = (sequelize, DataTypes) => {
 
             purchase_order_item_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
-                allowNull: false
+                allowNull: true
             },
 
             item_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: false
             },
+
+            variant_id: {
+    type: DataTypes.BIGINT.UNSIGNED,
+    allowNull: true
+},
 
             quantity_received: {
                 type: DataTypes.DECIMAL(15, 3),
@@ -81,14 +91,23 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false
             }
         },
+
         {
             sequelize,
             modelName: 'GoodsReceiptItem',
             tableName: 'goods_receipt_items',
             timestamps: true,
             createdAt: 'created_at',
-            updatedAt: 'updated_at'
+            updatedAt: 'updated_at',
+            indexes: [
+                {
+                    name: 'goods_receipt_items_receipt_po_item_unique',
+                    unique: true,
+                    fields: ['goods_receipt_id', 'purchase_order_item_id']
+                }
+            ]
         }
+
     );
 
     return GoodsReceiptItem;

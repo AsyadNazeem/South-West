@@ -196,6 +196,7 @@ onMounted(loadCustomers)
           <thead>
 
           <tr>
+            <th>#</th>
 
             <th>Customer</th>
 
@@ -221,9 +222,13 @@ onMounted(loadCustomers)
           <tbody>
 
           <tr
-              v-for="customer in filteredCustomers"
+              v-for="(customer, index) in filteredCustomers"
               :key="customer.id"
           >
+
+            <td>
+              {{ index + 1 }}
+            </td>
 
             <!-- Customer -->
             <td>

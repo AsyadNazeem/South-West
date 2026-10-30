@@ -44,6 +44,63 @@ const successMessage = ref("")
 const parentCategorySearch = ref("")
 const showParentCategoryDropdown = ref(false)
 
+
+const selectedImage = ref(null);
+const imagePreview = ref('');
+
+const API_BASE_URL = (
+    import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
+).replace(/\/api\/?$/, '');
+
+const getImageUrl = (path) => {
+    if (!path) return '';
+
+    if (/^https?:\/\//i.test(path)) {
+        return path;
+    }
+
+    return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+};
+
+const onImageSelected = (event) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    errorMessage.value = '';
+
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+        errorMessage.value = 'Please select a JPG or PNG image.';
+        event.target.value = '';
+        return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+        errorMessage.value = 'The image must be smaller than 5MB.';
+        event.target.value = '';
+        return;
+    }
+
+    if (imagePreview.value.startsWith('blob:')) {
+        URL.revokeObjectURL(imagePreview.value);
+    }
+
+    selectedImage.value = file;
+    imagePreview.value = URL.createObjectURL(file);
+};
+
+const removeSelectedImage = () => {
+    if (imagePreview.value.startsWith('blob:')) {
+        URL.revokeObjectURL(imagePreview.value);
+    }
+
+    selectedImage.value = null;
+    imagePreview.value = '';
+
+    const input = document.getElementById('category-image');
+    if (input) input.value = '';
+};
+
 // --------------------------------------------------
 // PARENT CATEGORIES
 // --------------------------------------------------
@@ -108,70 +165,69 @@ const loadCategories = async () => {
 
 const loadCategory = async () => {
   if (!isEditMode.value) {
-    return
+    return;
   }
 
   try {
-    loadingCategory.value = true
-    errorMessage.value = ""
+    loadingCategory.value = true;
+    errorMessage.value = '';
 
-    console.log(
-        "Loading category ID:",
-        route.params.id
-    )
+    console.log('Loading category ID:', route.params.id);
 
     const response = await api.get(
-        `/categories/${route.params.id}`
-    )
+      `/categories/${route.params.id}`
+    );
 
-    console.log(
-        "Category API response:",
-        response.data
-    )
+    console.log('Category API response:', response.data);
 
-    const category = response.data.data
+    const category = response.data.data;
 
     if (!category) {
-      throw new Error("Category data not found.")
+      throw new Error('Category data not found.');
     }
 
-    // Fill the same form
+    // Load the existing category image
+    if (imagePreview.value.startsWith('blob:')) {
+      URL.revokeObjectURL(imagePreview.value);
+    }
+
+    selectedImage.value = null;
+
+    imagePreview.value = category.image_url
+      ? getImageUrl(category.image_url)
+      : '';
+
+    // Fill the form
     form.value = {
       id: category.id,
-      name: category.name || "",
-      code: category.code || "",
-      description: category.description || "",
-      parent_id: category.parent_id ?? "",
-      is_active: category.is_active ?? true
-    }
+      name: category.name || '',
+      code: category.code || '',
+      description: category.description || '',
+      parent_id: category.parent_id ?? '',
+      is_active: category.is_active ?? true,
+    };
 
-    // Show parent category in search box
+    // Show the existing parent category
     if (category.parent) {
       parentCategorySearch.value =
-          `${category.parent.name} (${category.parent.code})`
+        `${category.parent.name} (${category.parent.code})`;
     } else {
-      parentCategorySearch.value = ""
+      parentCategorySearch.value = '';
     }
 
-    console.log(
-        "Form after loading:",
-        form.value
-    )
+    console.log('Form after loading:', form.value);
 
   } catch (error) {
-    console.error(
-        "Load category error:",
-        error
-    )
+    console.error('Load category error:', error);
 
     errorMessage.value =
-        error.response?.data?.message ||
-        "Failed to load category."
-
+      error.response?.data?.message ||
+      error.message ||
+      'Failed to load category.';
   } finally {
-    loadingCategory.value = false
+    loadingCategory.value = false;
   }
-}
+};
 
 // --------------------------------------------------
 // SELECT PARENT CATEGORY
@@ -201,98 +257,54 @@ const clearParentCategory = () => {
 // --------------------------------------------------
 
 const saveCategory = async () => {
-  errorMessage.value = ""
-  successMessage.value = ""
+  errorMessage.value = '';
+  successMessage.value = '';
 
-  // Validation
   if (!form.value.name.trim()) {
-    errorMessage.value =
-        "Category name is required."
-    return
+    errorMessage.value = 'Category name is required.';
+    return;
   }
 
-  if (!form.value.code.trim()) {
-    errorMessage.value =
-        "Category code is required."
-    return
+
+  const payload = new FormData();
+
+  payload.append('name', form.value.name.trim());
+  payload.append('description', form.value.description.trim());
+  payload.append(
+    'parent_id',
+    form.value.parent_id !== '' && form.value.parent_id !== null
+      ? String(form.value.parent_id)
+      : ''
+  );
+  payload.append('is_active', String(form.value.is_active));
+
+  if (selectedImage.value) {
+    payload.append('image', selectedImage.value);
   }
 
   try {
-    saving.value = true
-
-    const payload = {
-      name: form.value.name.trim(),
-
-      code: form.value.code.trim(),
-
-      description:
-          form.value.description.trim() || null,
-
-      parent_id:
-          form.value.parent_id !== "" &&
-          form.value.parent_id !== null
-              ? Number(form.value.parent_id)
-              : null,
-
-      is_active: form.value.is_active
-    }
-
-    console.log(
-        "Saving category:",
-        payload
-    )
-
-    // --------------------------------------------------
-    // UPDATE
-    // --------------------------------------------------
+    saving.value = true;
 
     if (isEditMode.value) {
-
-      await api.put(
-          `/categories/${route.params.id}`,
-          payload
-      )
-
-      successMessage.value =
-          "Category updated successfully."
-
+      await api.put(`/categories/${route.params.id}`, payload);
+      successMessage.value = 'Category updated successfully.';
+    } else {
+      await api.post('/categories', payload);
+      successMessage.value = 'Category created successfully.';
     }
 
-        // --------------------------------------------------
-        // CREATE
-    // --------------------------------------------------
-
-    else {
-
-      await api.post(
-          "/categories",
-          payload
-      )
-
-      successMessage.value =
-          "Category created successfully."
-    }
-
-    // Go back after save
     setTimeout(() => {
-      router.push("/categories")
-    }, 800)
-
+      router.push('/admin/products/categories');
+    }, 800);
   } catch (error) {
-
-    console.error(
-        "Save category error:",
-        error
-    )
+    console.error('Save category error:', error);
 
     errorMessage.value =
-        error.response?.data?.message ||
-        "Failed to save category."
-
+      error.response?.data?.message || 'Failed to save category.';
   } finally {
-    saving.value = false
+    saving.value = false;
   }
-}
+};
 
 // --------------------------------------------------
 // CANCEL
@@ -404,27 +416,25 @@ onMounted(async () => {
 
 
           <!-- Category Code -->
-          <div class="form-group">
+        
+<!-- Category Code -->
+<div class="form-group">
+  <label for="code">Category Code</label>
 
-            <label for="code">
-              Category Code
-              <span class="required">*</span>
-            </label>
+  <input
+    id="code"
+    v-model="form.code"
+    type="text"
+    maxlength="50"
+    placeholder="Generated automatically when saved"
+    disabled
+  />
 
-            <input
-                id="code"
-                v-model="form.code"
-                type="text"
-                maxlength="50"
-                placeholder="e.g. LAP-ACC"
-                required
-            />
+  <small>
+    Category codes are generated automatically by the system.
+  </small>
+</div>
 
-            <small>
-              Use a unique code for this category.
-            </small>
-
-          </div>
 
 
           <!-- Parent Category -->
@@ -516,6 +526,49 @@ onMounted(async () => {
             ></textarea>
 
           </div>
+
+
+
+<div class="form-group">
+  <label for="category-image">Category Image</label>
+
+  <div class="category-image-upload">
+    <div class="category-image-preview">
+      <img
+        v-if="imagePreview"
+        :src="imagePreview"
+        alt="Category image preview"
+      />
+
+      <div v-else class="category-image-placeholder">
+        <span>+</span>
+        <small>1:1 Image</small>
+      </div>
+    </div>
+
+    <div class="category-image-actions">
+      <input
+        id="category-image"
+        type="file"
+        accept="image/jpeg,image/png"
+        @change="onImageSelected"
+      />
+
+      <small>
+        JPG or PNG, maximum 5MB. A square image is recommended.
+      </small>
+
+      <button
+        v-if="imagePreview"
+        type="button"
+        class="secondary-button"
+        @click="removeSelectedImage"
+      >
+        Remove preview
+      </button>
+    </div>
+  </div>
+</div>
 
 
           <!-- Status -->
@@ -991,6 +1044,55 @@ button:disabled {
 .success-state {
   background: var(--color-success-bg);
   color: var(--color-success);
+}
+
+.category-image-upload {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-xl);
+  flex-wrap: wrap;
+}
+
+.category-image-preview {
+  width: 180px;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-hover-bg);
+}
+
+.category-image-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.category-image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--color-text-muted);
+}
+
+.category-image-placeholder span {
+  font-size: 36px;
+}
+
+.category-image-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+  min-width: 0;
+}
+
+.category-image-actions input[type="file"] {
+  max-width: 100%;
 }
 
 /* =========================

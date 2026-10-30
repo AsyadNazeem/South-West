@@ -45,7 +45,7 @@ module.exports = (sequelize, DataTypes) => {
 
             purchase_order_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
-                allowNull: false
+                allowNull: true
             },
 
             location_id: {
