@@ -1,4 +1,5 @@
 <script setup>
+import { getMediaUrl } from '../../utils/mediaUrl'
 import { ref, computed, onMounted, onBeforeUnmount } from "vue"
 import { useRouter, useRoute } from "vue-router"
 import api from "../../api/axios"
@@ -40,26 +41,7 @@ const selectedImage = ref(null)
 const imagePreview = ref("")
 const existingImageUrl = ref("")
 
-const API_BASE_URL = (
-  import.meta.env.VITE_API_URL || "http://localhost:5001/api"
-).replace(/\/api\/?$/, "")
-
-const getImageUrl = (path) => {
-  if (!path) return ""
-
-  // Already a complete URL
-  if (/^https?:\/\//i.test(path)) {
-    return path
-  }
-
-  // Backend stores paths such as brands/images/example.jpg
-  const cleanPath = path
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/^uploads\//, "")
-
-  return `${API_BASE_URL}/uploads/${cleanPath}`
-}
+const getImageUrl = (path) => getMediaUrl(path)
 const handleImageChange = (event) => {
   const file = event.target.files?.[0]
 

@@ -78,6 +78,14 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true
             },
 
+            customer_email: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                validate: {
+                    isEmail: true
+                }
+            },
+
             order_date: {
                 type: DataTypes.DATE,
                 allowNull: false

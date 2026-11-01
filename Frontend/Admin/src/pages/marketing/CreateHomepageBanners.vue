@@ -1,5 +1,6 @@
 
 <script setup>
+import { getMediaUrl } from '../../utils/mediaUrl'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -72,21 +73,8 @@ const canSave = computed(() =>
     isEditing.value ? canUpdate.value : canCreate.value
 )
 
-const API_BASE_URL =
-    import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
-
-const BACKEND_URL = API_BASE_URL.startsWith('http')
-    ? API_BASE_URL.replace(/\/api\/?$/, '')
-    : 'http://localhost:5001'
-
 function getBannerImageUrl(path) {
-    if (!path) return ''
-
-    if (/^https?:\/\//i.test(path)) {
-        return path
-    }
-
-    return `${BACKEND_URL}${path.startsWith('/') ? path : `/${path}`}`
+    return getMediaUrl(path)
 }
 
 const toLocalDateTime = (value) => {

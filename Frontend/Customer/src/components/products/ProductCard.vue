@@ -31,9 +31,7 @@ const discountPercent = computed(() =>
 )
 
 
-const BACKEND_URL = (
-    import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
-).replace(/\/api\/?$/, '')
+import { getMediaUrl } from '../../utils/mediaUrl'
 
 const image = computed(() => {
   const value =
@@ -44,15 +42,24 @@ const image = computed(() => {
 
   if (!value) return ''
 
-  // Preserve absolute URLs.
-  if (/^https?:\/\//i.test(value)) {
-    return value
-  }
-
-  // Resolve relative upload paths against the backend.
-  return `${BACKEND_URL}/${value.replace(/^\/+/, '')}`
+  return getMediaUrl(value)
 })
 
+const campaignVisual = computed(() => {
+  const visual = props.product.campaign_visual
+
+  if (!visual || !visual.frame_url) return null
+
+  return visual
+})
+
+const campaignFrameUrl = computed(() => {
+  const value = campaignVisual.value?.frame_url
+
+  if (!value) return ''
+
+  return getMediaUrl(value)
+})
 
 const rating = computed(() => Number(props.product.rating) || 0)
 const roundedRating = computed(() => Math.round(rating.value))
@@ -202,14 +209,13 @@ async function loadActiveVariants() {
 }
 
 async function handleAddToCart() {
-  if (!inStock.value || cartState.value === 'loading' || !requireLogin()) return
+  if (!inStock.value || cartState.value === 'loading') return
 
   cartState.value = 'loading'
 
   try {
     const variants = await loadActiveVariants()
 
-    // Several options: the customer has to choose on the product page.
     if (variants.length > 1) {
       cartState.value = 'idle'
       router.push(link.value)
@@ -227,15 +233,46 @@ async function handleAddToCart() {
       return
     }
 
-    const payload = { item_id: props.product.id, quantity: 1 }
-    if (variant) payload.variant_id = variant.id
+    const payload = {
+      item_id: props.product.id,
+      quantity: 1
+    }
 
-    await api.post('/customer-cart/items', payload)
+    if (variant) {
+      payload.variant_id = variant.id
+    }
+
+    const customerToken = sessionStorage.getItem('customerToken')
+
+    if (customerToken) {
+      await api.post('/customer-cart/items', payload)
+    } else {
+      let guestToken = sessionStorage.getItem('guestCheckoutToken')
+
+      if (guestToken) {
+        await api.post('/guest-checkout/session/items', payload, {
+          headers: {
+            'x-guest-checkout-token': guestToken
+          }
+        })
+      } else {
+        const response = await api.post('/guest-checkout/session', payload)
+
+        guestToken = response?.data?.token
+
+        if (!/^[a-f0-9]{64}$/i.test(guestToken || '')) {
+          throw new Error('Unable to create your guest cart.')
+        }
+
+        sessionStorage.setItem('guestCheckoutToken', guestToken)
+      }
+    }
 
     cartState.value = 'added'
     showToast('Added to cart')
 
     clearTimeout(cartTimer)
+
     cartTimer = setTimeout(() => {
       cartState.value = 'idle'
     }, 1800)
@@ -278,6 +315,19 @@ onMounted(() => {
           {{ name.charAt(0).toUpperCase() }}
         </span>
       </RouterLink>
+
+      <div
+        v-if="campaignVisual && campaignFrameUrl"
+        class="campaign-frame"
+        aria-hidden="true"
+      >
+        <img
+          :src="campaignFrameUrl"
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
+      </div>
 
       <span v-if="discountPercent" class="tag discount">-{{ discountPercent }}%</span>
       <span v-if="!inStock" class="tag out">Out of stock</span>
@@ -410,6 +460,7 @@ onMounted(() => {
 .image-link {
   position: absolute;
   inset: 0;
+  z-index: 0;
   display: grid;
   place-items: center;
   padding: var(--space-4);
@@ -438,10 +489,29 @@ onMounted(() => {
   font-weight: var(--font-weight-bold);
 }
 
+/* ---------- Uploaded campaign frame overlays ---------- */
+
+.campaign-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  border: 0;
+}
+
+.campaign-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}
+
+/* Keep campaign decorations below badges and quick actions */
 .tag {
   position: absolute;
   top: var(--space-2);
-  z-index: 1;
+  z-index: 2;
   padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
   font-size: var(--font-size-xs);
@@ -470,7 +540,7 @@ onMounted(() => {
   position: absolute;
   right: var(--space-2);
   bottom: var(--space-2);
-  z-index: 2;
+  z-index: 3;
   display: flex;
   gap: var(--space-2);
 }

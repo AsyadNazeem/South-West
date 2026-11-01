@@ -1,4 +1,5 @@
 <script setup>
+import { getMediaUrl } from '../utils/mediaUrl'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../services/api'
@@ -111,9 +112,6 @@ function scrollToReviewForm() {
 }
 
 
-const BACKEND_URL = (
-  import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
-).replace(/\/api\/?$/, '')
 
 // --------------------------------------------------
 // Product and variant data
@@ -1000,9 +998,7 @@ const currentImage = computed(() =>
 function resolveImageUrl(value) {
   if (!value) return ''
 
-  if (/^https?:\/\//i.test(value)) return value
-
-  return `${BACKEND_URL}/${String(value).replace(/^\/+/, '')}`
+  return getMediaUrl(value)
 }
 
 function formatPrice(value) {
@@ -1226,14 +1222,6 @@ async function addToCart() {
   cartMessage.value = ''
   cartError.value = ''
 
-  if (!sessionStorage.getItem('customerToken')) {
-    router.push({
-      path: '/login',
-      query: { redirect: route.fullPath }
-    })
-    return
-  }
-
   if (variants.value.length && !selectedVariant.value) {
     cartError.value = 'Please select a variant first.'
     return
@@ -1254,28 +1242,45 @@ async function addToCart() {
     return
   }
 
-  const detailParts = selectedVariant.value
-  ? [
-      formatMeasure('length', getVariantLength(selectedVariant.value)),
-      getVariantColour(selectedVariant.value)
-    ].filter(Boolean)
-  : []
-
-const variantDescription = detailParts.length ? ` (${detailParts.join(', ')})` : ''
-
   addingToCart.value = true
 
   try {
     const payload = {
       item_id: product.value.id,
-      quantity: quantity.value
+      quantity: Number(quantity.value)
     }
 
     if (selectedVariant.value) {
       payload.variant_id = selectedVariant.value.id
     }
 
-    await api.post('/customer-cart/items', payload)
+    const customerToken = sessionStorage.getItem('customerToken')
+
+    if (customerToken) {
+      await api.post('/customer-cart/items', payload)
+    } else {
+      let guestToken = sessionStorage.getItem('guestCheckoutToken')
+
+      const headers = guestToken
+        ? { 'x-guest-checkout-token': guestToken }
+        : {}
+
+      if (guestToken) {
+        await api.post('/guest-checkout/session/items', payload, {
+          headers
+        })
+      } else {
+        const response = await api.post('/guest-checkout/session', payload)
+
+        guestToken = response?.data?.token
+
+        if (!/^[a-f0-9]{64}$/i.test(guestToken || '')) {
+          throw new Error('Unable to start your guest cart. Please try again.')
+        }
+
+        sessionStorage.setItem('guestCheckoutToken', guestToken)
+      }
+    }
 
     const variantDescription = selectedVariant.value
       ? ` (${getVariantLength(selectedVariant.value)}${
@@ -1290,6 +1295,7 @@ const variantDescription = detailParts.length ? ` (${detailParts.join(', ')})` :
   } catch (err) {
     cartError.value =
       err.response?.data?.message ||
+      err.message ||
       'Unable to add this product to your cart. Please try again.'
   } finally {
     addingToCart.value = false
@@ -1303,20 +1309,11 @@ async function buyNow() {
   cartMessage.value = ''
   cartError.value = ''
 
-  if (!sessionStorage.getItem('customerToken')) {
-    router.push({
-      path: '/login',
-      query: { redirect: route.fullPath }
-    })
-    return
-  }
-
   if (!product.value?.id) {
     cartError.value = 'Unable to identify this product. Please try again.'
     return
   }
 
-  // Require a variant only when the product actually has variants.
   if (variants.value.length > 0 && !selectedVariant.value) {
     cartError.value = 'Please select a product variant first.'
     return
@@ -1347,27 +1344,44 @@ async function buyNow() {
       quantity: Number(quantity.value)
     }
 
-    // Include variant_id only if a variant is selected.
     if (selectedVariant.value) {
       payload.variant_id = selectedVariant.value.id
     }
 
-    const response = await api.post(
-      '/customer-checkout/session',
-      payload
-    )
+    const customerToken = sessionStorage.getItem('customerToken')
 
-    const checkoutUrl = response?.data?.checkout_url
+    if (customerToken) {
+      const response = await api.post(
+        '/customer-checkout/session',
+        payload
+      )
 
-    if (
-      typeof checkoutUrl !== 'string' ||
-      !/^\/checkout\/[a-f0-9]{64}$/i.test(checkoutUrl)
-    ) {
-      cartError.value = 'Unable to start checkout. Please try again.'
-      return
+      const checkoutUrl = response?.data?.checkout_url
+
+      if (
+        typeof checkoutUrl !== 'string' ||
+        !/^\/checkout\/[a-f0-9]{64}$/i.test(checkoutUrl)
+      ) {
+        cartError.value = 'Unable to start checkout. Please try again.'
+        return
+      }
+
+      await router.push(checkoutUrl)
+    } else {
+      const response = await api.post(
+        '/guest-checkout/session',
+        payload
+      )
+
+      const guestToken = response?.data?.token
+
+      if (!/^[a-f0-9]{64}$/i.test(guestToken || '')) {
+        cartError.value = 'Unable to start checkout. Please try again.'
+        return
+      }
+
+      await router.push(`/checkout/${guestToken}`)
     }
-
-    await router.push(checkoutUrl)
   } catch (error) {
     cartError.value =
       error.response?.data?.message ||
@@ -1381,6 +1395,15 @@ async function buyNow() {
 // --------------------------------------------------
 
 watch(selectedVariantId, onVariantChange)
+
+watch(
+  productName,
+  (name) => {
+    document.title = `${name} | South West`
+  },
+  { immediate: true }
+)
+
 watch(() => route.params.productSlug, loadProduct)
 
 onMounted(loadProduct)

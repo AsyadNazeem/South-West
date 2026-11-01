@@ -103,6 +103,8 @@ const menuDefinitions = [
       { label: 'Promotions', to: '/admin/marketing/promotions', permissions: ['promotions.view'] },
       { label: 'Homepage Banners', to: '/admin/marketing/homepage-banners', permissions: ['homepage_banners.view']},
       { label: 'Discount Campaigns', to: '/admin/marketing/discount-campaigns', permissions: ['discount_campaigns.view']},
+      { label: 'Campaign Frames', to: '/admin/marketing/campaign-frames', permissions: ['discount_campaigns.view']},
+      { label: 'Website Themes', to: '/admin/marketing/website-themes', permissions: ['website_themes.view']},
     ]
   },
   {
@@ -180,28 +182,20 @@ const emit = defineEmits([
   >
 
     <!-- Header -->
-    <div class="sidebar-header">
+<div class="sidebar-header">
+  <div class="sidebar-logo">
+    <img src="/SWLogo.png" alt="South West" />
+  </div>
 
-      <div class="logo">
-        SW
-      </div>
-
-      <div class="brand">
-        <h2>South West</h2>
-        <span>Admin Panel</span>
-      </div>
-
-      <!-- Mobile Close -->
-      <button
-          class="mobile-close-button"
-          type="button"
-          aria-label="Close navigation"
-          @click="emit('close-mobile')"
-      >
-        <X :size="20" :stroke-width="1.8" />
-      </button>
-
-    </div>
+  <button
+    class="mobile-close-button"
+    type="button"
+    aria-label="Close navigation"
+    @click="emit('close-mobile')"
+  >
+    <X :size="20" :stroke-width="1.8" />
+  </button>
+</div>
 
     <!-- Navigation -->
     <nav class="sidebar-nav">
@@ -270,6 +264,34 @@ const emit = defineEmits([
 </template>
 
 <style scoped>
+.sidebar-logo {
+  width: 190px;
+  max-width: 100%;
+  height: 48px;
+  flex-shrink: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: center;
+}
+
+.sidebar-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+.sidebar.collapsed .sidebar-logo {
+  width: 48px;
+  justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-logo img {
+  object-position: center;
+}
+
 .sidebar {
   width: var(--sidebar-width);
   height: 100vh;

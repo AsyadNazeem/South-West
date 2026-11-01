@@ -95,7 +95,9 @@ function hashCheckoutRequest({
     addressId,
     paymentMethod,
     checkoutTokenHash = null,
-    promoCode = null
+    promoCode = null,
+    billingSameAsShipping = true,
+    billingAddress = null
 }) {
     const payload = {
         mode,
@@ -108,7 +110,20 @@ function hashCheckoutRequest({
         checkoutTokenHash,
         promoCode: typeof promoCode === 'string'
             ? promoCode.trim().toUpperCase()
-            : null
+            : null,
+            billingSameAsShipping: billingSameAsShipping !== false,
+billingAddress: billingSameAsShipping === false
+    ? {
+        recipient_name: billingAddress?.recipient_name?.trim() || null,
+        phone: billingAddress?.phone?.trim() || null,
+        address_line_1: billingAddress?.address_line_1?.trim() || null,
+        address_line_2: billingAddress?.address_line_2?.trim() || null,
+        city: billingAddress?.city?.trim() || null,
+        state: billingAddress?.state?.trim() || null,
+        postal_code: billingAddress?.postal_code?.trim() || null,
+        country: billingAddress?.country?.trim() || null
+    }
+    : null,
     };
 
     return crypto
@@ -911,8 +926,13 @@ items.push({
         const billableKg = Math.max(1, Math.ceil(totalWeightKg));
 
         const shippingAmount = money(
-            Number(area.first_kg_charge) +
-            (billableKg - 1) * Number(area.additional_kg_charge)
+            (
+                ['card', 'koko', 'mintpay'].includes(payment_method)
+                    ? (Number(district.id) === 1 ? 450 : 500) +
+                        (billableKg - 1) * 100
+                    : Number(area.first_kg_charge) +
+                        (billableKg - 1) * Number(area.additional_kg_charge)
+            )
         );
 
 let promotion = null;
@@ -987,7 +1007,9 @@ const {
     cart_id,
     checkout_token,
     address_id,
-    promo_code
+    promo_code,
+    billing_same_as_shipping = true,
+    billing_address = null
 } = req.body || {};
     const requestedPaymentMethod = req.body?.payment_method;
     const idempotencyKey = getIdempotencyKey(req);
@@ -1064,6 +1086,53 @@ const checkoutTokenHash = directPurchase
         .digest('hex')
     : null;
 
+const useShippingAsBilling = billing_same_as_shipping !== false;
+
+if (!useShippingAsBilling) {
+    const requiredBillingFields = [
+        'recipient_name',
+        'phone',
+        'address_line_1',
+        'city',
+        'country'
+    ];
+
+    if (
+        !billing_address ||
+        typeof billing_address !== 'object' ||
+        requiredBillingFields.some(field =>
+            typeof billing_address[field] !== 'string' ||
+            !billing_address[field].trim()
+        )
+    ) {
+        return res.status(400).json({
+            message: 'Please provide all required billing address details.'
+        });
+    }
+
+    const billingLimits = {
+        recipient_name: 150,
+        phone: 30,
+        address_line_1: 255,
+        address_line_2: 255,
+        city: 100,
+        state: 100,
+        postal_code: 30,
+        country: 100
+    };
+
+    for (const [field, maxLength] of Object.entries(billingLimits)) {
+        if (
+            billing_address[field] != null &&
+            String(billing_address[field]).trim().length > maxLength
+        ) {
+            return res.status(400).json({
+                message: `Billing ${field.replace(/_/g, ' ')} is too long.`
+            });
+        }
+    }
+}
+
 const requestHash = hashCheckoutRequest({
     mode: directPurchase ? 'direct' : 'cart',
     cartId: cart_id,
@@ -1073,7 +1142,9 @@ const requestHash = hashCheckoutRequest({
     addressId: address_id,
     paymentMethod: payment_method,
     promoCode: promo_code,
-    checkoutTokenHash
+    checkoutTokenHash,
+    billingSameAsShipping: useShippingAsBilling,
+    billingAddress: useShippingAsBilling ? null : billing_address
 });
 
     let transaction;
@@ -1339,8 +1410,13 @@ discountCampaign: campaignDiscount
         const billableKg = Math.max(1, Math.ceil(totalWeightKg));
 
         const shippingAmount = money(
-            Number(area.first_kg_charge) +
-            (billableKg - 1) * Number(area.additional_kg_charge)
+            (
+                ['card', 'koko', 'mintpay'].includes(payment_method)
+                    ? (Number(district.id) === 1 ? 450 : 500) +
+                        (billableKg - 1) * 100
+                    : Number(area.first_kg_charge) +
+                        (billableKg - 1) * Number(area.additional_kg_charge)
+            )
         );
 
         // Discounts and taxes remain zero until approved rules are implemented.
@@ -1448,7 +1524,6 @@ const stocks = stocksByVariant.get(String(entry.variantId)) || [];
 
         const orderNumber = generateReference('SWO');
         const invoiceNumber = generateReference('SWI');
-        const deliveryReference = generateReference('SWD');
         const paymentReference = generateReference('SWP');
 
         // Create the order.
@@ -1500,21 +1575,26 @@ line_total: entry.lineTotal
             country: address.country
         }, { transaction });
 
-        await Delivery.create({
-            delivery_reference: deliveryReference,
-            order_id: order.id,
-            delivery_method: 'standard',
-            delivery_status: 'pending',
-            recipient_name: address.recipient_name,
-            recipient_phone: address.phone,
-            address_line_1: address.address_line_1,
-            address_line_2: address.address_line_2,
-            city: address.city,
-            state: address.state,
-            postal_code: address.postal_code,
-            country: address.country,
-            delivery_charge: shippingAmount
-        }, { transaction });
+        if (!useShippingAsBilling) {
+            await OrderAddress.create({
+                order_id: order.id,
+                address_type: 'billing',
+                recipient_name: String(billing_address.recipient_name).trim(),
+                phone: String(billing_address.phone).trim(),
+                address_line_1: String(billing_address.address_line_1).trim(),
+                address_line_2: billing_address.address_line_2
+                    ? String(billing_address.address_line_2).trim()
+                    : null,
+                city: String(billing_address.city).trim(),
+                state: billing_address.state
+                    ? String(billing_address.state).trim()
+                    : null,
+                postal_code: billing_address.postal_code
+                    ? String(billing_address.postal_code).trim()
+                    : null,
+                country: String(billing_address.country).trim()
+            }, { transaction });
+        }
 
         // Neither COD nor online payment is marked paid at checkout.
         await Payment.create({

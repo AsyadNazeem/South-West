@@ -22,8 +22,11 @@ const {
 const {
     getActiveCampaigns,
     campaignTargetsItem,
-    calculateDiscount
+    calculateDiscount,
+    getBestVisualCampaignForItem
 } = require('../services/discountCampaignService');
+
+const { buildFileUrl } = require('../utils/fileStorage');
 
 async function getStoreProducts(req, res) {
     try {
@@ -381,6 +384,23 @@ if (originalPrice !== null) {
     }
 }
 
+                const selectedVisual = getBestVisualCampaignForItem(
+                    product,
+                    campaigns
+                );
+
+                const campaignVisual = selectedVisual
+                    ? {
+                        id: selectedVisual.campaign_id,
+                        campaign_name: selectedVisual.campaign_name,
+                        frame_id: selectedVisual.frame_id,
+                        frame_name: selectedVisual.frame_name,
+                        frame_url: selectedVisual.frame_path
+                            ? buildFileUrl(selectedVisual.frame_path)
+                            : null,
+                    }
+                    : null;
+
                 const specifications =
                     product.specificationValues || [];
 
@@ -440,6 +460,8 @@ discount_campaign: campaignDiscount
         campaign_name: campaignDiscount.campaign_name
     }
     : null,
+
+                    campaign_visual: campaignVisual,
 
 currency: currentPrice?.currency || 'LKR',
 in_stock: availableQuantity > 0,

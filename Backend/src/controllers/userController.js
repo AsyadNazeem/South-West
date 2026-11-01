@@ -8,6 +8,21 @@ const {
     UserSession
 } = require('../models');
 
+const isAdminUser = async (userId) => {
+    const assignment = await UserRole.findOne({
+        where: { user_id: userId },
+        include: [{
+            model: Role,
+            as: 'role',
+            attributes: ['id', 'name']
+        }]
+    });
+
+    return String(assignment?.role?.name || '')
+        .trim()
+        .toLowerCase() === 'admin';
+};
+
 const getUsers = async (req, res) => {
     try {
         const users = await User.findAll({
@@ -190,13 +205,13 @@ const createUser = async (req, res) => {
             });
         }
 
-        // Ordinary user creation must never grant administrator access.
+        // Only an existing Admin may create another Admin account.
         if (
-            typeof role.name === 'string' &&
-            role.name.trim().toLowerCase() === 'admin'
+            String(role.name || '').trim().toLowerCase() === 'admin' &&
+            !(await isAdminUser(req.user.id))
         ) {
             return res.status(403).json({
-                message: 'The Admin role cannot be assigned through this endpoint'
+                message: 'Only an Admin can create an Admin account'
             });
         }
 
@@ -589,14 +604,13 @@ const updateUserRole = async (req, res) => {
             });
         }
 
-        // Admin assignment requires a separate, explicitly authorized workflow.
+        // Only an existing Admin may promote another user to Admin.
         if (
-            typeof role.name === 'string' &&
-            role.name.trim().toLowerCase() === 'admin'
+            String(role.name || '').trim().toLowerCase() === 'admin' &&
+            !(await isAdminUser(req.user.id))
         ) {
             return res.status(403).json({
-                message:
-                    'The Admin role cannot be assigned through this endpoint'
+                message: 'Only an Admin can assign the Admin role'
             });
         }
 

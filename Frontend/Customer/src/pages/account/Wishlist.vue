@@ -1,4 +1,5 @@
 <script setup>
+import { getMediaUrl } from '../../utils/mediaUrl'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../../services/api'
@@ -36,9 +37,6 @@ function getProductUrl(item) {
   return `/product/${encodeURIComponent(`${item.slug}-${item.public_id}`)}`
 }
 
-const BACKEND_URL = (
-  import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
-).replace(/\/api\/?$/, '')
 
 function getProductImage(item) {
   if (!item) return ''
@@ -64,11 +62,7 @@ function getProductImage(item) {
 
   if (!imageUrl) return ''
 
-  if (/^https?:\/\//i.test(imageUrl)) {
-    return imageUrl
-  }
-
-  return `${BACKEND_URL}/${String(imageUrl).replace(/^\/+/, '')}`
+  return getMediaUrl(imageUrl)
 }
 
 // Shown only when the API includes a price for the product.

@@ -2,6 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../services/api'
+import CheckoutAddressForm from '../components/CheckoutAddressForm.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,9 +11,69 @@ const loading = ref(true)
 const submitting = ref(false)
 const error = ref('')
 const notice = ref('')
+
 const addresses = ref([])
 const selectedAddressId = ref('')
+const checkoutShippingAddressStorageKey = 'southWestCheckoutShippingAddressId'
 const cart = ref(null)
+
+// Guest checkout
+const isGuest = computed(() => !sessionStorage.getItem('customerToken'))
+
+const guestToken = computed(() => {
+  const routeToken = checkoutToken.value
+
+  if (routeToken) return routeToken
+
+  return sessionStorage.getItem('guestCheckoutToken') || ''
+})
+
+const guestDetails = reactive({
+  recipient_name: '',
+  customer_email: '',
+  phone: '',
+  address_line_1: '',
+  address_line_2: '',
+  city: '',
+  state: '',
+  postal_code: '',
+  country: 'Sri Lanka',
+  district_id: '',
+  area_id: '',
+})
+
+const billingSameAsShipping = ref(true)
+
+const guestBillingDetails = reactive({
+  recipient_name: '',
+  phone: '',
+  address_line_1: '',
+  address_line_2: '',
+  city: '',
+  state: '',
+  postal_code: '',
+  country: 'Sri Lanka',
+})
+
+const registeredBillingDetails = reactive({
+  recipient_name: '',
+  phone: '',
+  address_line_1: '',
+  address_line_2: '',
+  city: '',
+  state: '',
+  postal_code: '',
+  country: 'Sri Lanka',
+})
+
+const billingDetails = computed(() =>
+  isGuest.value ? guestBillingDetails : registeredBillingDetails
+)
+
+const districts = ref([])
+const areas = ref([])
+const guestCart = ref(null)
+
 const order = ref(null)
 const idempotencyKey = ref('')
 
@@ -121,30 +182,72 @@ const shippingAddresses = computed(() =>
 )
 
 const cartItems = computed(() => {
-  const items = cart.value?.items ??
+  const source = guestCart.value || cart.value || {}
+  const items =
+    source.items ??
+    source.cart_items ??
+    source.CartItems ??
+    source.data?.items ??
+    source.data?.cart_items ??
+    cart.value?.items ??
     cart.value?.cart_items ??
     cart.value?.CartItems ??
     []
   return Array.isArray(items) ? items : []
 })
 
-const cartReady = computed(() =>
-  directPurchase.value
+const cartReady = computed(() => {
+  if (isGuest.value) {
+    return Boolean(guestToken.value) &&
+      Array.isArray(guestCart.value?.items) &&
+      guestCart.value.items.length > 0
+  }
+
+  return directPurchase.value
     ? validDirectPurchase.value
     : Boolean(cart.value?.id) && cartItems.value.length > 0
-)
+})
 
-const canPlaceOrder = computed(() =>
-  !submitting.value &&
-  !quoteLoading.value &&
-  Boolean(quote.value) &&
-  !quoteError.value &&
-  cartReady.value &&
-  Boolean(selectedAddressId.value) &&
-  Boolean(paymentMethod.value) &&
-  selectedPaymentId.value === 'cod' &&
-  Number(quote.value.address_id) === Number(selectedAddressId.value)
-)
+const billingAddressReady = computed(() => {
+  if (billingSameAsShipping.value) return true
+
+  const details = billingDetails.value
+
+  return Boolean(
+    details.recipient_name.trim() &&
+    details.phone.trim() &&
+    details.address_line_1.trim() &&
+    details.city.trim() &&
+    details.country.trim()
+  )
+})
+
+const canPlaceOrder = computed(() => {
+  const addressReady = isGuest.value
+    ? Boolean(
+        guestDetails.recipient_name.trim() &&
+        guestDetails.customer_email.trim() &&
+        guestDetails.phone.trim() &&
+        guestDetails.address_line_1.trim() &&
+        guestDetails.city.trim() &&
+        guestDetails.district_id &&
+        guestDetails.area_id
+      )
+    : Boolean(selectedAddressId.value) &&
+      Number(quote.value?.address_id) === Number(selectedAddressId.value)
+
+  return (
+    !submitting.value &&
+    !quoteLoading.value &&
+    Boolean(quote.value) &&
+    !quoteError.value &&
+    cartReady.value &&
+    addressReady &&
+    billingAddressReady.value &&
+    Boolean(paymentMethod.value) &&
+    selectedPaymentId.value === 'cod'
+  )
+})
 
 const steps = computed(() => [
   { label: directPurchase.value ? 'Buy Now' : 'Cart', state: 'done' },
@@ -190,13 +293,17 @@ function toNumber(...values) {
   return null
 }
 
-function lineName(line) {
+function lineName(line = {}) {
   return (
     line.item?.item_name ||
-    line.item_name ||
     line.item?.name ||
-    line.name ||
+    line.product?.item_name ||
+    line.product?.name ||
+    line.item_name ||
     line.product_name ||
+    line.variant?.item?.item_name ||
+    line.name ||
+    line.title ||
     'Product'
   )
 }
@@ -211,23 +318,42 @@ function lineMeta(line) {
   return [variant, `Qty ${lineQuantity(line)}`].filter(Boolean).join(' · ')
 }
 
-function lineTotal(line) {
-  const total = toNumber(line.line_total, line.total_price, line.total)
+function lineTotal(line = {}) {
+  const total = toNumber(
+    line.line_total,
+    line.total_price,
+    line.total,
+    line.subtotal,
+    line.amount
+  )
   if (total !== null) return total
 
   const unit = toNumber(
     line.unit_price,
     line.price,
     line.selling_price,
+    line.price_each,
     line.variant?.selling_price,
-    line.item?.price
+    line.variant?.price,
+    line.item?.selling_price,
+    line.item?.price,
+    line.product?.selling_price,
+    line.product?.price
   )
 
   return unit === null ? null : unit * lineQuantity(line)
 }
 
 const subtotal = computed(() => {
+  const quoted = toNumber(quote.value?.subtotal)
+  if (quoted !== null) return quoted
+
+  const source = guestCart.value || cart.value || {}
   const fromCart = toNumber(
+    source.subtotal,
+    source.items_subtotal,
+    source.total_amount,
+    source.total,
     cart.value?.subtotal,
     cart.value?.total_amount,
     cart.value?.total
@@ -235,47 +361,123 @@ const subtotal = computed(() => {
   if (fromCart !== null) return fromCart
 
   const totals = cartItems.value.map(lineTotal)
-
   return totals.length && totals.every(total => total !== null)
     ? totals.reduce((sum, total) => sum + total, 0)
     : null
 })
 
+function guestHeaders() {
+  return {
+    headers: {
+      'x-guest-checkout-token': guestToken.value,
+    },
+  }
+}
+
+async function loadGuestDistricts() {
+  const response = await api.get('/delivery-districts')
+  const data = getData(response)
+
+  districts.value = Array.isArray(data) ? data : []
+}
+
+async function loadGuestAreas(districtId) {
+  areas.value = []
+  guestDetails.area_id = ''
+
+  if (!districtId) return
+
+  const response = await api.get('/delivery-areas', {
+    params: { district_id: districtId },
+  })
+
+  const data = getData(response)
+
+  areas.value = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.areas)
+      ? data.areas
+      : []
+}
+
+watch(
+  () => guestDetails.district_id,
+  async (districtId, oldDistrictId) => {
+    if (districtId !== oldDistrictId) {
+      guestDetails.area_id = ''
+    }
+
+    try {
+      await loadGuestAreas(districtId)
+    } catch (err) {
+      error.value =
+        err.response?.data?.message ||
+        'Unable to load delivery areas.'
+    }
+  }
+)
 
 async function refreshQuote() {
-  const requestNumber = ++quoteRequestNumber
+const requestNumber = ++quoteRequestNumber
 
-  quote.value = null
-  quoteError.value = ''
+quote.value = null
+quoteError.value = ''
+quoteLoading.value = false
 
-  if (!selectedAddressId.value || !cartReady.value) {
+if (!cartReady.value) return
+
+  if (isGuest.value) {
+    if (
+      !guestDetails.recipient_name.trim() ||
+      !guestDetails.customer_email.trim() ||
+      !guestDetails.phone.trim() ||
+      !guestDetails.address_line_1.trim() ||
+      !guestDetails.city.trim() ||
+      !guestDetails.district_id ||
+      !guestDetails.area_id
+    ) {
+      return
+    }
+  } else if (!selectedAddressId.value) {
     return
   }
 
   quoteLoading.value = true
 
   const payload = {
-    address_id: Number(selectedAddressId.value)
+    payment_method: paymentMethod.value?.value || 'cash',
   }
 
-payload.payment_method = paymentMethod.value.value;
+  if (isGuest.value) {
+    Object.assign(payload, {
+      ...guestDetails,
+      district_id: Number(guestDetails.district_id),
+      area_id: Number(guestDetails.area_id),
+    })
+  } else {
+    payload.address_id = Number(selectedAddressId.value)
+
+    if (directPurchase.value) {
+      payload.checkout_token = checkoutToken.value
+    } else {
+      payload.cart_id = Number(cart.value.id)
+    }
+  }
 
   if (appliedPromoCode.value) {
     payload.promo_code = appliedPromoCode.value
-}
-
-if (directPurchase.value) {
-  payload.checkout_token = checkoutToken.value
-} else {
-  payload.cart_id = Number(cart.value.id)
-}
+  }
 
   try {
-    const response = await api.post('/customer-checkout/quote', payload)
+    const response = await api.post(
+      isGuest.value ? '/guest-checkout/quote' : '/customer-checkout/quote',
+      payload,
+      isGuest.value ? guestHeaders() : undefined
+    )
+
     const data = getData(response)
     const result = data?.quote ?? data
 
-    // Ignore an older response if the user has selected another address.
     if (requestNumber !== quoteRequestNumber) return
 
     if (
@@ -302,40 +504,76 @@ if (directPurchase.value) {
 }
 
 async function applyPromoCode() {
-    const code = promoCodeInput.value.trim().toUpperCase()
+  const code = promoCodeInput.value.trim().toUpperCase()
 
-    promoError.value = ''
-    promoMessage.value = ''
+  promoError.value = ''
+  promoMessage.value = ''
 
-    if (!code) {
-        promoError.value = 'Enter a promo code.'
-        return
-    }
+  if (!code) {
+    promoError.value = 'Enter a promo code.'
+    return
+  }
 
-    if (promoBusy.value || quoteLoading.value) return
+  if (promoBusy.value || quoteLoading.value) return
 
-    promoBusy.value = true
-    appliedPromoCode.value = code
+  promoBusy.value = true
 
+  if (isGuest.value) {
     try {
-        await refreshQuote()
+      const previousCode = appliedPromoCode.value
+      appliedPromoCode.value = code
 
-        if (quoteError.value || !quote.value) {
-            const message =
-                quoteError.value || 'Unable to validate this promo code.'
+      await refreshQuote()
 
-            appliedPromoCode.value = ''
-            await refreshQuote()
+      const message = quoteError.value || ''
 
-            promoError.value = message
-            return
-        }
+      if (
+        message.toLowerCase().includes('register or log in') ||
+        message.toLowerCase().includes('valid. register')
+      ) {
+        appliedPromoCode.value = previousCode
+        promoError.value =
+          'This promo code is valid, but you must register or log in to use it.'
+        return
+      }
 
-        promoCodeInput.value = code
-        promoMessage.value = `Promo code ${code} applied successfully.`
+      if (quoteError.value || !quote.value) {
+        appliedPromoCode.value = previousCode
+        promoError.value = message || 'This promo code is invalid or expired.'
+        return
+      }
+
+      appliedPromoCode.value = previousCode
+      promoError.value =
+        'Register or log in to apply promo codes to your order.'
     } finally {
-        promoBusy.value = false
+      promoBusy.value = false
     }
+
+    return
+  }
+
+  appliedPromoCode.value = code
+
+  try {
+    await refreshQuote()
+
+    if (quoteError.value || !quote.value) {
+      const message =
+        quoteError.value || 'Unable to validate this promo code.'
+
+      appliedPromoCode.value = ''
+      await refreshQuote()
+
+      promoError.value = message
+      return
+    }
+
+    promoCodeInput.value = code
+    promoMessage.value = `Promo code ${code} applied successfully.`
+  } finally {
+    promoBusy.value = false
+  }
 }
 
 async function removePromoCode() {
@@ -356,20 +594,55 @@ async function loadCheckout() {
   loading.value = true
   error.value = ''
 
-  if (!sessionStorage.getItem('customerToken')) {
-    router.replace({
-      path: '/login',
-      query: { redirect: route.fullPath }
-    })
+  if (route.params.token && !validDirectPurchase.value) {
+    await router.replace('/cart')
     return
   }
 
-if (route.params.token && !validDirectPurchase.value) {
-  await router.replace('/cart')
-  return
-}
-
   try {
+    if (isGuest.value) {
+      if (!guestToken.value) {
+        error.value = 'Your guest cart has expired or could not be found. Please add your items again.'
+        return
+      }
+
+      if (route.params.token) {
+        sessionStorage.setItem('guestCheckoutToken', guestToken.value)
+      }
+
+      const [cartResponse] = await Promise.all([
+        api.get('/guest-checkout/session', guestHeaders()),
+        loadGuestDistricts(),
+      ])
+
+      const data = getData(cartResponse)
+      const session =
+        data?.session ??
+        data?.cart ??
+        data?.guest_cart ??
+        data
+
+      const sessionItems =
+        session?.items ??
+        session?.cart_items ??
+        session?.CartItems ??
+        session?.data?.items ??
+        []
+
+      guestCart.value = {
+        ...session,
+        items: Array.isArray(sessionItems) ? sessionItems : []
+      }
+      cart.value = guestCart.value
+
+      if (!guestCart.value.items.length) {
+        error.value = 'Your cart is empty. Please add products before checkout.'
+        return
+      }
+
+      return
+    }
+
     const addressResponse = await api.get('/customer/addresses')
     const addressData = getData(addressResponse)
 
@@ -389,19 +662,43 @@ if (route.params.token && !validDirectPurchase.value) {
       address => address.address_type === 'shipping'
     )
 
-    selectedAddressId.value = String(
-      defaultAddress?.id ?? firstShippingAddress?.id ?? ''
+    const savedAddressId = sessionStorage.getItem(
+      checkoutShippingAddressStorageKey
     )
+
+    const savedShippingAddress = addresses.value.find(
+      address =>
+        address.address_type === 'shipping' &&
+        String(address.id) === String(savedAddressId)
+    )
+
+    selectedAddressId.value = String(
+      savedShippingAddress?.id ??
+      defaultAddress?.id ??
+      firstShippingAddress?.id ??
+      ''
+    )
+
+    if (selectedAddressId.value) {
+      sessionStorage.setItem(
+        checkoutShippingAddressStorageKey,
+        selectedAddressId.value
+      )
+    } else {
+      sessionStorage.removeItem(checkoutShippingAddressStorageKey)
+    }
 
     if (!directPurchase.value) {
       const cartResponse = await api.get('/customer-cart/')
       const cartData = getData(cartResponse)
       cart.value = cartData?.cart ?? cartData
-if (!cart.value?.id || !cartItems.value.length) {
-  await router.replace('/cart')
-  return
-}
+
+      if (!cart.value?.id || !cartItems.value.length) {
+        await router.replace('/cart')
+        return
+      }
     }
+
     await refreshQuote()
   } catch (err) {
     error.value =
@@ -412,39 +709,85 @@ if (!cart.value?.id || !cartItems.value.length) {
   }
 }
 
+
 async function placeOrder() {
   error.value = ''
   notice.value = ''
 
-  if (!selectedAddressId.value) {
-    error.value = 'Please select a saved shipping address.'
+  if (submitting.value) return
+
+  // Payment validation
+  if (selectedPaymentId.value !== 'cod') {
+    error.value =
+      'Only Cash on Delivery is currently enabled for placing orders.'
     return
   }
-
-  if (selectedPaymentId.value !== 'cod') {
-  error.value =
-    'Only Cash on Delivery is currently enabled for placing orders.';
-  return;
-}
-
-  if (!quote.value || quoteLoading.value || quoteError.value) {
-  error.value = 'Please wait for the delivery charge and total to be calculated.'
-  return
-
-  
-}
 
   if (!paymentMethod.value) {
     error.value = 'Please choose an available payment method.'
     return
   }
 
-  if (!directPurchase.value && !cart.value?.id) {
-    error.value = 'Your active cart could not be identified.'
+  // Quote validation
+  if (!quote.value || quoteLoading.value || quoteError.value) {
+    error.value =
+      'Please wait for the delivery charge and total to be calculated.'
     return
   }
 
-  if (submitting.value) return
+  // Guest checkout validation
+  if (isGuest.value) {
+    if (!guestToken.value) {
+      error.value =
+        'Your guest checkout session has expired. Please return to your cart and try again.'
+      return
+    }
+
+    const requiredFields = [
+      ['recipient_name', 'Please enter the recipient name.'],
+      ['customer_email', 'Please enter your email address.'],
+      ['phone', 'Please enter your phone number.'],
+      ['address_line_1', 'Please enter your delivery address.'],
+      ['city', 'Please enter your city.'],
+      ['district_id', 'Please select a delivery district.'],
+      ['area_id', 'Please select a delivery area.']
+    ]
+
+    for (const [field, message] of requiredFields) {
+      if (!String(guestDetails[field] ?? '').trim()) {
+        error.value = message
+        return
+      }
+    }
+  } else {
+    // Registered checkout validation
+    if (!selectedAddressId.value) {
+      error.value = 'Please select a saved shipping address.'
+      return
+    }
+
+    if (!directPurchase.value && !cart.value?.id) {
+      error.value = 'Your active cart could not be identified.'
+      return
+    }
+  }
+
+  if (!billingSameAsShipping.value) {
+  const requiredBillingFields = [
+    ['recipient_name', 'Please enter the billing name.'],
+    ['phone', 'Please enter the billing phone number.'],
+    ['address_line_1', 'Please enter the billing address.'],
+    ['city', 'Please enter the billing city.'],
+    ['country', 'Please enter the billing country.'],
+  ]
+
+  for (const [field, message] of requiredBillingFields) {
+    if (!String(billingDetails.value[field] ?? '').trim()) {
+      error.value = message
+      return
+    }
+  }
+}
 
   submitting.value = true
 
@@ -455,77 +798,151 @@ async function placeOrder() {
       `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
   }
 
-  const payload = {
-    address_id: Number(selectedAddressId.value),
-    payment_method: paymentMethod.value.value
-  }
-
-  if (appliedPromoCode.value) {
-    payload.promo_code = appliedPromoCode.value
-}
-
-if (directPurchase.value) {
-  payload.checkout_token = checkoutToken.value
-} else {
-  payload.cart_id = Number(cart.value.id)
-}
-
   try {
-    const response = await api.post('/customer-checkout', payload, {
-      headers: {
-        'Idempotency-Key': idempotencyKey.value
+    let response
+
+    if (isGuest.value) {
+      // Guest checkout
+      const payload = {
+        recipient_name: guestDetails.recipient_name.trim(),
+        customer_email: guestDetails.customer_email.trim(),
+        phone: guestDetails.phone.trim(),
+        address_line_1: guestDetails.address_line_1.trim(),
+        address_line_2: guestDetails.address_line_2.trim() || null,
+        city: guestDetails.city.trim(),
+        state: guestDetails.state.trim() || null,
+        postal_code: guestDetails.postal_code.trim() || null,
+        district_id: Number(guestDetails.district_id),
+        area_id: Number(guestDetails.area_id),
+        country: guestDetails.country || 'Sri Lanka',
+        payment_method: 'cash',
+        billing_same_as_shipping: billingSameAsShipping.value,
+billing_address: billingSameAsShipping.value
+  ? null
+  : {
+      recipient_name: billingDetails.value.recipient_name.trim(),
+      phone: billingDetails.value.phone.trim(),
+      address_line_1: billingDetails.value.address_line_1.trim(),
+      address_line_2: billingDetails.value.address_line_2.trim() || null,
+      city: billingDetails.value.city.trim(),
+      state: billingDetails.value.state.trim() || null,
+      postal_code: billingDetails.value.postal_code.trim() || null,
+      country: billingDetails.value.country.trim(),
+    },
+
       }
-    })
 
-   const responseData = getData(response)
-const createdOrder = responseData?.order
-
-if (!createdOrder?.id && !createdOrder?.order_number) {
-  throw new Error(
-    'The order response could not be confirmed. Please check My Orders before retrying.'
-  )
+      response = await api.post('/guest-checkout', payload, {
+        ...guestHeaders(),
+        headers: {
+          ...guestHeaders().headers,
+          'Idempotency-Key': idempotencyKey.value
+        }
+      })
+    } else {
+      // Registered checkout. Keep the existing request unchanged.
+const payload = {
+  address_id: Number(selectedAddressId.value),
+  payment_method: paymentMethod.value.value,
+  billing_same_as_shipping: billingSameAsShipping.value,
+  billing_address: billingSameAsShipping.value
+    ? null
+    : {
+        recipient_name: billingDetails.value.recipient_name.trim(),
+        phone: billingDetails.value.phone.trim(),
+        address_line_1: billingDetails.value.address_line_1.trim(),
+        address_line_2: billingDetails.value.address_line_2.trim() || null,
+        city: billingDetails.value.city.trim(),
+        state: billingDetails.value.state.trim() || null,
+        postal_code: billingDetails.value.postal_code.trim() || null,
+        country: billingDetails.value.country.trim(),
+      },
 }
 
-// Save the details for the confirmation page before clearing the cart.
-confirmationAddress.value = {
-  ...(
-    shippingAddresses.value.find(
-      address => Number(address.id) === Number(selectedAddressId.value)
-    ) || {}
-  )
-}
+      if (appliedPromoCode.value) {
+        payload.promo_code = appliedPromoCode.value
+      }
 
-confirmationItems.value = (
-  quote.value?.items?.length
-    ? quote.value.items
-    : cartItems.value
-).map(item => ({ ...item }))
+      if (directPurchase.value) {
+        payload.checkout_token = checkoutToken.value
+      } else {
+        payload.cart_id = Number(cart.value.id)
+      }
 
-order.value = {
-  ...createdOrder,
-  subtotal: createdOrder.subtotal ?? quote.value?.subtotal,
-  shipping_amount:
-    createdOrder.shipping_amount ?? quote.value?.shipping_amount,
-  total_amount:
-    createdOrder.total_amount ?? quote.value?.total_amount,
-}
+      response = await api.post('/customer-checkout', payload, {
+        headers: {
+          'Idempotency-Key': idempotencyKey.value
+        }
+      })
+    }
 
-notice.value =
-  responseData?.message || 'Your order was placed successfully.'
+    const responseData = getData(response)
+    const createdOrder =
+      responseData?.order || responseData?.data?.order
 
-idempotencyKey.value = ''
+    if (!createdOrder?.id && !createdOrder?.order_number) {
+      throw new Error(
+        'The order response could not be confirmed. Please check your order status before retrying.'
+      )
+    }
 
-if (!directPurchase.value) {
-  cart.value = { ...cart.value, items: [] }
-}
+    // Save confirmation details before clearing the cart/session.
+    if (isGuest.value) {
+      confirmationAddress.value = {
+        ...guestDetails
+      }
+    } else {
+      confirmationAddress.value = {
+        ...(
+          shippingAddresses.value.find(
+            address =>
+              Number(address.id) === Number(selectedAddressId.value)
+          ) || {}
+        )
+      }
+    }
+
+    const itemsForConfirmation = isGuest.value
+      ? guestCart.value?.items || []
+      : cartItems.value
+
+    confirmationItems.value = (
+      quote.value?.items?.length
+        ? quote.value.items
+        : itemsForConfirmation
+    ).map(item => ({ ...item }))
+
+    order.value = {
+      ...createdOrder,
+      subtotal: createdOrder.subtotal ?? quote.value?.subtotal,
+      shipping_amount:
+        createdOrder.shipping_amount ?? quote.value?.shipping_amount,
+      total_amount:
+        createdOrder.total_amount ?? quote.value?.total_amount
+    }
+
+    notice.value =
+      responseData?.message || 'Your order was placed successfully.'
+
+    // Clear the idempotency key only after confirmed success.
+    idempotencyKey.value = ''
+
+    if (isGuest.value) {
+      sessionStorage.removeItem('guestCheckoutToken')
+      guestCart.value = { ...guestCart.value, items: [] }
+    } else if (!directPurchase.value) {
+      cart.value = { ...cart.value, items: [] }
+    }
   } catch (err) {
     error.value =
       err.response?.data?.message ||
+      err.message ||
       'We could not complete your order. You can safely retry.'
   } finally {
     submitting.value = false
   }
 }
+
 
 function goBack() {
   if (!directPurchase.value) {
@@ -543,6 +960,16 @@ function returnToShopping() {
 }
 
 function viewOrders() {
+  if (isGuest.value) {
+    router.push({
+      path: '/login',
+      query: {
+        redirect: '/account/orders'
+      }
+    })
+    return
+  }
+
   router.push('/account/orders')
 }
 
@@ -550,7 +977,16 @@ function manageAddresses() {
   router.push('/account/addresses')
 }
 
-watch(selectedAddressId, () => {
+watch(selectedAddressId, newAddressId => {
+  if (newAddressId) {
+    sessionStorage.setItem(
+      checkoutShippingAddressStorageKey,
+      String(newAddressId)
+    )
+  } else {
+    sessionStorage.removeItem(checkoutShippingAddressStorageKey)
+  }
+
   if (!loading.value && !order.value) {
     refreshQuote()
   }
@@ -561,6 +997,27 @@ watch(
   () => {
     if (!loading.value && !order.value && selectedAddressId.value) {
       refreshQuote();
+    }
+  }
+)
+
+watch(
+  () => [
+    guestDetails.recipient_name,
+    guestDetails.customer_email,
+    guestDetails.phone,
+    guestDetails.address_line_1,
+    guestDetails.address_line_2,
+    guestDetails.city,
+    guestDetails.state,
+    guestDetails.postal_code,
+    guestDetails.district_id,
+    guestDetails.area_id,
+    guestDetails.country
+  ],
+  () => {
+    if (!loading.value && !order.value && isGuest.value) {
+      refreshQuote()
     }
   }
 )
@@ -729,19 +1186,37 @@ onMounted(loadCheckout)
     </div>
   </section>
 
-  <p class="muted">
+
+  <p v-if="isGuest" class="muted">
+    Your order confirmation has been saved. We will send order updates to
+    {{ confirmationAddress?.customer_email }}.
+    Keep your order number for reference.
+  </p>
+
+  <p v-else class="muted">
     Keep your order number for reference. You can check the latest order status
     in My Orders.
   </p>
 
   <div class="actions">
-    <button type="button" class="primary-button" @click="viewOrders">
+    <button
+      v-if="!isGuest"
+      type="button"
+      class="primary-button"
+      @click="viewOrders"
+    >
       View my orders
     </button>
-    <button type="button" class="secondary-button" @click="returnToShopping">
+
+    <button
+      type="button"
+      :class="isGuest ? 'primary-button' : 'secondary-button'"
+      @click="returnToShopping"
+    >
       Continue shopping
     </button>
   </div>
+
 </section>
 
 
@@ -753,67 +1228,120 @@ onMounted(loadCheckout)
           </p>
 
           <!-- 1. Delivery address -->
-          <section class="panel">
-            <header class="panel-head">
-              <span class="panel-number" aria-hidden="true">1</span>
-              <h2>Delivery address</h2>
-              <button
-                v-if="shippingAddresses.length"
-                type="button"
-                class="link-button"
-                @click="manageAddresses"
-              >
-                Manage addresses
-              </button>
-            </header>
+<section class="panel">
+  <header class="panel-head">
+    <span class="panel-number" aria-hidden="true">1</span>
+    <h2>{{ isGuest ? 'Delivery details' : 'Delivery address' }}</h2>
 
-            <div
-              v-if="shippingAddresses.length"
-              class="choice-list"
-              role="radiogroup"
-              aria-label="Delivery address"
-            >
-              <label
-                v-for="address in shippingAddresses"
-                :key="address.id"
-                class="choice"
-              >
-                <input
-                  v-model="selectedAddressId"
-                  type="radio"
-                  name="shipping-address"
-                  class="choice-input"
-                  :value="String(address.id)"
-                />
+    <RouterLink
+      v-if="isGuest"
+      class="link-button"
+      :to="{ path: '/login', query: { redirect: route.fullPath } }"
+    >
+      Have an account? Log in
+    </RouterLink>
+  </header>
 
-                <span class="choice-body">
-                  <span class="choice-radio" aria-hidden="true"></span>
+  <template v-if="isGuest">
+    <p class="guest-note">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" />
+        <path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+      </svg>
+      You are checking out as a guest. No account is needed.
+    </p>
 
-                  <span class="choice-content">
-                    <span class="choice-title">
-                      {{ address.recipient_name || 'Delivery address' }}
-                      <span v-if="address.is_default" class="pill default">Default</span>
-                    </span>
-                    <span v-if="address.phone" class="choice-text">{{ address.phone }}</span>
-                    <span class="choice-text">{{ addressBody(address) }}</span>
-                  </span>
-                </span>
-              </label>
-            </div>
+    <CheckoutAddressForm
+      mode="delivery"
+      :details="guestDetails"
+      :districts="districts"
+      :areas="areas"
+    />
+  </template>
 
-            <div v-else class="empty-address">
-              <h3>No saved shipping address</h3>
-              <p class="muted">Please add a shipping address before placing your order.</p>
-              <button type="button" class="primary-button" @click="manageAddresses">
-                Add an address
-              </button>
-            </div>
+  <!-- your existing v-else-if / v-else address blocks continue here -->
+<!-- Registered customer saved addresses -->
+<div
+  v-else-if="shippingAddresses.length"
+  class="choice-list"
+  role="radiogroup"
+  aria-label="Delivery address"
+>
+  <label
+    v-for="address in shippingAddresses"
+    :key="address.id"
+    class="choice"
+  >
+    <input
+      v-model="selectedAddressId"
+      type="radio"
+      name="shipping-address"
+      class="choice-input"
+      :value="String(address.id)"
+    />
+
+    <span class="choice-body">
+      <span class="choice-radio" aria-hidden="true"></span>
+      <span class="choice-content">
+        <span class="choice-title">
+          {{ address.recipient_name || 'Delivery address' }}
+          <span v-if="address.is_default" class="pill default">Default</span>
+        </span>
+        <span v-if="address.phone" class="choice-text">{{ address.phone }}</span>
+        <span class="choice-text">{{ addressBody(address) }}</span>
+      </span>
+    </span>
+  </label>
+</div>
+
+<div v-if="shippingAddresses.length" class="manage-addresses-row">
+  <span class="manage-addresses-hint">
+    Need to add, edit or change a delivery address?
+  </span>
+  <button
+    type="button"
+    class="manage-addresses-button"
+    @click="manageAddresses"
+  >
+    Manage addresses
+    <span aria-hidden="true">→</span>
+  </button>
+</div>
+
+<div v-else class="empty-address">
+  <h3>No saved shipping address</h3>
+  <p class="muted">Please add a shipping address before placing your order.</p>
+  <button type="button" class="primary-button" @click="manageAddresses">
+    Add an address
+  </button>
+</div>
+
+
           </section>
+
+          <!-- 2. Billing address -->
+<section class="panel billing-address-section">
+  <header class="panel-head">
+    <span class="panel-number" aria-hidden="true">2</span>
+    <h2>Billing address</h2>
+  </header>
+
+  <label class="billing-same-option">
+    <input v-model="billingSameAsShipping" type="checkbox" />
+    <span>Billing address is the same as delivery address</span>
+  </label>
+
+  <CheckoutAddressForm
+    v-if="!billingSameAsShipping"
+    mode="billing"
+    :details="billingDetails"
+  />
+</section>
 
           <!-- 2. Payment method -->
           <section class="panel">
             <header class="panel-head">
-              <span class="panel-number" aria-hidden="true">2</span>
+              <span class="panel-number" aria-hidden="true">3</span>
               <h2>Payment method</h2>
             </header>
 
@@ -888,22 +1416,42 @@ onMounted(loadCheckout)
         <aside class="panel summary">
           <h2>Order summary</h2>
 
- <ul v-if="directPurchase" class="summary-items">
+<ul
+  v-if="directPurchase && (quote?.items?.length || cartItems.length)"
+  class="summary-items"
+>
   <li class="summary-item">
     <div class="summary-item-info">
       <strong>
-        {{ quote?.items?.[0]?.item_name || 'Buy Now item' }}
+        {{
+          quote?.items?.[0]?.item_name ||
+          lineName(cartItems[0]) ||
+          'Buy Now item'
+        }}
       </strong>
+
       <span class="muted">
-        Qty {{ quote?.items?.[0]?.quantity ?? '—' }}
+        Qty {{
+          quote?.items?.[0]?.quantity ??
+          lineQuantity(cartItems[0]) ??
+          '—'
+        }}
       </span>
     </div>
 
     <span
-      v-if="quote?.items?.[0]?.line_total != null"
+      v-if="
+        quote?.items?.[0]?.line_total != null ||
+        lineTotal(cartItems[0]) !== null
+      "
       class="summary-item-total"
     >
-      {{ formatPrice(quote.items[0].line_total) }}
+      {{
+        formatPrice(
+          quote?.items?.[0]?.line_total ??
+          lineTotal(cartItems[0])
+        )
+      }}
     </span>
   </li>
 </ul>
@@ -983,7 +1531,7 @@ onMounted(loadCheckout)
   <div>
     <dt>Subtotal</dt>
     <dd>
-      {{ quote ? formatPrice(quote.subtotal) : '—' }}
+      {{ subtotal !== null ? formatPrice(subtotal) : '—' }}
     </dd>
   </div>
 <div v-if="quote && Number(quote.discount_amount) > 0">
@@ -1012,13 +1560,18 @@ onMounted(loadCheckout)
   <div class="total-row">
     <dt>Estimated total</dt>
     <dd>
-      {{ quote ? formatPrice(quote.total_amount) : '—' }}
+      <span v-if="quote">{{ formatPrice(quote.total_amount) }}</span>
+      <span v-else>Enter delivery details</span>
     </dd>
   </div>
 </dl>
 
 <p v-if="quoteError" class="alert" role="alert">
   {{ quoteError }}
+</p>
+<p v-else-if="isGuest && !quote && !quoteLoading" class="quote-hint">
+  Enter your delivery details and select a district and delivery area to
+  calculate the delivery charge and final total.
 </p>
 
           <button
@@ -1263,6 +1816,56 @@ onMounted(loadCheckout)
   border-radius: var(--radius-md);
   background: var(--color-surface);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.guest-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.guest-note svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--color-primary);
+}
+
+.billing-same-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.billing-same-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+}
+
+.billing-same-option:has(input:checked) {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
+}
+
+.billing-same-option + .checkout-address-form {
+  margin-top: var(--space-5);
 }
 
 @media (hover: hover) {
@@ -1863,6 +2466,128 @@ button:disabled {
   font-size: 13px;
 }
 
+
+/* ---------- Guest checkout address form ---------- */
+.guest-address-form {
+  width: 100%;
+}
+
+.guest-address-form .form-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+  width: 100%;
+}
+
+.guest-address-form .form-field {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.guest-address-form .form-field > span {
+  display: block;
+  line-height: 1.4;
+}
+
+.guest-address-form .form-field input,
+.guest-address-form .form-field select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.quote-hint {
+  margin: 10px 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .guest-address-form .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+
+
+.guest-address-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.guest-address-form > .muted {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.form-field {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.form-field input,
+.form-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: var(--font-weight-normal);
+  box-sizing: border-box;
+}
+
+.form-field input:focus,
+.form-field select:focus {
+  outline: 2px solid var(--color-focus-outline);
+  outline-offset: 2px;
+}
+
+.form-field input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.form-field select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
 @keyframes pulse {
   0%,
   100% {
@@ -1949,4 +2674,58 @@ button:disabled {
     transition: none;
   }
 }
+
+.manage-addresses-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.manage-addresses-hint {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.manage-addresses-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.manage-addresses-button:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.manage-addresses-button:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.3);
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .manage-addresses-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .manage-addresses-button {
+    width: 100%;
+  }
+}
+
 </style>

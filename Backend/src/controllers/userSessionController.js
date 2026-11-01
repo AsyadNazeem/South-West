@@ -154,20 +154,6 @@ const revokeUserSession = async (req, res) => {
             return denyPermission(res);
         }
 
-        const session = await UserSession.findByPk(id);
-
-        if (!session) {
-            return res.status(404).json({ message: 'Session not found' });
-        }
-
-        if (session.revoked_at) {
-            return res.status(409).json({
-                message: 'Session has already been revoked'
-            });
-        }
-
-        await session.update({ revoked_at: new Date() });
-
         await sequelize.transaction(async (transaction) => {
             const session = await UserSession.findByPk(id, {
                 transaction,
@@ -210,6 +196,16 @@ const revokeUserSession = async (req, res) => {
             message: 'Session revoked successfully'
         });
     } catch (error) {
+        if (error.code === 'SESSION_NOT_FOUND') {
+            return res.status(404).json({ message: 'Session not found' });
+        }
+
+        if (error.code === 'SESSION_ALREADY_REVOKED') {
+            return res.status(409).json({
+                message: 'Session has already been revoked'
+            });
+        }
+
         console.error('Revoke user session error:', error.message);
         return res.status(500).json({
             message: 'Failed to revoke session'

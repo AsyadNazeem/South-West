@@ -8,7 +8,8 @@ const state = {
     transactionCalls: 0,
     paymentCreateCalls: 0,
     paymentUpdateCalls: 0,
-    rollbackCalls: 0
+    rollbackCalls: 0,
+    paymentToConfirm: null
 };
 
 function resetState() {
@@ -16,6 +17,7 @@ function resetState() {
     state.paymentCreateCalls = 0;
     state.paymentUpdateCalls = 0;
     state.rollbackCalls = 0;
+    state.paymentToConfirm = null;
 }
 
 const transaction = {
@@ -48,6 +50,10 @@ const models = {
         },
 
         async findByPk() {
+            if (state.paymentToConfirm) {
+                return state.paymentToConfirm;
+            }
+
             throw new Error('Payment must not be updated');
         },
 
@@ -199,12 +205,43 @@ test('updatePayment rejects client-supplied payment amount changes', async () =>
 });
 
 
-test('updatePaymentStatus rejects client-supplied paid status', async () => {
+test('updatePaymentStatus rejects manual confirmation of online payments', async () => {
     resetState();
+
+    state.paymentToConfirm = {
+        id: 1,
+        order_id: 1,
+        payment_method: 'card',
+        payment_status: 'unpaid'
+    };
 
     const req = {
         params: { id: '1' },
         body: { payment_status: 'paid' },
+        user: { id: 1 },
+        ip: '127.0.0.1',
+        get() {
+            return 'security-test';
+        }
+    };
+
+    const res = makeResponse();
+
+    await controller.updatePaymentStatus(req, res);
+
+    assert.equal(res.statusCode, 409);
+    assert.match(res.body.message, /verified provider confirmation/i);
+    assert.equal(res.body.payment_method, 'card');
+    assert.equal(state.transactionCalls, 1);
+    assert.equal(state.rollbackCalls, 1);
+});
+
+test('updatePaymentStatus rejects unsupported confirmation status before database access', async () => {
+    resetState();
+
+    const req = {
+        params: { id: '1' },
+        body: { payment_status: 'unpaid' },
         user: { id: 1 },
         ip: '127.0.0.1',
         get() {

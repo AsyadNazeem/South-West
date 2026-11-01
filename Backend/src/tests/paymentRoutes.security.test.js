@@ -6,7 +6,7 @@ const express = require('express');
 
 const paymentRoutes = require('../routes/paymentRoutes');
 
-test('payment routes expose only read-only endpoints', () => {
+test('payment routes expose read endpoints and a dedicated confirmation endpoint', () => {
     const router = paymentRoutes;
 
     const registeredRoutes = router.stack
@@ -18,6 +18,7 @@ test('payment routes expose only read-only endpoints', () => {
 
     assert.deepEqual(registeredRoutes, [
         { path: '/', methods: ['get'] },
-        { path: '/:id', methods: ['get'] }
+        { path: '/:id', methods: ['get'] },
+        { path: '/:id/status', methods: ['patch'] }
     ]);
 });

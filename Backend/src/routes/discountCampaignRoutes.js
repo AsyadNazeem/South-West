@@ -7,6 +7,7 @@ const router = express.Router();
 const controller = require('../controllers/discountCampaignController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requirePermission } = require('../middleware/requirePermission');
+const { uploadCampaignFrame } = require('../middleware/uploadMiddleware');
 
 router.get(
     '/',
@@ -34,6 +35,14 @@ router.put(
     authMiddleware,
     requirePermission('discount_campaigns.update'),
     controller.updateCampaign
+);
+
+router.post(
+    '/:id/visual-frame',
+    authMiddleware,
+    requirePermission('discount_campaigns.update'),
+    uploadCampaignFrame,
+    controller.uploadCampaignVisualFrame
 );
 
 router.patch(

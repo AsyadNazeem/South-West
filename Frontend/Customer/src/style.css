@@ -22,6 +22,7 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 300ms ease, color 300ms ease;
 }
 
 #app {
@@ -43,4 +44,239 @@ a {
 button,
 input {
   font: inherit;
+}
+
+/* =========================================================
+   SOUTH WEST SEASONAL STOREFRONT THEMES
+
+   Every theme defines the same set of tokens, so a new theme
+   only needs one block. Tokens that are not listed here fall
+   back to the base theme.
+
+   Extra tokens used by the header:
+     --color-on-accent     text/icon colour on top of the accent colour
+     --search-button-bg    background of the search button
+     --search-button-fg    icon colour of the search button
+   ========================================================= */
+
+/* Shared behaviour for all seasonal themes */
+:root[data-website-theme] {
+  --color-focus-outline: var(--color-focus);
+  --search-button-bg: var(--gradient-button);
+  --search-button-fg: var(--color-on-primary);
+}
+
+/* Christmas: warm ivory, evergreen, festive red and gold */
+:root[data-website-theme="christmas"] {
+  --color-primary: #a51f2b;
+  --color-primary-hover: #801722;
+  --color-primary-light: #c43b45;
+  --color-on-primary: #fffdf8;
+  --color-accent: #e0bd70;
+  --color-accent-deep: #b38b39;
+  --color-on-accent: #35220d;
+  --color-black: #173d2b;
+  --color-page-bg: #fff8ee;
+  --color-store-bg: #f8eee1;
+  --color-surface: #fffdf8;
+  --color-surface-muted: #f8eadd;
+  --color-text: #30231e;
+  --color-text-label: #30231e;
+  --color-text-muted: #79665b;
+  --color-border: #e8d4bd;
+  --color-border-soft: #f0e2d1;
+  --color-border-strong: #8c2630;
+  --color-focus: #a51f2b;
+  --gradient-metal: linear-gradient(120deg, #173d2b 0%, #245b3c 45%, #123322 100%);
+  --gradient-button: linear-gradient(135deg, #bd3037, #851923);
+  --shadow-md: 0 6px 22px rgb(91 37 24 / 13%);
+}
+
+/* Ramadan: emerald, antique gold and softly tinted ivory */
+:root[data-website-theme="ramadan"] {
+  --color-primary: #075b46;
+  --color-primary-hover: #064332;
+  --color-primary-light: #168568;
+  --color-on-primary: #fffdf4;
+  --color-accent: #d8b45e;
+  --color-accent-deep: #a98535;
+  --color-on-accent: #30250d;
+  --color-black: #123b30;
+  --color-page-bg: #f6f7ed;
+  --color-store-bg: #edf1df;
+  --color-surface: #fffdf5;
+  --color-surface-muted: #eaf0df;
+  --color-text: #1b3027;
+  --color-text-label: #1b3027;
+  --color-text-muted: #66786c;
+  --color-border: #d8dfc8;
+  --color-border-soft: #e8eadb;
+  --color-border-strong: #17634c;
+  --color-focus: #075b46;
+  --gradient-metal: linear-gradient(120deg, #063d30 0%, #0b6a4e 48%, #064332 100%);
+  --gradient-button: linear-gradient(135deg, #0b7658, #064332);
+  --search-button-bg: linear-gradient(135deg, #e6c777, #b8923f);
+  --search-button-fg: #30250d;
+  --shadow-md: 0 6px 22px rgb(25 67 49 / 12%);
+}
+
+/* Eid: richer green with a brighter celebratory gold */
+:root[data-website-theme="eid"] {
+  --color-primary: #08765a;
+  --color-primary-hover: #06543f;
+  --color-primary-light: #24a17b;
+  --color-on-primary: #fffdf4;
+  --color-accent: #e2bd63;
+  --color-accent-deep: #bd9138;
+  --color-on-accent: #30250d;
+  --color-black: #104535;
+  --color-page-bg: #f4f8ee;
+  --color-store-bg: #eaf2e3;
+  --color-surface: #fffef8;
+  --color-surface-muted: #e8f2e7;
+  --color-text: #1b3028;
+  --color-text-label: #1b3028;
+  --color-text-muted: #667b6d;
+  --color-border: #d2e3d3;
+  --color-border-soft: #e3ede0;
+  --color-border-strong: #08765a;
+  --color-focus: #08765a;
+  --gradient-metal: linear-gradient(120deg, #07533e 0%, #10835e 48%, #06412f 100%);
+  --gradient-button: linear-gradient(135deg, #15936b, #07543e);
+  --search-button-bg: linear-gradient(135deg, #f0cf7c, #c39a3e);
+  --search-button-fg: #30250d;
+  --shadow-md: 0 6px 22px rgb(25 67 49 / 12%);
+}
+
+/* Valentine's Day */
+:root[data-website-theme="valentines-day"] {
+  --color-primary: #bd2858;
+  --color-primary-hover: #941d45;
+  --color-primary-light: #e15a83;
+  --color-on-primary: #fffaff;
+  --color-accent: #f0b1c4;
+  --color-accent-deep: #bd6684;
+  --color-on-accent: #4a1830;
+  --color-black: #67233f;
+  --color-page-bg: #fff4f6;
+  --color-store-bg: #fce9ee;
+  --color-surface: #fffdfd;
+  --color-surface-muted: #fce9ee;
+  --color-text: #34212a;
+  --color-text-label: #34212a;
+  --color-text-muted: #856c77;
+  --color-border: #efd1dc;
+  --color-border-soft: #f5e2e9;
+  --color-border-strong: #bd2858;
+  --color-focus: #bd2858;
+  --gradient-metal: linear-gradient(120deg, #762342, #b82c5d 52%, #67203d);
+  --gradient-button: linear-gradient(135deg, #d63d70, #9e2049);
+  --search-button-bg: linear-gradient(135deg, #f8cfdb, #e9a5b9);
+  --search-button-fg: #4a1830;
+  --shadow-md: 0 6px 22px rgb(103 35 63 / 13%);
+}
+
+/* Black Friday */
+:root[data-website-theme="black-friday"] {
+  --color-primary: #171717;
+  --color-primary-hover: #000;
+  --color-primary-light: #3a3a3a;
+  --color-on-primary: #fff;
+  --color-accent: #f5c542;
+  --color-accent-deep: #d49d12;
+  --color-on-accent: #171717;
+  --color-black: #080808;
+  --color-page-bg: #f3f0e8;
+  --color-store-bg: #eae6dc;
+  --color-surface: #fffefa;
+  --color-surface-muted: #eae6dc;
+  --color-text: #171717;
+  --color-text-label: #171717;
+  --color-text-muted: #68645c;
+  --color-border: #d8d2c5;
+  --color-border-soft: #e9e4d9;
+  --color-border-strong: #171717;
+  --color-focus: #d49d12;
+  --gradient-metal: linear-gradient(120deg, #080808, #292929 52%, #090909);
+  --gradient-button: linear-gradient(135deg, #252525, #050505);
+  --search-button-bg: linear-gradient(135deg, #f9d566, #d49d12);
+  --search-button-fg: #171717;
+  --shadow-md: 0 6px 22px rgb(0 0 0 / 16%);
+}
+
+/* New Year */
+:root[data-website-theme="new-year"] {
+  --color-primary: #26345f;
+  --color-primary-hover: #192344;
+  --color-primary-light: #435a96;
+  --color-on-primary: #fff;
+  --color-accent: #e3bd62;
+  --color-accent-deep: #b58b35;
+  --color-on-accent: #2b2108;
+  --color-black: #171c39;
+  --color-page-bg: #f3f2fa;
+  --color-store-bg: #eaeaf5;
+  --color-surface: #fffefa;
+  --color-surface-muted: #e9e9f5;
+  --color-text: #20243a;
+  --color-text-label: #20243a;
+  --color-text-muted: #72758b;
+  --color-border: #d8daeb;
+  --color-border-soft: #e7e7f1;
+  --color-border-strong: #26345f;
+  --color-focus: #26345f;
+  --gradient-metal: linear-gradient(120deg, #171c39, #354578 52%, #171c39);
+  --gradient-button: linear-gradient(135deg, #354578, #1b254a);
+  --search-button-bg: linear-gradient(135deg, #efcf7c, #b58b35);
+  --search-button-fg: #2b2108;
+  --shadow-md: 0 6px 22px rgb(23 28 57 / 14%);
+}
+
+/* =========================================================
+   Seasonal header finishing touches
+
+   The header itself already follows the theme through the
+   tokens above. These rules add the small details that make
+   a festive header look deliberate rather than just recoloured.
+   ========================================================= */
+
+/* A fine accent-coloured edge under the main header */
+:root[data-website-theme] .main-header {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 10%),
+    inset 0 -3px 0 var(--color-accent);
+}
+
+/* Search button: themed colours, kept off the suggestion list buttons */
+:root[data-website-theme] .search-form .search-submit {
+  background: var(--search-button-bg);
+  color: var(--search-button-fg);
+}
+
+:root[data-website-theme] .cart-link {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+:root[data-website-theme] .cart-link:hover {
+  border-color: var(--color-accent);
+}
+
+:root[data-website-theme] .brand-mark {
+  border-color: color-mix(in srgb, var(--color-accent) 80%, white);
+}
+
+:root[data-website-theme] .brand-name span {
+  color: var(--color-accent);
+}
+
+:root[data-website-theme] button:focus-visible,
+:root[data-website-theme] a:focus-visible,
+:root[data-website-theme] input:focus-visible {
+  outline-color: var(--color-focus);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body {
+    transition: none;
+  }
 }

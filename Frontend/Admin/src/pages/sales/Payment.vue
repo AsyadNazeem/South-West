@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import paymentApi from '../../api/paymentApi'
+import { hasPermission } from '../../auth/authorization.js'
 
 
 // ==========================================
@@ -119,6 +120,7 @@ const viewPayment = async (id) => {
 const closePaymentDetails = () => {
   selectedPayment.value = null
 }
+
 
 // ==========================================
 // Delete Payment
@@ -621,10 +623,22 @@ onMounted(loadPayments)
           </div>
         </dl>
 
-        <p class="payment-detail-readonly">
-          Payment details are read-only. Changes to financial records must
-          follow the authorized payment workflow.
-        </p>
+        <div class="payment-confirmation-actions">
+          <p
+            v-if="selectedPayment.payment_method === 'cash'"
+            class="payment-detail-readonly"
+          >
+            Cash on delivery payment is automatically marked as Paid when the
+            delivery status is changed to Delivered.
+          </p>
+
+          <p
+            v-else-if="['unpaid', 'partially_paid'].includes(selectedPayment.payment_status)"
+            class="payment-detail-readonly"
+          >
+            Payment status is updated only after verified confirmation from the payment provider.
+          </p>
+        </div>
       </section>
     </div>
 

@@ -13,6 +13,8 @@ function resetState(overrides = {}) {
         customerId: null,
         customer: null,
         deliveries: [],
+        createdDeliveries: [],
+        shippingAddress: null,
         notifications: [],
         histories: [],
         auditCalls: [],
@@ -85,9 +87,26 @@ const models = {
         }
     },
 
+    OrderAddress: {
+        async findOne() {
+            return state.shippingAddress;
+        }
+    },
+
     Delivery: {
         async findAll() {
             return state.deliveries;
+        },
+        async create(values) {
+            const delivery = makeDelivery({
+                id: 902,
+                ...values,
+                async save() {
+                    return this;
+                }
+            });
+            state.createdDeliveries.push(delivery);
+            return delivery;
         }
     },
 
@@ -351,6 +370,89 @@ test('courier handover updates delivery, history and tracking email', async () =
     assert.equal(state.trackingEmails.length, 1);
     assert.equal(state.statusEmails.length, 0);
     assert.equal(state.commitCalls, 1);
+});
+
+test('courier handover creates a delivery from the saved shipping address', async () => {
+    state.orderStatus = 'processing';
+    state.customer = {
+        id: 7,
+        first_name: 'Test',
+        last_name: 'Customer',
+        email: 'test@example.com'
+    };
+    order.customer_id = 7;
+
+    state.shippingAddress = {
+        recipient_name: 'Test Recipient',
+        phone: '0771234567',
+        address_line_1: '123 Test Street',
+        address_line_2: 'Apartment 4',
+        city: 'Colombo',
+        state: 'Western',
+        postal_code: '00100',
+        country: 'Sri Lanka'
+    };
+
+    const res = makeResponse();
+
+    await controller.updateOrderStatus(
+        makeRequest({
+            status: 'shipped',
+            courier_name: 'Test Courier',
+            tracking_number: 'TRACK-NEW-123'
+        }),
+        res
+    );
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(state.orderStatus, 'shipped');
+    assert.equal(state.createdDeliveries.length, 1);
+
+    const delivery = state.createdDeliveries[0];
+
+    assert.match(delivery.delivery_reference, /^SWD-/);
+    assert.equal(delivery.order_id, order.id);
+    assert.equal(delivery.delivery_status, 'dispatched');
+    assert.equal(delivery.recipient_name, 'Test Recipient');
+    assert.equal(delivery.recipient_phone, '0771234567');
+    assert.equal(delivery.address_line_1, '123 Test Street');
+    assert.equal(delivery.address_line_2, 'Apartment 4');
+    assert.equal(delivery.city, 'Colombo');
+    assert.equal(delivery.state, 'Western');
+    assert.equal(delivery.postal_code, '00100');
+    assert.equal(delivery.country, 'Sri Lanka');
+    assert.equal(delivery.courier_name, 'Test Courier');
+    assert.equal(delivery.tracking_number, 'TRACK-NEW-123');
+    assert.ok(delivery.dispatched_at instanceof Date);
+
+    assert.equal(state.histories.length, 1);
+    assert.equal(state.histories[0].delivery_id, delivery.id);
+    assert.equal(state.histories[0].status, 'dispatched');
+    assert.equal(state.trackingEmails.length, 1);
+    assert.equal(state.commitCalls, 1);
+    assert.equal(state.rollbackCalls, 0);
+});
+
+test('courier handover is rejected when a new delivery has no saved shipping address', async () => {
+    state.orderStatus = 'processing';
+    state.shippingAddress = null;
+
+    const res = makeResponse();
+
+    await controller.updateOrderStatus(
+        makeRequest({
+            status: 'shipped',
+            courier_name: 'Test Courier',
+            tracking_number: 'TRACK-MISSING-ADDRESS'
+        }),
+        res
+    );
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(state.createdDeliveries.length, 0);
+    assert.equal(state.orderStatus, 'processing');
+    assert.equal(state.commitCalls, 0);
+    assert.equal(state.rollbackCalls, 1);
 });
 
 test('order cannot be completed while a delivery is undelivered', async () => {

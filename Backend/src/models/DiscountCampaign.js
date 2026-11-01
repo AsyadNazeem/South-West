@@ -20,6 +20,11 @@ module.exports = (sequelize, DataTypes) => {
                 as: 'campaignBrands'
             });
 
+            DiscountCampaign.belongsTo(models.CampaignFrame, {
+                foreignKey: 'visual_frame_id',
+                as: 'visualFrame',
+            });
+
             DiscountCampaign.belongsTo(models.User, {
                 foreignKey: 'created_by',
                 as: 'creator'
@@ -73,6 +78,31 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.BOOLEAN,
                 allowNull: false,
                 defaultValue: false
+            },
+            visual_frame_id: {
+                type: DataTypes.BIGINT.UNSIGNED,
+                allowNull: true,
+                defaultValue: null,
+            },
+            visual_theme: {
+                type: DataTypes.STRING(40),
+                allowNull: true,
+                defaultValue: null
+            },
+            visual_frame_path: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null
+            },
+            visual_frame_enabled: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false
+            },
+            visual_priority: {
+                type: DataTypes.INTEGER,
+                allowNull: false,
+                defaultValue: 0
             },
             start_date: {
                 type: DataTypes.DATE,

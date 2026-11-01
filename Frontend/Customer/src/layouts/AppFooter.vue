@@ -31,8 +31,11 @@ const companyLinks = [
           <!-- Brand section -->
           <div class="footer-brand">
             <RouterLink to="/" class="brand-link" aria-label="South-West home">
-              <span class="brand-mark">S</span>
-              <span class="brand-name">SOUTH<span>-WEST</span></span>
+              <img
+                src="/SWLogoBlack.png"
+                alt="South West"
+                class="brand-logo"
+              />
             </RouterLink>
 
             <p class="brand-description">
@@ -229,26 +232,13 @@ const companyLinks = [
   color: var(--footer-text);
 }
 
-.brand-mark {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border-radius: 8px;
-  background: var(--footer-accent);
-  color: #fff;
-  font-size: 18px;
-  font-weight: 800;
-}
-
-.brand-name {
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 1.1px;
-}
-
-.brand-name span {
-  font-weight: 500;
+.brand-logo {
+  display: block;
+  width: 190px;
+  max-width: 100%;
+  height: 48px;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .brand-description {

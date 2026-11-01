@@ -52,9 +52,11 @@ import CreatePurchaseOrder from '../pages/purchasing/CreatePurchaseOrder.vue'
 import Suppliers from '../pages/purchasing/Suppliers.vue'
 import CreateSuppliers from '../pages/purchasing/CreateSuppliers.vue'
 import Orders from '../pages/sales/Orders.vue'
+import OrderDetails from '../pages/sales/OrderDetails.vue'
 import Payment from '../pages/sales/Payment.vue'
 import Invoice from '../pages/sales/Invoice.vue'
 import Deliveries from '../pages/sales/Deliveries.vue'
+import DeliveryDetails from '../pages/sales/DeliveryDetails.vue'
 import DeliveryCharges from '../pages/sales/DeliveryCharges.vue'
 import CreateDeliveryCharges from '../pages/sales/CreateDeliveryCharges.vue'
 import Promotions from '../pages/marketing/Promotions.vue'
@@ -67,6 +69,8 @@ import HomepageBanners from '../pages/marketing/HomepageBanners.vue'
 import DiscountCampaigns from '../pages/marketing/DiscountCampaigns.vue'
 import CreateHomePage from '../pages/marketing/CreateHomepageBanners.vue'
 import CreateDiscountCampaigns from '../pages/marketing/DiscountCampaignForm.vue'
+import CampaignFrames from '../pages/marketing/CampaignFrames.vue'
+import WebsiteThemes from '../pages/marketing/WebsiteThemes.vue'
 import AuditLog from '../pages/administration/AuditLog.vue'
 
 import {
@@ -556,6 +560,12 @@ const routes = [
                 meta: { permission: 'orders.view' }
             },
             {
+                path: 'sales/orders/:id',
+                name: 'order-details',
+                component: OrderDetails,
+                meta: { permission: 'orders.view' }
+            },
+            {
                 path: 'sales/payments',
                 name: 'Payment',
                 component: Payment,
@@ -571,6 +581,18 @@ const routes = [
                 path: 'sales/deliveries',
                 name: 'Deliveries',
                 component: Deliveries,
+                meta: { permission: 'deliveries.view' }
+            },
+            {
+                path: 'sales/deliveries/edit/:id',
+                name: 'delivery-edit',
+                component: DeliveryDetails,
+                meta: { permission: 'deliveries.update' }
+            },
+            {
+                path: 'sales/deliveries/:id',
+                name: 'delivery-details',
+                component: DeliveryDetails,
                 meta: { permission: 'deliveries.view' }
             },
             {
@@ -686,6 +708,18 @@ const routes = [
     name: 'EditDiscountCampaign',
     component: CreateDiscountCampaigns,
     meta: { permission: 'discount_campaigns.update' }
+},
+{
+    path: 'marketing/campaign-frames',
+    name: 'CampaignFrames',
+    component: CampaignFrames,
+    meta: { permission: 'discount_campaigns.view' }
+},
+{
+    path: 'marketing/website-themes',
+    name: 'WebsiteThemes',
+    component: WebsiteThemes,
+    meta: { permission: 'website_themes.view' }
 }
 
 
@@ -751,6 +785,22 @@ router.beforeEach(async (to) => {
         }
     }
     return true
+})
+
+
+router.afterEach((to) => {
+    const rawTitle = to.meta?.title || to.name || to.path
+
+    const pageTitle = String(rawTitle)
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[-_]+/g, ' ')
+        .replace(/\/+/g, ' ')
+        .replace(/:[^ ]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, (character) => character.toUpperCase())
+
+    document.title = `${pageTitle || 'Admin'} | South West`
 })
 
 export default router

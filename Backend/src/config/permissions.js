@@ -6,6 +6,7 @@ const permissionCatalog = [
     { name: 'users.create', module: 'users', description: 'Create users' },
     { name: 'users.update', module: 'users', description: 'Update users' },
     { name: 'users.delete', module: 'users', description: 'Delete users' },
+    { name: 'users.roles.manage', module: 'users', description: 'Assign and manage user roles' },
     { name: 'roles.view', module: 'roles', description: 'View roles' },
     { name: 'roles.manage', module: 'roles', description: 'Create, update and delete roles' },
     { name: 'permissions.view', module: 'permissions', description: 'View permissions' },
@@ -103,6 +104,10 @@ const permissionCatalog = [
     { name: 'discount_campaigns.create', module: 'discount_campaigns', description: 'Create discount campaigns' },
     { name: 'discount_campaigns.update', module: 'discount_campaigns', description: 'Update discount campaigns' },
     { name: 'discount_campaigns.delete', module: 'discount_campaigns', description: 'Delete discount campaigns' },
+    { name: 'website_themes.view', module: 'website_themes', description: 'View website themes' },
+    { name: 'website_themes.create', module: 'website_themes', description: 'Create website themes' },
+    { name: 'website_themes.update', module: 'website_themes', description: 'Update website themes' },
+    { name: 'website_themes.delete', module: 'website_themes', description: 'Delete website themes' },
 ];
 
 const seededPermissionNames = new Set([

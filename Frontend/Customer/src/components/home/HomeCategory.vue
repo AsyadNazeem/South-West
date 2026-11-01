@@ -8,20 +8,10 @@ const emit = defineEmits(['select-category'])
 const categories = ref([])
 const loading = ref(false)
 
-const API_BASE_URL = (
-  import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
-).replace(/\/api\/?$/, '')
+import { getMediaUrl } from '../../utils/mediaUrl'
 
 function getImageUrl(path) {
-  if (!path) return ''
-  if (/^https?:\/\//i.test(path)) return path
-
-  const normalized = String(path).replace(/\\/g, '/').replace(/^\/+/, '')
-  const imagePath = normalized.startsWith('uploads/')
-    ? normalized
-    : `uploads/${normalized}`
-
-  return `${API_BASE_URL}/${imagePath}`
+  return getMediaUrl(path)
 }
 
 async function loadCategories() {

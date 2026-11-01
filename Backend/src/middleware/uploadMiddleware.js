@@ -200,6 +200,22 @@ const uploadCategoryImage = createUploader({
     sizeMessage: 'Category image must be smaller than 5MB',
 });
 
+const uploadCampaignFrame = createUploader({
+    field: 'frame',
+    folder: 'campaigns/frames',
+    allowedTypes: {
+        'image/png': '.png',
+        'image/webp': '.webp',
+    },
+    allowedExtensions: {
+        'image/png': 'png',
+        'image/webp': 'webp',
+    },
+    maxSize: 2 * MB,
+    typeMessage: 'Only transparent PNG and WebP campaign frames are allowed',
+    sizeMessage: 'Campaign frame must be smaller than 2MB',
+});
+
 const uploadBrandImage = createUploader({
     field: 'image',
     folder: 'brands/images',
@@ -222,4 +238,5 @@ module.exports = {
     uploadCategoryImage,
     uploadBannerImage,
     uploadBrandImage,
+    uploadCampaignFrame,
 };

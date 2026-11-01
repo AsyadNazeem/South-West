@@ -34,3 +34,6 @@ Backend/online-sales-test.xlsx
 # Temporary editor and backup files
 *.save
 *.security-backup
+
+# Temporary working backups
+*-backup*

@@ -23,6 +23,12 @@ function resetState(overrides = {}) {
         customerEmail: 'test@example.com',
         orderExists: true,
         deliveryExists: true,
+        paymentRecords: [],
+        orderDeliveries: null,
+        order: null,
+        orderUpdateCalls: [],
+        notificationCalls: [],
+        completionEmailCalls: [],
         ...overrides
     });
 }
@@ -79,6 +85,15 @@ const models = {
         },
         async findOne() {
             return null;
+        },
+        async findAll() {
+            return state.orderDeliveries || [delivery];
+        }
+    },
+
+    Payment: {
+        async findAll() {
+            return state.paymentRecords;
         }
     },
 
@@ -86,20 +101,39 @@ const models = {
         async findByPk() {
             if (!state.orderExists) return null;
 
-            return {
-                id: 501,
-                order_number: 'TEST-ORDER-501',
-                customer: {
-                    id: 7,
-                    first_name: 'Test',
-                    last_name: 'Customer',
-                    email: state.customerEmail
-                }
-            };
+            if (!state.order) {
+                state.order = {
+                    id: 501,
+                    order_number: 'TEST-ORDER-501',
+                    status: 'shipped',
+                    payment_status: 'unpaid',
+                    total_amount: '1000.00',
+                    customer: {
+                        id: 7,
+                        first_name: 'Test',
+                        last_name: 'Customer',
+                        email: state.customerEmail
+                    },
+                    async update(changes) {
+                        state.orderUpdateCalls.push({ ...changes });
+                        Object.assign(this, changes);
+                        return this;
+                    }
+                };
+            }
+
+            return state.order;
         }
     },
 
     Customer: {},
+
+    Notification: {
+        async create(values) {
+            state.notificationCalls.push(values);
+            return values;
+        }
+    },
 
     DeliveryStatusHistory: {
         async create(values) {
@@ -119,6 +153,9 @@ const emailService = {
     async sendDeliveryTrackingEmail(payload) {
         state.emailCalls.push(payload);
         if (state.emailError) throw state.emailError;
+    },
+    async sendOrderStatusEmail(payload) {
+        state.completionEmailCalls.push(payload);
     }
 };
 
@@ -160,6 +197,27 @@ beforeEach(() => {
     resetState();
     delivery = makeDelivery();
 });
+
+function makePayment({
+    id = 1,
+    method = 'cash',
+    status = 'unpaid',
+    amount = '1000.00'
+} = {}) {
+    return {
+        id,
+        payment_reference: `TEST-PAYMENT-${id}`,
+        payment_method: method,
+        payment_status: status,
+        amount,
+        updateCalls: [],
+        async update(changes) {
+            this.updateCalls.push({ ...changes });
+            Object.assign(this, changes);
+            return this;
+        }
+    };
+}
 
 test('dispatch rejects missing tracking number or courier', async () => {
     const res = makeResponse();
@@ -344,6 +402,141 @@ test('invalid delivery status is rejected without changing the delivery', async 
     assert.equal(state.rollbackCalls, 1);
     assert.equal(state.historyCalls.length, 0);
     assert.equal(state.emailCalls.length, 0);
+});
+
+test('marking a COD delivery as delivered automatically confirms payment and completes the order', async () => {
+    const codPayment = makePayment();
+    state.paymentRecords = [codPayment];
+
+    const res = makeResponse();
+
+    await controller.updateDelivery(
+        makeRequest({ delivery_status: 'delivered' }),
+        res
+    );
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(codPayment.payment_status, 'paid');
+    assert.equal(codPayment.updateCalls.length, 1);
+    assert.ok(codPayment.payment_date instanceof Date);
+    assert.equal(codPayment.processed_by, 42);
+
+    assert.equal(state.order.payment_status, 'paid');
+    assert.equal(state.order.status, 'delivered');
+    assert.equal(state.commitCalls, 1);
+    assert.equal(state.rollbackCalls, 0);
+
+    assert.ok(
+        state.auditCalls.some(
+            entry => entry.action === 'COD_PAYMENT_AUTO_CONFIRMED'
+        )
+    );
+    assert.equal(state.notificationCalls.length, 1);
+    assert.equal(state.completionEmailCalls.length, 1);
+    assert.equal(res.body.order_status_update.updated, true);
+});
+
+test('marking a delivery as delivered does not manually confirm an online payment', async () => {
+    const onlinePayment = makePayment({
+        method: 'card',
+        status: 'unpaid'
+    });
+    state.paymentRecords = [onlinePayment];
+
+    const res = makeResponse();
+
+    await controller.updateDelivery(
+        makeRequest({ delivery_status: 'delivered' }),
+        res
+    );
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(onlinePayment.payment_status, 'unpaid');
+    assert.equal(onlinePayment.updateCalls.length, 0);
+    assert.equal(state.order.payment_status, 'unpaid');
+    assert.equal(state.order.status, 'shipped');
+    assert.equal(state.notificationCalls.length, 0);
+    assert.equal(state.commitCalls, 1);
+});
+
+test('COD delivery does not complete an order until every delivery is delivered', async () => {
+    const codPayment = makePayment();
+    state.paymentRecords = [codPayment];
+
+    state.orderDeliveries = [
+        delivery,
+        { id: 100, delivery_status: 'dispatched' }
+    ];
+
+    const res = makeResponse();
+
+    await controller.updateDelivery(
+        makeRequest({ delivery_status: 'delivered' }),
+        res
+    );
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(codPayment.payment_status, 'paid');
+    assert.equal(state.order.payment_status, 'paid');
+    assert.equal(state.order.status, 'shipped');
+    assert.equal(state.notificationCalls.length, 0);
+    assert.equal(state.completionEmailCalls.length, 0);
+    assert.equal(res.body.order_status_update.updated, false);
+});
+
+test('COD overpayment rolls back and returns 409', async () => {
+    const onlinePayment = makePayment({
+        id: 1,
+        method: 'card',
+        status: 'paid',
+        amount: '500.00'
+    });
+    const codPayment = makePayment({
+        id: 2,
+        method: 'cash',
+        status: 'unpaid',
+        amount: '600.00'
+    });
+    state.paymentRecords = [onlinePayment, codPayment];
+
+    const originalConsoleError = console.error;
+    console.error = () => {};
+
+    const res = makeResponse();
+
+    try {
+        await controller.updateDelivery(
+            makeRequest({ delivery_status: 'delivered' }),
+            res
+        );
+    } finally {
+        console.error = originalConsoleError;
+    }
+
+    assert.equal(res.statusCode, 409);
+    assert.match(res.body.message, /overpaid/i);
+    assert.equal(state.commitCalls, 0);
+    assert.equal(state.rollbackCalls, 1);
+});
+
+test('an already delivered delivery does not confirm COD payment again', async () => {
+    state.status = 'delivered';
+    delivery = makeDelivery();
+
+    const codPayment = makePayment();
+    state.paymentRecords = [codPayment];
+
+    const res = makeResponse();
+
+    await controller.updateDelivery(
+        makeRequest({ delivery_status: 'delivered' }),
+        res
+    );
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(codPayment.updateCalls.length, 0);
+    assert.equal(state.orderUpdateCalls.length, 0);
+    assert.equal(state.commitCalls, 1);
 });
 
 test('manual delivery creation is not exposed by the controller', async () => {

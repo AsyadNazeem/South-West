@@ -20,3 +20,10 @@ export const updateDiscountCampaignStatus = (id, status) =>
 
 export const deleteDiscountCampaign = (id) =>
     api.delete(`${BASE_URL}/${id}`)
+
+export const uploadDiscountCampaignVisualFrame = (id, file) => {
+    const formData = new FormData()
+    formData.append('frame', file)
+
+    return api.post(`${BASE_URL}/${id}/visual-frame`, formData)
+}

@@ -1,4 +1,5 @@
 <script setup>
+import { getMediaUrl } from '../../utils/mediaUrl'
 import { ref, onMounted, computed } from "vue"
 import { useRouter, useRoute } from "vue-router"
 import api from "../../api/axios"
@@ -48,19 +49,7 @@ const showParentCategoryDropdown = ref(false)
 const selectedImage = ref(null);
 const imagePreview = ref('');
 
-const API_BASE_URL = (
-    import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
-).replace(/\/api\/?$/, '');
-
-const getImageUrl = (path) => {
-    if (!path) return '';
-
-    if (/^https?:\/\//i.test(path)) {
-        return path;
-    }
-
-    return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
-};
+const getImageUrl = (path) => getMediaUrl(path);
 
 const onImageSelected = (event) => {
     const file = event.target.files?.[0];

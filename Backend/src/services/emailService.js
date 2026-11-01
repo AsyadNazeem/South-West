@@ -8,37 +8,73 @@ let transporter;
 function getTransporter() {
     if (transporter) return transporter;
 
-    const {
-        SMTP_HOST,
-        SMTP_PORT,
-        SMTP_SECURE,
-        SMTP_USER,
-        SMTP_PASS,
-    } = process.env;
+    const provider = (process.env.EMAIL_PROVIDER || 'smtp')
+        .trim()
+        .toLowerCase();
 
-    if (!SMTP_HOST) {
-        throw new Error('Email delivery is not configured');
-    }
+    let config;
 
-    const config = {
-        host: SMTP_HOST,
-        port: Number(SMTP_PORT || 587),
-        secure: SMTP_SECURE === 'true',
-    };
-
-    // Add authentication only when credentials are configured.
-    if (SMTP_USER && SMTP_PASS) {
-        config.auth = {
-            user: SMTP_USER,
-            pass: SMTP_PASS,
+    if (provider === 'mailpit') {
+        config = {
+            host: process.env.MAILPIT_HOST || '127.0.0.1',
+            port: Number(process.env.MAILPIT_PORT || 1025),
+            secure: false,
         };
+    } else if (provider === 'brevo') {
+        const user = process.env.BREVO_SMTP_LOGIN;
+        const pass = process.env.BREVO_SMTP_KEY;
+
+        if (!user || !pass) {
+            throw new Error('Brevo SMTP credentials are not configured');
+        }
+
+        config = {
+            host: 'smtp-relay.brevo.com',
+            port: 587,
+            secure: false,
+            auth: { user, pass },
+        };
+    } else if (provider === 'smtp') {
+        const {
+            SMTP_HOST,
+            SMTP_PORT,
+            SMTP_SECURE,
+            SMTP_USER,
+            SMTP_PASS,
+        } = process.env;
+
+        if (!SMTP_HOST) {
+            throw new Error('Email delivery is not configured');
+        }
+
+        config = {
+            host: SMTP_HOST,
+            port: Number(SMTP_PORT || 587),
+            secure: SMTP_SECURE === 'true',
+        };
+
+        if (SMTP_USER && SMTP_PASS) {
+            config.auth = {
+                user: SMTP_USER,
+                pass: SMTP_PASS,
+            };
+        }
+    } else {
+        throw new Error(`Unsupported email provider: ${provider}`);
     }
 
     transporter = nodemailer.createTransport(config);
-
     return transporter;
 }
 
+function getSender(defaultSender) {
+    return (
+        process.env.EMAIL_FROM ||
+        process.env.SMTP_FROM ||
+        process.env.SMTP_USER ||
+        defaultSender
+    );
+}
 
 async function sendVerificationCode(email, code, purpose) {
     const isActivation = purpose === 'activation';
@@ -55,10 +91,7 @@ async function sendVerificationCode(email, code, purpose) {
         : `Your South West verification code is: ${code}`;
 
     await getTransporter().sendMail({
-        from:
-            process.env.SMTP_FROM ||
-            process.env.SMTP_USER ||
-            'South West Dev <dev@southwest.local>',
+        from: getSender('South West Dev <dev@southwest.local>'),
         to: email,
         subject,
         text: [
@@ -69,8 +102,6 @@ async function sendVerificationCode(email, code, purpose) {
         ].join('\n'),
     });
 }
-
-
 
 async function sendCustomerPasswordSetupInvitation(email, customerCode, token) {
     const frontendUrl = process.env.CUSTOMER_APP_URL;
@@ -83,10 +114,7 @@ async function sendCustomerPasswordSetupInvitation(email, customerCode, token) {
     setupUrl.searchParams.set('token', token);
 
     await getTransporter().sendMail({
-        from:
-            process.env.SMTP_FROM ||
-            process.env.SMTP_USER ||
-            'South West <noreply@southwest.local>',
+        from: getSender('South West <noreply@southwest.local>'),
         to: email,
         subject: 'Set up your South West customer account',
         text: [
@@ -128,10 +156,7 @@ async function sendDeliveryTrackingEmail({
         : 'Not yet available';
 
     await getTransporter().sendMail({
-        from:
-            process.env.SMTP_FROM ||
-            process.env.SMTP_USER ||
-            'South West <noreply@southwest.local>',
+        from: getSender('South West <noreply@southwest.local>'),
         to: email,
         subject: `Your South West order ${orderNumber} has been dispatched`,
         text: [
@@ -150,13 +175,12 @@ async function sendDeliveryTrackingEmail({
     });
 }
 
-
 async function sendOrderStatusEmail({
     email,
     customerName,
     orderNumber,
     statusLabel,
-    reason
+    reason,
 }) {
     if (!email) {
         throw new Error('Customer email is missing');
@@ -184,13 +208,10 @@ async function sendOrderStatusEmail({
     );
 
     await getTransporter().sendMail({
-        from:
-            process.env.SMTP_FROM ||
-            process.env.SMTP_USER ||
-            'South West <noreply@southwest.local>',
+        from: getSender('South West <noreply@southwest.local>'),
         to: email,
         subject,
-        text: lines.join('\n')
+        text: lines.join('\n'),
     });
 }
 

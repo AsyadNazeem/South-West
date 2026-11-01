@@ -5,18 +5,9 @@ const express = require('express');
 const authController = require('../controllers/authController');
 const authenticate = require('../middleware/authMiddleware');
 const { requirePermission } = require('../middleware/requirePermission');
-const {
-    loginLimiter,
-    registerLimiter
-} = require('../middleware/authRateLimit');
+const { loginLimiter } = require('../middleware/authRateLimit');
 
 const router = express.Router();
-
-router.post(
-    '/register',
-    registerLimiter,
-    authController.register
-);
 
 router.post(
     '/login',

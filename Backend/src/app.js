@@ -59,6 +59,7 @@ const warrantyRoutes = require('./routes/warrantyRoutes');
 const customerAuthRoutes = require("./routes/customerAuthRoutes");
 const customerCartRoutes = require('./routes/customerCartRoutes');
 const customerCheckoutRoutes = require('./routes/customerCheckoutRoutes');
+const guestCheckoutRoutes = require('./routes/guestCheckoutRoutes');
 const customerOrderRoutes = require('./routes/customerOrderRoutes');
 const auditLogRoutes = require('./routes/auditLogRoutes');
 
@@ -67,12 +68,16 @@ const myNotificationRoutes = require('./routes/myNotificationRoutes');
 const myNotificationPreferenceRoutes = require('./routes/myNotificationPreferenceRoutes');
 const storeCategoryRoutes = require('./routes/storeCategoryRoutes');
 const storeProductRoutes = require('./routes/storeProductRoutes');
+const socialPreviewRoutes = require('./routes/socialPreviewRoutes');
 const customerWishlistRoutes = require('./routes/customerWishlistRoutes');
 const homepageBannerRoutes = require('./routes/homepageBannerRoutes');
 const publicHomepageBannerRoutes = require('./routes/publicHomepageBannerRoutes');
 const customerProductReviewRoutes = require('./routes/customerProductReviewRoutes');
 
 const discountCampaignRoutes = require('./routes/discountCampaignRoutes');
+const campaignFrameRoutes = require('./routes/campaignFrameRoutes');
+const websiteThemeRoutes = require('./routes/websiteThemeRoutes');
+const websiteThemeAdminRoutes = require('./routes/websiteThemeAdminRoutes');
 const storeBrandRoutes = require('./routes/storeBrandRoutes');
 const itemPaymentPriceRoutes = require('./routes/itemPaymentPriceRoutes');
 
@@ -81,21 +86,39 @@ const reportRoutes = require('./routes/reportRoutes');
 const app = express();
 
 
-app.use(
-  cors({
-    origin: [
-      'http://localhost:5173',
-      'http://localhost:5174'
-    ],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'Idempotency-Key'
-    ]
-  })
+const defaultCorsOrigins = process.env.NODE_ENV === 'production'
+  ? ['https://southwest.lk', 'https://admin.southwest.lk']
+  : ['http://localhost:5173', 'http://localhost:5174'];
+
+const allowedCorsOrigins = (
+  process.env.CORS_ORIGINS || defaultCorsOrigins.join(',')
 )
+  .split(',')
+  .map((origin) => origin.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    // Requests without an Origin header include server-to-server and CLI requests.
+    if (!origin) return callback(null, true);
+
+    const normalizedOrigin = origin.replace(/\/$/, '');
+
+    if (allowedCorsOrigins.includes(normalizedOrigin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Origin not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Idempotency-Key',
+    'X-Guest-Checkout-Token'
+  ]
+}));
 
 
 app.use(express.json({ limit: '100kb' }));
@@ -167,6 +190,7 @@ app.use('/api/warranties', warrantyRoutes);
 app.use("/api/customer-auth", customerAuthRoutes);
 app.use('/api/customer-cart', customerCartRoutes);
 app.use('/api/customer-checkout', customerCheckoutRoutes);
+app.use('/api/guest-checkout', guestCheckoutRoutes);
 app.use('/api/customer-orders', customerOrderRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/item-payment-prices', itemPaymentPriceRoutes);
@@ -179,11 +203,15 @@ app.use('/api/my/notifications', myNotificationRoutes);
 app.use('/api/my/notification-preferences', myNotificationPreferenceRoutes);
 app.use('/api/store/categories', storeCategoryRoutes);
 app.use('/api/store/products', storeProductRoutes);
+app.use('/api/social-preview', socialPreviewRoutes);
 app.use('/api/customer-wishlist', customerWishlistRoutes);
 app.use('/api/homepage-banners', homepageBannerRoutes);
 app.get('/api/store/banners', getPublicBanners);
 app.use('/api/store/homepage-banners', publicHomepageBannerRoutes);
 app.use('/api/discount-campaigns', discountCampaignRoutes);
+app.use('/api/campaign-frames', campaignFrameRoutes);
+app.use('/api/store/website-theme', websiteThemeRoutes);
+app.use('/api/website-themes', websiteThemeAdminRoutes);
 app.use('/api/store/brands', storeBrandRoutes);
 app.use('/api/customer-reviews', customerProductReviewRoutes);
 

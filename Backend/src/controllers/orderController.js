@@ -14,7 +14,8 @@ const {
     OrderPromotion,
     ProductReview,
     Item,
-    ItemPrice
+    ItemPrice,
+    ItemVariant
 } = require('../models');
 
 const getCurrentSellingPrice = async (
@@ -96,7 +97,30 @@ const getOrderIncludes = () => [
     {
         model: OrderItem,
         as: 'items',
-        required: false
+        required: false,
+        include: [
+            {
+                model: Item,
+                as: 'item',
+                attributes: [
+                    'id',
+                    'item_name',
+                    'item_code'
+                ],
+                required: false
+            },
+            {
+                model: ItemVariant,
+                as: 'variant',
+                attributes: [
+                    'id',
+                    'variant_sku',
+                    'variant_name',
+                    'attributes'
+                ],
+                required: false
+            }
+        ]
     },
     {
         model: OrderAddress,

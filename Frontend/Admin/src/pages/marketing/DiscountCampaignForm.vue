@@ -9,11 +9,24 @@ import {
     updateDiscountCampaign,
 } from '../../api/discountCampaignApi'
 
+import { getCampaignFrames } from '../../api/campaignFrameApi'
+
 import api from '../../api/axios'
 import itemApi from '../../api/itemApi'
 
 const route = useRoute()
 const router = useRouter()
+
+import { getMediaUrl } from '../../utils/mediaUrl'
+
+function getFrameImageUrl(frame) {
+    const value = frame?.image_url || frame?.image_path || ''
+
+    if (!value) return ''
+    if (/^https?:\/\//i.test(value)) return value
+
+    return getMediaUrl(value)
+}
 
 const campaignId = computed(() => route.params.id)
 const isEdit = computed(() => Boolean(campaignId.value))
@@ -22,6 +35,8 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
 const fieldErrors = reactive({})
+
+
 
 const statuses = [
     'draft',
@@ -55,12 +70,22 @@ const form = reactive({
     start_date: '',
     end_date: '',
     status: 'draft',
+    visual_frame_id: null,
+    visual_frame_enabled: false,
+    visual_priority: 0,
 })
 
 const items = ref([])
 const categories = ref([])
 const brands = ref([])
+const frames = ref([])
 const targetSearch = ref('')
+
+const selectedFrame = computed(() =>
+    frames.value.find(frame =>
+        Number(frame.id) === Number(form.visual_frame_id)
+    ) || null
+)
 
 const discountSuffix = computed(() =>
     form.discount_type === 'percentage' ? '%' : 'Rs.',
@@ -212,17 +237,24 @@ function toDateInput(value) {
     return String(value).slice(0, 10)
 }
 
+
 async function loadLookups() {
-    const [itemsResponse, categoriesResponse, brandsResponse] =
-        await Promise.all([
-            itemApi.getItems(),
-            api.get('/categories'),
-            api.get('/brands'),
-        ])
+    const [
+        itemsResponse,
+        categoriesResponse,
+        brandsResponse,
+        framesResponse,
+    ] = await Promise.all([
+        itemApi.getItems(),
+        api.get('/categories'),
+        api.get('/brands'),
+        getCampaignFrames(),
+    ])
 
     items.value = toArray(itemsResponse)
     categories.value = toArray(categoriesResponse)
     brands.value = toArray(brandsResponse)
+    frames.value = toArray(framesResponse).filter(frame => frame.is_active)
 }
 
 function getAssociationIds(campaign, associationKey, foreignKey) {
@@ -262,6 +294,14 @@ async function loadCampaign() {
     form.start_date = toDateInput(campaign.start_date)
     form.end_date = toDateInput(campaign.end_date)
     form.status = campaign.status || 'draft'
+
+    form.visual_frame_id =
+        campaign.visual_frame_id ??
+        campaign.visualFrame?.id ??
+        null
+    form.visual_frame_enabled = Boolean(campaign.visual_frame_enabled)
+    form.visual_priority = Number(campaign.visual_priority || 0)
+
 
     form.item_ids = getAssociationIds(
         campaign,
@@ -384,6 +424,28 @@ function validate() {
         fieldErrors.status = 'Select a valid campaign status.'
     }
 
+    if (
+        form.visual_frame_enabled &&
+        !frames.value.some(frame =>
+            Number(frame.id) === Number(form.visual_frame_id)
+        )
+    ) {
+        fieldErrors.visual_frame_id =
+            'Select an active campaign frame from the library.'
+    }
+
+    if (
+        form.visual_frame_enabled &&
+        (
+            !Number.isInteger(Number(form.visual_priority)) ||
+            Number(form.visual_priority) < 0 ||
+            Number(form.visual_priority) > 1000000
+        )
+    ) {
+        fieldErrors.visual_priority =
+            'Visual priority must be a whole number between 0 and 1000000.'
+    }
+
     return Object.keys(fieldErrors).length === 0
 }
 
@@ -401,6 +463,12 @@ function buildPayload() {
         discount_type: form.discount_type,
         discount_value: Number(form.discount_value),
         allow_promo_code: Boolean(form.allow_promo_code),
+
+        visual_frame_id: form.visual_frame_enabled
+            ? Number(form.visual_frame_id)
+            : null,
+        visual_frame_enabled: Boolean(form.visual_frame_enabled),
+        visual_priority: Number(form.visual_priority || 0),
 
         target_type: form.target_type,
 
@@ -449,18 +517,18 @@ async function submit() {
             Object.entries(serverErrors).forEach(([key, message]) => {
                 fieldErrors[key] = Array.isArray(message)
                     ? message[0]
-                    : String(message)
+                    : message
             })
         }
 
         error.value =
             err.response?.data?.message ||
-            `Unable to ${isEdit.value ? 'update' : 'create'} campaign.`
+            err.message ||
+            'Unable to save the campaign.'
     } finally {
         saving.value = false
     }
 }
-
 function goBack() {
     router.push('/admin/marketing/discount-campaigns')
 }
@@ -824,6 +892,107 @@ function goBack() {
                             <span class="muted">
                                 {{ selectedCount }} {{ targetNoun }} selected
                             </span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Campaign frame library selection -->
+            <section class="panel">
+                <div class="panel-heading">
+                    <h2>Campaign product frame</h2>
+                    <p>
+                        Select a frame from the uploaded Campaign Frames library.
+                        The selected frame appears around eligible product images
+                        in the customer storefront.
+                    </p>
+                </div>
+
+                <div class="panel-body">
+                    <div class="visual-enable">
+                        <label class="check">
+                            <input
+                                v-model="form.visual_frame_enabled"
+                                type="checkbox"
+                                @change="clearFieldError('visual_frame_id')"
+                            />
+                            <span>
+                                <strong>Enable campaign frame</strong>
+                                <small>
+                                    Display the selected frame on products included
+                                    in this campaign.
+                                </small>
+                            </span>
+                        </label>
+                    </div>
+
+                    <div
+                        v-if="form.visual_frame_enabled"
+                        class="visual-settings grid"
+                    >
+                        <div class="field">
+                            <label for="visual_frame_id">Campaign frame</label>
+                            <select
+                                id="visual_frame_id"
+                                v-model="form.visual_frame_id"
+                                :class="{ invalid: fieldErrors.visual_frame_id }"
+                                @change="clearFieldError('visual_frame_id')"
+                            >
+                                <option :value="null" disabled>
+                                    Select an uploaded frame
+                                </option>
+                                <option
+                                    v-for="frame in frames"
+                                    :key="frame.id"
+                                    :value="frame.id"
+                                >
+                                    {{ frame.name }}
+                                </option>
+                            </select>
+
+                            <span
+                                v-if="fieldErrors.visual_frame_id"
+                                class="field-error"
+                            >
+                                {{ fieldErrors.visual_frame_id }}
+                            </span>
+
+                            <p v-if="frames.length === 0" class="hint">
+                                No active frames are available. Add and activate
+                                a frame from Marketing → Campaign Frames.
+                            </p>
+                        </div>
+
+                        <div class="field">
+                            <label for="visual_priority">Visual priority</label>
+                            <input
+                                id="visual_priority"
+                                v-model.number="form.visual_priority"
+                                type="number"
+                                min="0"
+                                max="1000000"
+                                step="1"
+                            />
+                            <p class="hint">
+                                Higher priority wins when a product belongs to
+                                multiple campaigns with visual frames.
+                            </p>
+                        </div>
+
+                        <div
+                            v-if="selectedFrame"
+                            class="field full"
+                        >
+                            <label>Selected frame preview</label>
+                            <div class="frame-preview">
+                                <img
+                                    :src="getFrameImageUrl(selectedFrame)"
+                                    :alt="selectedFrame.name"
+                                />
+                            </div>
+                            <p class="hint">
+                                {{ selectedFrame.name }}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -1463,5 +1632,100 @@ button:disabled {
     .secondary-button {
         width: 100%;
     }
+}
+
+/* Campaign visual theme */
+
+.visual-enable {
+    padding: var(--spacing-lg);
+    background: var(--color-submenu-bg);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-lg);
+}
+
+.visual-enable .check {
+    align-items: flex-start;
+}
+
+.visual-enable strong,
+.visual-enable small {
+    display: block;
+}
+
+.visual-enable small {
+    margin-top: 4px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+.visual-settings {
+    margin-top: var(--spacing-xl);
+}
+
+.frame-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-lg);
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-submenu-bg);
+    background-image:
+        linear-gradient(45deg, var(--color-border-light) 25%, transparent 25%),
+        linear-gradient(-45deg, var(--color-border-light) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, var(--color-border-light) 75%),
+        linear-gradient(-45deg, transparent 75%, var(--color-border-light) 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+.frame-preview img {
+    display: block;
+    max-width: 100%;
+    max-height: 240px;
+    object-fit: contain;
+}
+
+
+
+/* Custom campaign frame upload instructions */
+.custom-frame-notice {
+    margin-top: 12px;
+    padding: 16px;
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.custom-frame-notice__heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.custom-frame-notice ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.custom-frame-notice li {
+    margin: 4px 0;
+}
+
+.custom-frame-notice__tip {
+    margin: 12px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid #bfdbfe;
+    font-weight: 500;
 }
 </style>

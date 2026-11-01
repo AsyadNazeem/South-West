@@ -13,6 +13,7 @@ const orderDetails = ref({})
 const loadingDetails = ref({})
 const activeFilter = ref('all')
 const searchText = ref('')
+const copiedTracking = ref('')
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -24,6 +25,13 @@ const FILTERS = [
 // Progress tracker shown on each order. Add any extra status your
 // backend uses to STATUS_STEP (0 = placed ... 3 = delivered).
 const TRACKING_STEPS = ['Placed', 'Processing', 'Shipped', 'Delivered']
+
+const STATUS_MESSAGES = [
+  'Your order has been placed. We will confirm it shortly.',
+  'We are getting your order ready.',
+  'Your order is on its way to you.',
+  'Your order was delivered. Thank you for shopping with us!',
+]
 
 const STATUS_STEP = {
   pending: 0,
@@ -38,6 +46,14 @@ const STATUS_STEP = {
   'out-for-delivery': 2,
   delivered: 3,
   completed: 3,
+}
+
+const PAYMENT_METHOD_LABELS = {
+  cash: 'Cash on Delivery',
+  cod: 'Cash on Delivery',
+  card: 'Credit / Debit Card',
+  koko: 'KOKO',
+  mintpay: 'Mintpay',
 }
 
 const formatAmount = (amount) =>
@@ -67,6 +83,23 @@ const formatStatus = (status) =>
 const statusClass = (status) =>
   String(status || 'unknown').toLowerCase().replaceAll('_', '-')
 
+const paymentMethodLabel = (method) =>
+  PAYMENT_METHOD_LABELS[String(method || '').toLowerCase()] ||
+  formatStatus(method)
+
+// Colour family for a status badge
+function tone(status) {
+  const key = statusClass(status)
+
+  if (['delivered', 'completed', 'paid', 'success'].includes(key)) return 'success'
+  if (['cancelled', 'failed', 'refunded', 'rejected'].includes(key)) return 'danger'
+  if (['shipped', 'dispatched', 'in-transit', 'out-for-delivery'].includes(key)) return 'progress'
+  if (['confirmed', 'processing', 'packed', 'ready'].includes(key)) return 'info'
+  if (['pending', 'placed', 'unpaid', 'partially-paid'].includes(key)) return 'warning'
+
+  return 'neutral'
+}
+
 function orderGroup(order) {
   const status = statusClass(order.status)
 
@@ -77,6 +110,39 @@ function orderGroup(order) {
 
 function currentStep(order) {
   return STATUS_STEP[statusClass(order.status)] ?? 0
+}
+
+function stepState(order, index) {
+  const current = currentStep(order)
+  const last = TRACKING_STEPS.length - 1
+
+  if (index < current || (current === last && index === last)) return 'done'
+  if (index === current) return 'current'
+  return 'upcoming'
+}
+
+function statusMessage(order) {
+  return STATUS_MESSAGES[currentStep(order)] || ''
+}
+
+function deliveryEvents(delivery) {
+  return [
+    {
+      label: 'Dispatched',
+      date: delivery.dispatched_at,
+      done: Boolean(delivery.dispatched_at),
+    },
+    {
+      label: 'Expected delivery',
+      date: delivery.expected_delivery_date,
+      done: Boolean(delivery.delivered_at),
+    },
+    {
+      label: 'Delivered',
+      date: delivery.delivered_at,
+      done: Boolean(delivery.delivered_at),
+    },
+  ]
 }
 
 const filterCounts = computed(() => {
@@ -106,6 +172,21 @@ const filteredOrders = computed(() => {
 function clearFilters() {
   activeFilter.value = 'all'
   searchText.value = ''
+}
+
+async function copyTracking(number) {
+  if (!number) return
+
+  try {
+    await navigator.clipboard.writeText(String(number))
+    copiedTracking.value = String(number)
+
+    setTimeout(() => {
+      if (copiedTracking.value === String(number)) copiedTracking.value = ''
+    }, 1800)
+  } catch {
+    // Clipboard access can be blocked; the number is still visible to copy by hand.
+  }
 }
 
 async function loadOrders() {
@@ -189,48 +270,71 @@ onMounted(loadOrders)
 
 <template>
   <section class="orders-page">
-    <div class="heading">
+
+    <!-- Heading -->
+    <header class="heading">
       <div>
-        <h2 class="section-title">My Orders</h2>
-        <p class="muted">View your orders, payments and delivery tracking.</p>
+        <h2 class="page-title">My Orders</h2>
+        <p class="subtitle">Track your orders, payments and deliveries in one place.</p>
       </div>
 
       <button
-        class="secondary-button"
+        class="refresh-button"
         type="button"
         :disabled="loading"
         @click="loadOrders"
       >
+        <svg
+          class="refresh-icon"
+          :class="{ spinning: loading }"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
         Refresh
       </button>
-    </div>
+    </header>
 
     <!-- Filters -->
     <div v-if="!loading && !errorMessage && orders.length" class="toolbar">
-      <div class="filter-chips" role="group" aria-label="Filter orders by status">
+      <div class="tabs" role="group" aria-label="Filter orders by status">
         <button
           v-for="filter in FILTERS"
           :key="filter.key"
           type="button"
-          class="chip"
+          class="tab"
           :class="{ active: activeFilter === filter.key }"
           :aria-pressed="activeFilter === filter.key"
           @click="activeFilter = filter.key"
         >
           {{ filter.label }}
-          <span class="chip-count">{{ filterCounts[filter.key] }}</span>
+          <span class="tab-count">{{ filterCounts[filter.key] }}</span>
         </button>
       </div>
 
-      <input
-        v-model="searchText"
-        class="order-search"
-        type="search"
-        enterkeyhint="search"
-        autocomplete="off"
-        placeholder="Search by order number"
-        aria-label="Search orders by order number"
-      />
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="10.8" cy="10.8" r="6.5" stroke="currentColor" stroke-width="1.9" />
+          <path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+        </svg>
+
+        <input
+          v-model="searchText"
+          type="search"
+          enterkeyhint="search"
+          autocomplete="off"
+          placeholder="Search by order number"
+          aria-label="Search orders by order number"
+        />
+      </label>
     </div>
 
     <!-- Loading -->
@@ -247,236 +351,375 @@ onMounted(loadOrders)
       </div>
     </div>
 
-    <div v-else-if="errorMessage" class="state error" role="alert">
-      <p>{{ errorMessage }}</p>
+    <!-- Error -->
+    <div v-else-if="errorMessage" class="state state-error" role="alert">
+      <span class="state-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" />
+          <path d="M12 7.5v5.5M12 16.2h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+      </span>
+
+      <h3>Something went wrong</h3>
+      <p class="muted">{{ errorMessage }}</p>
+
       <button class="secondary-button" type="button" @click="loadOrders">
         Try again
       </button>
     </div>
 
-    <div v-else-if="orders.length === 0" class="empty-state">
+    <!-- No orders -->
+    <div v-else-if="orders.length === 0" class="state">
+      <span class="state-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M6 8h12l-1 11H7L6 8Z"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linejoin="round"
+          />
+          <path d="M9 8a3 3 0 0 1 6 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+        </svg>
+      </span>
+
       <h3>No orders yet</h3>
-      <p class="muted">Your online purchases will appear here.</p>
+      <p class="muted">When you place an order, you can follow it here.</p>
+
       <RouterLink to="/" class="primary-button">Start shopping</RouterLink>
     </div>
 
-    <div v-else-if="filteredOrders.length === 0" class="empty-state">
+    <!-- No matches -->
+    <div v-else-if="filteredOrders.length === 0" class="state">
+      <span class="state-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle cx="10.8" cy="10.8" r="6.5" stroke="currentColor" stroke-width="1.8" />
+          <path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        </svg>
+      </span>
+
       <h3>No matching orders</h3>
       <p class="muted">Try a different status or order number.</p>
+
       <button class="secondary-button" type="button" @click="clearFilters">
         Clear filters
       </button>
     </div>
 
-    <div v-else class="order-list">
-      <article
-        v-for="order in filteredOrders"
-        :key="order.id"
-        class="order-card"
-      >
-        <div class="order-header">
-          <div class="order-number">
-            <span class="muted">Order number</span>
-            <strong>{{ order.order_number }}</strong>
-            <span class="muted">Placed on {{ formatDate(order.order_date) }}</span>
-          </div>
+    <!-- Orders -->
+    <template v-else>
 
-          <div class="order-total">
-            <span class="muted">Order total</span>
-            <strong>Rs. {{ formatAmount(order.total_amount) }}</strong>
-          </div>
-        </div>
+      <p class="result-count">
+        Showing {{ filteredOrders.length }} of {{ orders.length }}
+        order{{ orders.length === 1 ? '' : 's' }}
+      </p>
 
-        <div class="badges">
-          <span class="badge" :class="`status-${statusClass(order.status)}`">
-            {{ formatStatus(order.status) }}
-          </span>
+      <div class="order-list">
 
-          <span
-            class="badge"
-            :class="`payment-${statusClass(order.payment_status)}`"
-          >
-            Payment: {{ formatStatus(order.payment_status) }}
-          </span>
-        </div>
-
-        <!-- Progress at a glance (not shown for cancelled orders) -->
-        <ol
-          v-if="orderGroup(order) !== 'cancelled'"
-          class="tracker"
-          aria-label="Order progress"
+        <article
+          v-for="order in filteredOrders"
+          :key="order.id"
+          class="order-card"
+          :class="`group-${orderGroup(order)}`"
         >
-          <li
-            v-for="(label, index) in TRACKING_STEPS"
-            :key="label"
-            class="tracker-step"
-            :class="{
-              reached: index <= currentStep(order),
-              current: index === currentStep(order) && index < TRACKING_STEPS.length - 1,
-            }"
-            :aria-current="
-              index === currentStep(order) ? 'step' : undefined
-            "
-          >
-            <span class="tracker-dot" aria-hidden="true"></span>
-            <span class="tracker-label">{{ label }}</span>
-          </li>
-        </ol>
 
-        <div class="order-summary">
-          <span>Subtotal: Rs. {{ formatAmount(order.subtotal) }}</span>
-          <span>Shipping: Rs. {{ formatAmount(order.shipping_amount) }}</span>
-        </div>
+          <!-- Top: order number, date and badges -->
+          <header class="order-top">
 
-        <button
-          type="button"
-          class="details-button"
-          :aria-expanded="expandedOrderId === order.id"
-          :aria-controls="`order-details-${order.id}`"
-          @click="toggleDetails(order)"
-        >
-          <span>
-            {{ expandedOrderId === order.id ? 'Hide details' : 'View order & tracking details' }}
-          </span>
-
-          <svg class="details-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="m6 9 6 6 6-6"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-
-        <div
-          v-if="expandedOrderId === order.id"
-          :id="`order-details-${order.id}`"
-          class="details"
-        >
-          <p v-if="loadingDetails[order.id]" class="muted">
-            Loading order details…
-          </p>
-
-          <p v-else-if="orderDetails[order.id]?._error" class="error">
-            {{ orderDetails[order.id]._error }}
-          </p>
-
-          <template v-else-if="orderDetails[order.id]">
-            <h3>Items</h3>
-
-            <div
-              v-if="!(orderDetails[order.id].items || []).length"
-              class="muted"
-            >
-              No item details available.
+            <div class="order-id">
+              <span class="eyebrow">Order</span>
+              <h3 class="order-number">{{ order.order_number }}</h3>
+              <span class="muted">Placed on {{ formatDate(order.order_date) }}</span>
             </div>
 
-            <div
-              v-for="item in orderDetails[order.id].items || []"
-              :key="item.id"
-              class="detail-row"
-            >
-              <div>
-<RouterLink
-  v-if="item.item?.slug && item.item?.public_id"
-  :to="`/product/${item.item.slug}-${item.item.public_id}`"
-  class="order-product-link"
->
-  {{ item.item.item_name || 'Product' }}
-</RouterLink>
+            <div class="badges">
+              <span class="badge" :class="`tone-${tone(order.status)}`">
+                {{ formatStatus(order.status) }}
+              </span>
 
-<strong v-else>
-  {{ item.item?.item_name || 'Product' }}
-</strong>
-                <div class="muted">
-                  {{ item.item?.item_code || '' }}
-                  · Qty: {{ item.quantity }}
+              <span class="badge badge-soft" :class="`tone-${tone(order.payment_status)}`">
+                Payment: {{ formatStatus(order.payment_status) }}
+              </span>
+            </div>
+
+          </header>
+
+          <!-- Progress -->
+          <div v-if="orderGroup(order) !== 'cancelled'" class="progress">
+
+            <ol class="tracker" aria-label="Order progress">
+              <li
+                v-for="(label, index) in TRACKING_STEPS"
+                :key="label"
+                class="tracker-step"
+                :class="[
+                  stepState(order, index),
+                  { 'line-done': index <= currentStep(order) }
+                ]"
+                :aria-current="stepState(order, index) === 'current' ? 'step' : undefined"
+              >
+                <span class="tracker-dot" aria-hidden="true">
+                  <svg
+                    v-if="stepState(order, index) === 'done'"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <path
+                      d="m5.5 12.5 4.2 4.2L18.5 8"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+
+                <span class="tracker-label">{{ label }}</span>
+              </li>
+            </ol>
+
+            <p class="status-message">{{ statusMessage(order) }}</p>
+
+          </div>
+
+          <p v-else class="cancel-note">
+            This order was cancelled.
+          </p>
+
+          <!-- Bottom: total and details button -->
+          <footer class="order-bottom">
+
+            <div class="order-total">
+              <span class="muted">Order total</span>
+              <strong>Rs. {{ formatAmount(order.total_amount) }}</strong>
+            </div>
+
+            <button
+              type="button"
+              class="details-button"
+              :aria-expanded="expandedOrderId === order.id"
+              :aria-controls="`order-details-${order.id}`"
+              @click="toggleDetails(order)"
+            >
+              <span>
+                {{ expandedOrderId === order.id ? 'Hide details' : 'View details' }}
+              </span>
+
+              <svg class="details-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="m6 9 6 6 6-6"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+
+          </footer>
+
+          <!-- Details -->
+          <div
+            v-if="expandedOrderId === order.id"
+            :id="`order-details-${order.id}`"
+            class="details"
+          >
+
+            <div v-if="loadingDetails[order.id]" class="details-loading">
+              <div class="skeleton-line short"></div>
+              <div class="skeleton-line"></div>
+              <div class="skeleton-line wide"></div>
+            </div>
+
+            <p v-else-if="orderDetails[order.id]?._error" class="error">
+              {{ orderDetails[order.id]._error }}
+            </p>
+
+            <template v-else-if="orderDetails[order.id]">
+
+              <!-- Items -->
+              <section class="detail-section">
+                <h4>Items in this order</h4>
+
+                <p
+                  v-if="!(orderDetails[order.id].items || []).length"
+                  class="muted"
+                >
+                  No item details available.
+                </p>
+
+                <ul v-else class="item-list">
+                  <li
+                    v-for="item in orderDetails[order.id].items"
+                    :key="item.id"
+                    class="item-row"
+                  >
+                    <span class="item-thumb" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M6 8h12l-1 11H7L6 8Z"
+                          stroke="currentColor"
+                          stroke-width="1.6"
+                          stroke-linejoin="round"
+                        />
+                        <path d="M9 8a3 3 0 0 1 6 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                      </svg>
+                    </span>
+
+                    <span class="item-info">
+                      <RouterLink
+                        v-if="item.item?.slug && item.item?.public_id"
+                        :to="`/product/${item.item.slug}-${item.item.public_id}`"
+                        class="item-name link"
+                      >
+                        {{ item.item.item_name || 'Product' }}
+                      </RouterLink>
+
+                      <strong v-else class="item-name">
+                        {{ item.item?.item_name || 'Product' }}
+                      </strong>
+
+                      <span class="muted">
+                        <template v-if="item.item?.item_code">{{ item.item.item_code }} · </template>
+                        Qty {{ item.quantity }}
+                      </span>
+                    </span>
+
+                    <span class="item-price">Rs. {{ formatAmount(item.line_total) }}</span>
+                  </li>
+                </ul>
+
+                <!-- Totals -->
+                <dl class="totals">
+                  <div>
+                    <dt>Subtotal</dt>
+                    <dd>Rs. {{ formatAmount(order.subtotal) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Shipping</dt>
+                    <dd>Rs. {{ formatAmount(order.shipping_amount) }}</dd>
+                  </div>
+                  <div class="grand-total">
+                    <dt>Total</dt>
+                    <dd>Rs. {{ formatAmount(order.total_amount) }}</dd>
+                  </div>
+                </dl>
+              </section>
+
+              <!-- Payment -->
+              <section class="detail-section">
+                <h4>Payment</h4>
+
+                <p
+                  v-if="!(orderDetails[order.id].payments || []).length"
+                  class="muted"
+                >
+                  No payment records available yet.
+                </p>
+
+                <div
+                  v-for="(payment, index) in orderDetails[order.id].payments || []"
+                  :key="payment.id || index"
+                  class="info-card"
+                >
+                  <div class="info-card-head">
+                    <strong>{{ paymentMethodLabel(payment.payment_method) }}</strong>
+                    <span class="badge badge-soft" :class="`tone-${tone(payment.payment_status)}`">
+                      {{ formatStatus(payment.payment_status) }}
+                    </span>
+                  </div>
+
+                  <dl class="info-grid">
+                    <div>
+                      <dt>Amount</dt>
+                      <dd>Rs. {{ formatAmount(payment.amount) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Payment date</dt>
+                      <dd>{{ formatDate(payment.payment_date) }}</dd>
+                    </div>
+                    <div class="wide">
+                      <dt>Reference</dt>
+                      <dd>{{ payment.transaction_reference || 'Not available' }}</dd>
+                    </div>
+                  </dl>
+
+                  <p
+                    v-if="['cash', 'cod'].includes(String(payment.payment_method).toLowerCase()) &&
+                      tone(payment.payment_status) !== 'success'"
+                    class="info-note"
+                  >
+                    Please pay the delivery person when your order arrives.
+                  </p>
                 </div>
-              </div>
-              <span>Rs. {{ formatAmount(item.line_total) }}</span>
-            </div>
+              </section>
 
-            <h3>Payment details</h3>
+              <!-- Delivery -->
+              <section class="detail-section">
+                <h4>Delivery tracking</h4>
 
-            <div
-              v-if="!(orderDetails[order.id].payments || []).length"
-              class="muted"
-            >
-              No payment records available yet.
-            </div>
+                <p
+                  v-if="!(orderDetails[order.id].deliveries || []).length"
+                  class="muted"
+                >
+                  Delivery details are not available yet. We will update this
+                  once your order is ready to ship.
+                </p>
 
-            <div
-              v-for="(payment, index) in orderDetails[order.id].payments || []"
-              :key="payment.id || index"
-              class="information-block"
-            >
-              <div class="detail-row">
-                <span>Method</span>
-                <strong>{{ formatStatus(payment.payment_method) }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>Payment status</span>
-                <strong>{{ formatStatus(payment.payment_status) }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>Amount</span>
-                <strong>Rs. {{ formatAmount(payment.amount) }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>Transaction reference</span>
-                <strong>{{ payment.transaction_reference || 'Not available' }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>Payment date</span>
-                <strong>{{ formatDate(payment.payment_date) }}</strong>
-              </div>
-            </div>
+                <div
+                  v-for="(delivery, index) in orderDetails[order.id].deliveries || []"
+                  :key="delivery.id || delivery.delivery_reference || index"
+                  class="info-card"
+                >
+                  <div class="info-card-head">
+                    <strong>{{ delivery.courier_name || 'Courier not assigned yet' }}</strong>
+                    <span class="badge badge-soft" :class="`tone-${tone(delivery.delivery_status)}`">
+                      {{ formatStatus(delivery.delivery_status) }}
+                    </span>
+                  </div>
 
-            <h3>Delivery tracking</h3>
+                  <div class="tracking-row">
+                    <div>
+                      <span class="tracking-label">Tracking number</span>
+                      <strong class="tracking-number">
+                        {{ delivery.tracking_number || 'Not available yet' }}
+                      </strong>
+                    </div>
 
-            <div
-              v-if="!(orderDetails[order.id].deliveries || []).length"
-              class="muted"
-            >
-              Delivery details are not available yet.
-            </div>
+                    <button
+                      v-if="delivery.tracking_number"
+                      type="button"
+                      class="copy-button"
+                      @click="copyTracking(delivery.tracking_number)"
+                    >
+                      {{ copiedTracking === String(delivery.tracking_number) ? 'Copied ✓' : 'Copy' }}
+                    </button>
+                  </div>
 
-            <div
-              v-for="(delivery, index) in orderDetails[order.id].deliveries || []"
-              :key="delivery.id || delivery.delivery_reference || index"
-              class="information-block"
-            >
-              <div class="detail-row">
-                <span>Delivery status</span>
-                <strong>{{ formatStatus(delivery.delivery_status) }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>Courier</span>
-                <strong>{{ delivery.courier_name || 'Not assigned yet' }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>Tracking number</span>
-                <strong>{{ delivery.tracking_number || 'Not available yet' }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>Expected delivery</span>
-                <strong>{{ formatDate(delivery.expected_delivery_date) }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>Dispatched</span>
-                <strong>{{ formatDate(delivery.dispatched_at) }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>Delivered</span>
-                <strong>{{ formatDate(delivery.delivered_at) }}</strong>
-              </div>
-            </div>
-          </template>
-        </div>
-      </article>
-    </div>
+                  <ol class="timeline">
+                    <li
+                      v-for="event in deliveryEvents(delivery)"
+                      :key="event.label"
+                      class="timeline-item"
+                      :class="{ done: event.done }"
+                    >
+                      <span class="timeline-dot" aria-hidden="true"></span>
+                      <span class="timeline-label">{{ event.label }}</span>
+                      <span class="timeline-date">{{ formatDate(event.date) }}</span>
+                    </li>
+                  </ol>
+                </div>
+              </section>
+
+            </template>
+
+          </div>
+
+        </article>
+
+      </div>
+
+    </template>
+
   </section>
 </template>
 
@@ -486,152 +729,277 @@ onMounted(loadOrders)
   color: var(--color-text);
 }
 
-.heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: var(--space-5);
-}
-
-.section-title {
-  margin: 0 0 6px;
-  color: var(--color-primary);
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-bold);
-}
-
-.heading .muted {
-  margin: 0;
-}
-
 .muted {
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
 
-/* ---------- Filters ---------- */
+/* =========================
+   Heading
+   ========================= */
+
+.heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: var(--space-5);
+}
+
+.page-title {
+  margin: 0 0 4px;
+  color: var(--color-text);
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-lg, 20px);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.refresh-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.refresh-button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.refresh-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.refresh-icon.spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+/* =========================
+   Toolbar
+   ========================= */
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 
-.filter-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
+.tabs {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 4px;
+  overflow-x: auto;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-muted);
+  scrollbar-width: none;
 }
 
-.chip {
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-height: 36px;
   padding: 0 14px;
-  border: 1px solid var(--color-border);
+  border: 0;
   border-radius: var(--radius-pill);
-  background: var(--color-surface);
+  background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
-  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.chip-count {
+.tab:hover:not(.active) {
+  color: var(--color-text);
+}
+
+.tab-count {
   min-width: 20px;
   padding: 1px 6px;
   border-radius: var(--radius-pill);
-  background: var(--color-surface-muted);
+  background: var(--color-surface);
   font-size: 11px;
   line-height: 1.5;
   text-align: center;
 }
 
-.chip.active {
-  border-color: var(--color-primary);
+.tab.active {
   background: var(--color-primary);
   color: var(--color-on-primary);
+  box-shadow: var(--shadow-sm);
 }
 
-.chip.active .chip-count {
-  background: rgb(255 255 255 / 20%);
+.tab.active .tab-count {
+  background: rgb(255 255 255 / 22%);
   color: var(--color-on-primary);
 }
 
-.order-search {
-  box-sizing: border-box;
-  flex: 0 1 260px;
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 280px;
   min-width: 0;
-  height: 40px;
+  height: 42px;
   padding: 0 14px;
-  border: var(--border-width-field, 1px) solid var(--color-border);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.order-search::placeholder {
+.search svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.search:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+}
+
+.search input::placeholder {
   color: var(--color-text-muted);
 }
 
-.order-search:focus {
-  outline: none;
-  border-color: var(--color-focus, var(--color-primary));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-focus-outline) 40%, transparent);
+.result-count {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
 }
 
-/* ---------- States ---------- */
-.state,
-.empty-state {
-  padding: 36px 16px;
-  text-align: center;
+/* =========================
+   States
+   ========================= */
+
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 44px 20px;
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface-muted);
+  text-align: center;
 }
 
-.empty-state h3 {
-  margin: 0 0 6px;
-  color: var(--color-text);
+.state h3 {
+  margin: 8px 0 0;
   font-family: var(--font-family-display);
   font-size: var(--font-size-md);
 }
 
-.empty-state .muted {
-  margin: 0 0 var(--space-4);
+.state .muted {
+  margin: 0 0 var(--space-3);
+}
+
+.state-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+.state-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.state-error .state-icon {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
 }
 
 .error {
-  color: var(--color-danger, #b42318);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
 
-/* ---------- Order cards ---------- */
+/* =========================
+   Order cards
+   ========================= */
+
 .order-list {
   display: grid;
-  gap: 18px;
+  gap: var(--space-4);
 }
 
 .order-card {
+  position: relative;
   min-width: 0;
-  padding: 20px;
+  padding: 22px;
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+/* Coloured edge shows the state of the order at a glance */
+.order-card::before {
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 0;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--color-primary);
+  content: '';
+}
+
+.order-card.group-delivered::before {
+  background: var(--color-success, #16a34a);
+}
+
+.order-card.group-cancelled::before {
+  background: var(--color-danger);
 }
 
 @media (hover: hover) {
@@ -641,57 +1009,56 @@ onMounted(loadOrders)
   }
 }
 
-.order-header {
+/* ---------- Top ---------- */
+
+.order-top {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
   flex-wrap: wrap;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--color-border-soft);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
 }
 
-.order-number,
-.order-total {
+.order-id {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
 }
 
-.order-number strong {
-  color: var(--color-primary);
+.eyebrow {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.order-number {
+  margin: 0;
+  color: var(--color-text);
   font-family: var(--font-family-display);
   font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
   overflow-wrap: anywhere;
 }
 
-.order-total {
-  text-align: right;
-}
+/* ---------- Badges ---------- */
 
-.order-total strong {
-  color: var(--color-text);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-bold);
-}
-
-/* ---------- Status badges ---------- */
 .badges {
   display: flex;
-  gap: 8px;
   flex-wrap: wrap;
-  margin-top: 16px;
+  gap: 8px;
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: var(--color-store-bg);
-  color: var(--color-text-muted);
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: var(--font-weight-semibold);
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
@@ -704,46 +1071,52 @@ onMounted(loadOrders)
   content: '';
 }
 
-/* Waiting */
-.status-pending,
-.payment-pending {
-  color: #92400e;
+.tone-neutral {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.tone-warning {
   background: #fef3c7;
+  color: #92400e;
 }
 
-/* Being prepared */
-.status-confirmed,
-.status-processing {
-  color: var(--color-primary);
+.tone-info {
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
 }
 
-/* On its way */
-.status-shipped {
-  color: var(--color-on-primary);
+.tone-progress {
   background: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
-/* Done */
-.status-delivered,
-.payment-paid {
-  color: #166534;
-  background: #dcfce7;
+.tone-success {
+  background: var(--color-success-bg, #dcfce7);
+  color: var(--color-success, #166534);
 }
 
-/* Problem */
-.status-cancelled,
-.payment-refunded,
-.payment-failed {
-  color: #991b1b;
-  background: #fee2e2;
+.tone-danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
 }
 
-/* ---------- Progress tracker ---------- */
+/* The payment badge is quieter than the main status badge */
+.badge-soft.tone-progress {
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+/* ---------- Progress ---------- */
+
+.progress {
+  margin-top: 26px;
+}
+
 .tracker {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 22px 0 6px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -754,22 +1127,427 @@ onMounted(loadOrders)
   justify-items: center;
   gap: 8px;
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-align: center;
 }
 
-/* Line from the previous step to this one */
+/* Line coming from the previous step */
 .tracker-step:not(:first-child)::before {
   position: absolute;
-  top: 7px;
+  top: 12px;
   right: 50%;
   width: 100%;
-  height: 2px;
-  background: var(--color-border);
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-border-soft);
   content: '';
 }
 
+.tracker-step.line-done::before {
+  background: var(--color-primary);
+}
+
 .tracker-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  box-sizing: border-box;
+  border: 2px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-on-primary);
+}
+
+.tracker-dot svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tracker-step.done .tracker-dot {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.tracker-step.done .tracker-label {
+  color: var(--color-text);
+}
+
+.tracker-step.current .tracker-dot {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.tracker-step.current .tracker-dot::after {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  content: '';
+}
+
+.tracker-step.current .tracker-label {
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+}
+
+.status-message {
+  margin: 16px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.cancel-note {
+  margin: 20px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ---------- Bottom ---------- */
+
+.order-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.order-total {
+  display: grid;
+  gap: 2px;
+}
+
+.order-total strong {
+  color: var(--color-text);
+  font-size: var(--font-size-lg, 18px);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.details-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.details-button:hover,
+.details-button[aria-expanded='true'] {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.details-chevron {
+  width: 16px;
+  height: 16px;
+  transition: transform var(--transition-fast);
+}
+
+.details-button[aria-expanded='true'] .details-chevron {
+  transform: rotate(180deg);
+}
+
+/* =========================
+   Expanded details
+   ========================= */
+
+.details {
+  display: grid;
+  gap: var(--space-5);
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border-soft);
+  min-width: 0;
+}
+
+.details-loading {
+  display: grid;
+  gap: 12px;
+}
+
+.detail-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.detail-section h4::after {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border-soft);
+  content: '';
+}
+
+/* ---------- Items ---------- */
+
+.item-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.item-thumb {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.item-thumb svg {
+  width: 22px;
+  height: 22px;
+}
+
+.item-info {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.item-name {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.item-name.link {
+  text-decoration: none;
+}
+
+.item-name.link:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.item-price {
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.totals {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0 auto;
+  max-width: 320px;
+}
+
+.totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: var(--font-size-sm);
+}
+
+.totals dt {
+  color: var(--color-text-muted);
+}
+
+.totals dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.totals .grand-total {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border-soft);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.totals .grand-total dt {
+  color: var(--color-text);
+}
+
+/* ---------- Payment / delivery cards ---------- */
+
+.info-card {
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.info-card:last-child {
+  margin-bottom: 0;
+}
+
+.info-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+}
+
+.info-card-head strong {
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  margin: 0;
+}
+
+.info-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.info-grid dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.info-grid dd {
+  margin: 2px 0 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.info-note {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--color-primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+/* ---------- Tracking number ---------- */
+
+.tracking-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.tracking-label {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.tracking-number {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.copy-button {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  transition: border-color var(--transition-fast);
+}
+
+.copy-button:hover {
+  border-color: var(--color-primary);
+}
+
+/* ---------- Delivery timeline ---------- */
+
+.timeline {
+  display: grid;
+  gap: 0;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Vertical line between the dots */
+.timeline-item:not(:last-child)::before {
+  position: absolute;
+  top: 24px;
+  bottom: -8px;
+  left: 7px;
+  width: 2px;
+  background: var(--color-border-soft);
+  content: '';
+}
+
+.timeline-dot {
   position: relative;
   z-index: 1;
   width: 16px;
@@ -780,90 +1558,28 @@ onMounted(loadOrders)
   background: var(--color-surface);
 }
 
-.tracker-step.reached {
+.timeline-item.done {
   color: var(--color-text);
 }
 
-.tracker-step.reached::before {
-  background: var(--color-primary);
-}
-
-.tracker-step.reached .tracker-dot {
+.timeline-item.done .timeline-dot {
   border-color: var(--color-primary);
   background: var(--color-primary);
 }
 
-.tracker-step.current .tracker-dot {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 20%, transparent);
-}
-
-.tracker-step.current .tracker-label {
-  color: var(--color-primary);
+.timeline-label {
   font-weight: var(--font-weight-semibold);
 }
 
-.order-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  margin-top: 16px;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+.timeline-date {
+  font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Buttons ---------- */
-.details-button,
-.secondary-button {
-  padding: 9px 13px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  font: inherit;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
-}
+/* =========================
+   Buttons
+   ========================= */
 
-.secondary-button {
-  flex-shrink: 0;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-}
-
-.details-button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: 18px;
-  width: 100%;
-  min-height: 44px;
-  color: var(--color-primary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  text-align: left;
-}
-
-.details-chevron {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  transition: transform var(--transition-fast);
-}
-
-.details-button[aria-expanded='true'] .details-chevron {
-  transform: rotate(180deg);
-}
-
-.details-button:hover,
-.secondary-button:hover {
-  border-color: var(--color-text-muted);
-}
-
-.secondary-button:hover {
-  color: var(--color-primary);
-}
-
+.secondary-button,
 .primary-button {
   display: inline-flex;
   align-items: center;
@@ -871,12 +1587,29 @@ onMounted(loadOrders)
   min-height: 44px;
   padding: 0 22px;
   border-radius: var(--radius-md);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
+  cursor: pointer;
+  font: inherit;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   text-decoration: none;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.secondary-button {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.secondary-button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.primary-button {
+  border: 1px solid transparent;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 .primary-button:hover {
@@ -888,71 +1621,21 @@ button:disabled {
   opacity: 0.6;
 }
 
-.chip:focus-visible,
+.tab:focus-visible,
+.refresh-button:focus-visible,
 .details-button:focus-visible,
+.copy-button:focus-visible,
 .secondary-button:focus-visible,
-.primary-button:focus-visible {
+.primary-button:focus-visible,
+.item-name.link:focus-visible {
   outline: 2px solid var(--color-focus-outline);
   outline-offset: 2px;
 }
 
-/* ---------- Expanded details ---------- */
-.details {
-  margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid var(--color-border-soft);
-  min-width: 0;
-}
+/* =========================
+   Loading skeleton
+   ========================= */
 
-.details h3 {
-  margin: 24px 0 12px;
-  color: var(--color-primary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.details h3:first-child {
-  margin-top: 0;
-}
-
-.detail-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--color-border-soft);
-  font-size: var(--font-size-sm);
-}
-
-.detail-row > * {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.detail-row > :last-child {
-  text-align: right;
-}
-
-.detail-row > span:first-child:not(:only-child) {
-  color: var(--color-text-muted);
-}
-
-.information-block {
-  margin-bottom: 14px;
-  padding: 4px 14px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-}
-
-.information-block .detail-row:last-child {
-  border-bottom: 0;
-}
-
-/* ---------- Loading skeleton ---------- */
 .order-card.skeleton {
   display: grid;
   gap: 12px;
@@ -970,16 +1653,7 @@ button:disabled {
 }
 
 .skeleton-line.wide {
-  height: 36px;
-}
-
-.order-product-link {
-  color: inherit;
-  text-decoration: none;
-}
-
-.order-product-link:hover {
-  text-decoration: underline;
+  height: 40px;
 }
 
 @keyframes pulse {
@@ -992,84 +1666,114 @@ button:disabled {
   }
 }
 
-/* ---------- Touch devices ---------- */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =========================
+   Touch devices
+   ========================= */
+
 @media (pointer: coarse) {
-  .chip,
-  .secondary-button {
+  .tab,
+  .refresh-button,
+  .details-button {
     min-height: 44px;
   }
 
-  .order-search {
-    height: 44px;
+  .search {
+    height: 46px;
+  }
+
+  .search input {
     font-size: 16px; /* stops iOS zooming into the field */
   }
 }
 
-/* ---------- Phones ---------- */
+/* =========================
+   Phones
+   ========================= */
+
 @media (max-width: 600px) {
-  .order-total {
-    text-align: left;
-  }
-
   .order-card {
-    padding: 14px;
+    padding: 16px 14px 16px 18px;
   }
 
-  /* Chips scroll sideways in one row instead of wrapping */
   .toolbar {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .filter-chips {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-  }
-
-  .filter-chips::-webkit-scrollbar {
-    display: none;
-  }
-
-  .order-search {
+  .search {
     flex-basis: auto;
     width: 100%;
   }
+
+  .order-bottom {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .details-button {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .totals {
+    max-width: none;
+  }
 }
 
-/* ---------- Small phones and fold cover screens ---------- */
+/* =========================
+   Small phones and fold cover screens
+   ========================= */
+
 @media (max-width: 420px) {
   .heading {
     flex-wrap: wrap;
   }
 
-  /* Label above value so long references get the full width */
-  .information-block .detail-row {
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .information-block .detail-row > :last-child {
-    text-align: left;
+  .refresh-button {
+    width: 100%;
+    justify-content: center;
   }
 
   .tracker-step {
     font-size: 10px;
   }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tracking-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .timeline-item {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .timeline-date {
+    grid-column: 2;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skeleton-line {
+  .skeleton-line,
+  .refresh-icon.spinning {
     animation: none;
   }
 
-  .chip,
   .order-card,
+  .tab,
   .details-chevron,
   .details-button,
-  .secondary-button,
-  .order-search {
+  .search,
+  .copy-button {
     transition: none;
   }
 }

@@ -7,6 +7,7 @@ const {
     DiscountCampaignItem,
     DiscountCampaignCategory,
     DiscountCampaignBrand,
+    CampaignFrame,
     Item,
     Category,
     Brand,
@@ -14,6 +15,11 @@ const {
 } = require('../models');
 
 const { recordAuditLog } = require('../services/auditLogService');
+const {
+    buildFileUrl,
+    removeStoredFile,
+} = require('../utils/fileStorage');
+
 
 const ALLOWED_TARGET_TYPES = [
     'all_products',
@@ -182,7 +188,78 @@ const validateCampaignInput = (body, { partial = false } = {}) => {
         errors.push('brand_ids must contain unique positive IDs for brand targeting');
     }
 
+    if (
+        body.visual_frame_enabled !== undefined &&
+        typeof body.visual_frame_enabled !== 'boolean'
+    ) {
+        errors.push('visual_frame_enabled must be a boolean');
+    }
+
+    if (
+        body.visual_frame_id !== undefined &&
+        body.visual_frame_id !== null &&
+        !isPositiveId(body.visual_frame_id)
+    ) {
+        errors.push('visual_frame_id must be a positive ID or null');
+    }
+
+    if (
+        body.visual_frame_enabled === true &&
+        !isPositiveId(body.visual_frame_id)
+    ) {
+        errors.push('Select an active campaign frame when frame display is enabled');
+    }
+
+    if (
+        body.visual_priority !== undefined &&
+        (
+            !Number.isInteger(Number(body.visual_priority)) ||
+            Number(body.visual_priority) < 0 ||
+            Number(body.visual_priority) > 1000000
+        )
+    ) {
+        errors.push('visual_priority must be a non-negative integer');
+    }
+
     return errors;
+};
+
+
+const validateVisualFrame = async (body, transaction, existingCampaign = null) => {
+    const enabled = body.visual_frame_enabled !== undefined
+        ? body.visual_frame_enabled
+        : Boolean(existingCampaign?.visual_frame_enabled);
+
+    const frameId = body.visual_frame_id !== undefined
+        ? body.visual_frame_id
+        : existingCampaign?.visual_frame_id;
+
+    if (!enabled) {
+        return null;
+    }
+
+    if (!isPositiveId(frameId)) {
+        const error = new Error('Select a campaign frame before enabling frame display');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const frame = await CampaignFrame.findOne({
+        where: {
+            id: frameId,
+            is_active: true,
+        },
+        transaction,
+        lock: transaction.LOCK.SHARE,
+    });
+
+    if (!frame) {
+        const error = new Error('The selected campaign frame does not exist or is inactive');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    return frame.id;
 };
 
 const validateTargetsExist = async (body, transaction) => {
@@ -300,6 +377,11 @@ const getCampaignIncludes = () => [
         attributes: ['id', 'email'],
         required: false,
     },
+    {
+        model: CampaignFrame,
+        as: 'visualFrame',
+        required: false,
+    },
 ];
 
 // GET /api/discount-campaigns
@@ -366,6 +448,7 @@ exports.createCampaign = async (req, res) => {
 
     try {
         await validateTargetsExist(req.body, transaction);
+        const visualFrameId = await validateVisualFrame(req.body, transaction);
 
         const campaign = await DiscountCampaign.create({
             campaign_name: req.body.campaign_name.trim(),
@@ -378,6 +461,11 @@ exports.createCampaign = async (req, res) => {
             discount_type: req.body.discount_type,
             discount_value: req.body.discount_value,
             allow_promo_code: req.body.allow_promo_code ?? false,
+            visual_frame_id: req.body.visual_frame_enabled
+                ? visualFrameId
+                : null,
+            visual_frame_enabled: req.body.visual_frame_enabled ?? false,
+            visual_priority: Number(req.body.visual_priority ?? 0),
             start_date: req.body.start_date,
             end_date: req.body.end_date,
             status: req.body.status ?? 'draft',
@@ -454,6 +542,11 @@ exports.updateCampaign = async (req, res) => {
         }
 
         await validateTargetsExist(req.body, transaction);
+        const visualFrameId = await validateVisualFrame(
+            req.body,
+            transaction,
+            campaign
+        );
 
         await campaign.update({
             campaign_name: req.body.campaign_name.trim(),
@@ -466,6 +559,13 @@ exports.updateCampaign = async (req, res) => {
             discount_type: req.body.discount_type,
             discount_value: req.body.discount_value,
             allow_promo_code: req.body.allow_promo_code ?? false,
+            visual_frame_id: visualFrameId,
+            visual_frame_enabled: req.body.visual_frame_enabled !== undefined
+                ? req.body.visual_frame_enabled
+                : campaign.visual_frame_enabled,
+            visual_priority: req.body.visual_priority !== undefined
+                ? Number(req.body.visual_priority)
+                : campaign.visual_priority,
             start_date: req.body.start_date,
             end_date: req.body.end_date,
             status: req.body.status ?? campaign.status,
@@ -519,6 +619,89 @@ exports.updateCampaign = async (req, res) => {
         return res.status(500).json({
             message: 'Failed to update discount campaign',
         });
+    }
+};
+
+
+// POST /api/discount-campaigns/:id/visual-frame
+exports.uploadCampaignVisualFrame = async (req, res) => {
+    let uploadSucceeded = false;
+
+    try {
+        if (!isPositiveId(req.params.id)) {
+            return res.status(400).json({ message: 'Invalid campaign ID' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ message: 'A campaign frame file is required' });
+        }
+
+        const newPath = req.file.relativePath;
+
+        const result = await sequelize.transaction(async (transaction) => {
+            const campaign = await DiscountCampaign.findByPk(req.params.id, {
+                transaction,
+                lock: transaction.LOCK.UPDATE,
+            });
+
+            if (!campaign) {
+                const error = new Error('Discount campaign not found');
+                error.statusCode = 404;
+                throw error;
+            }
+
+            const oldPath = campaign.visual_frame_path;
+
+            await campaign.update({
+                visual_theme: 'custom',
+                visual_frame_path: newPath,
+                visual_frame_enabled: true,
+            }, { transaction });
+
+            return { campaign, oldPath };
+        });
+
+        uploadSucceeded = true;
+
+        if (
+            result.oldPath &&
+            result.oldPath !== newPath &&
+            !/^https?:\/\//i.test(result.oldPath)
+        ) {
+            await removeStoredFile(result.oldPath);
+        }
+
+        await getAudit(
+            req,
+            'DISCOUNT_CAMPAIGN_FRAME_UPLOADED',
+            result.campaign.id,
+            `Uploaded visual frame for campaign: ${result.campaign.campaign_name}`
+        );
+
+        return res.status(200).json({
+            message: 'Campaign visual frame uploaded successfully',
+            data: {
+                campaign_id: result.campaign.id,
+                visual_theme: result.campaign.visual_theme,
+                visual_frame_enabled: result.campaign.visual_frame_enabled,
+                visual_frame_path: result.campaign.visual_frame_path,
+                visual_frame_url: buildFileUrl(result.campaign.visual_frame_path),
+            },
+        });
+    } catch (error) {
+        console.error('Upload campaign visual frame error:', error);
+
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({ message: error.message });
+        }
+
+        return res.status(500).json({
+            message: 'Failed to upload campaign visual frame',
+        });
+    } finally {
+        if (!uploadSucceeded && req.file?.relativePath) {
+            await removeStoredFile(req.file.relativePath);
+        }
     }
 };
 

@@ -2,6 +2,7 @@
 import {computed, onMounted, onUnmounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import api from '../services/api.js'
+import SeasonalDecorations from '../components/SeasonalDecorations.vue'
 
 const router = useRouter()
 const searchText = ref('')
@@ -30,6 +31,10 @@ const customerName = computed(() => {
     customer.value.last_name,
   ].filter(Boolean).join(' ') || 'My Account'
 })
+
+const customerInitial = computed(() =>
+  customerName.value.trim().charAt(0).toUpperCase() || 'A'
+)
 
 function syncCustomer() {
   token.value = sessionStorage.getItem('customerToken')
@@ -359,6 +364,8 @@ onUnmounted(() => {
 
 <template>
   <header class="site-header">
+
+    <!-- Utility strip -->
     <div class="top-strip">
       <div class="header-container top-strip-inner">
         <span class="welcome">Welcome to South West</span>
@@ -387,6 +394,8 @@ onUnmounted(() => {
                 @click="toggleMenu"
                 @keydown.esc="menuOpen = false"
             >
+              <span class="account-avatar" aria-hidden="true">{{ customerInitial }}</span>
+
               <span class="account-label">{{ customerName }}</span>
 
               <span class="chevron" aria-hidden="true">
@@ -429,7 +438,7 @@ onUnmounted(() => {
                   type="button"
                   class="logout-item"
                   role="menuitem"
-@click="confirmLogout"
+                  @click="confirmLogout"
               >
                 Logout
               </button>
@@ -445,124 +454,127 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- Main header -->
     <div class="main-header">
       <div class="header-container main-header-inner">
-        <RouterLink to="/" class="brand" aria-label="South West home">
-          <span class="brand-mark">S</span>
-          <span class="brand-name">SOUTH<span>WEST</span></span>
-        </RouterLink>
 
-
-<form
-ref="searchFormRef"
-  class="search-form"
-  role="search"
-  @submit.prevent="searchProducts"
-  @keydown="handleSearchKeydown"
->
-  <input
-    v-model="searchText"
-    type="search"
-    enterkeyhint="search"
-    autocomplete="off"
-    placeholder="Search products, brands and accessories"
-    aria-label="Search products"
-    aria-autocomplete="list"
-    aria-controls="product-search-suggestions"
-    :aria-expanded="searchOpen"
-    @input="scheduleSearch"
-    @focus="searchText.trim().length >= 2 && (searchOpen = true)"
+<RouterLink to="/" class="brand" aria-label="South West home">
+  <img
+    src="/SWLogo.png"
+    alt="South West"
+    class="brand-logo"
   />
+</RouterLink>
 
-  <button type="submit" aria-label="Search">
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle
-        cx="10.8"
-        cy="10.8"
-        r="6.5"
-        stroke="currentColor"
-        stroke-width="1.9"
-      />
-      <path
-        d="m16 16 4.5 4.5"
-        stroke="currentColor"
-        stroke-width="1.9"
-        stroke-linecap="round"
-      />
-    </svg>
-  </button>
+        <form
+            ref="searchFormRef"
+            class="search-form"
+            role="search"
+            @submit.prevent="searchProducts"
+            @keydown="handleSearchKeydown"
+        >
+          <input
+              v-model="searchText"
+              type="search"
+              enterkeyhint="search"
+              autocomplete="off"
+              placeholder="Search products, brands and accessories"
+              aria-label="Search products"
+              aria-autocomplete="list"
+              aria-controls="product-search-suggestions"
+              :aria-expanded="searchOpen"
+              @input="scheduleSearch"
+              @focus="searchText.trim().length >= 2 && (searchOpen = true)"
+          />
 
-  <div
-    v-if="searchOpen"
-    id="product-search-suggestions"
-    class="search-suggestions"
-    role="listbox"
-  >
-    <p v-if="searchLoading" class="search-suggestion-state">
-      Searching products...
-    </p>
+          <button type="submit" class="search-submit" aria-label="Search">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle
+                  cx="10.8"
+                  cy="10.8"
+                  r="6.5"
+                  stroke="currentColor"
+                  stroke-width="1.9"
+              />
+              <path
+                  d="m16 16 4.5 4.5"
+                  stroke="currentColor"
+                  stroke-width="1.9"
+                  stroke-linecap="round"
+              />
+            </svg>
+          </button>
 
-    <p
-      v-else-if="searchText.trim().length >= 2 && !searchSuggestions.length"
-      class="search-suggestion-state"
-    >
-      No matching products found.
-    </p>
+          <div
+              v-if="searchOpen"
+              id="product-search-suggestions"
+              class="search-suggestions"
+              role="listbox"
+          >
+            <p v-if="searchLoading" class="search-suggestion-state">
+              Searching products...
+            </p>
 
-    <button
-      v-for="(product, index) in searchSuggestions"
-      :key="product.id"
-      type="button"
-      class="search-suggestion"
-      :class="{ active: activeSuggestion === index }"
-      role="option"
-      :aria-selected="activeSuggestion === index"
-      @mousedown.prevent="selectSuggestion(product)"
-    >
-      <img
-  v-if="getSuggestionImage(product)"
-  :src="getSuggestionImage(product)"
-  :alt="product.item_name || product.name || 'Product'"
-  class="search-suggestion-image"
-  @error="(event) => console.error(
-    'Search image failed:',
-    event.target.src,
-    product
-  )"
-/>
+            <p
+                v-else-if="searchText.trim().length >= 2 && !searchSuggestions.length"
+                class="search-suggestion-state"
+            >
+              No matching products found.
+            </p>
 
-      <span v-else class="search-suggestion-placeholder">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.5" />
-          <path d="m4 15 5-5 4 4 2-2 5 5" stroke="currentColor" stroke-width="1.5" />
-        </svg>
-      </span>
+            <button
+                v-for="(product, index) in searchSuggestions"
+                :key="product.id"
+                type="button"
+                class="search-suggestion"
+                :class="{ active: activeSuggestion === index }"
+                role="option"
+                :aria-selected="activeSuggestion === index"
+                @mousedown.prevent="selectSuggestion(product)"
+            >
+              <img
+                  v-if="getSuggestionImage(product)"
+                  :src="getSuggestionImage(product)"
+                  :alt="product.item_name || product.name || 'Product'"
+                  class="search-suggestion-image"
+                  @error="(event) => console.error(
+                    'Search image failed:',
+                    event.target.src,
+                    product
+                  )"
+              />
 
-      <span class="search-suggestion-details">
-        <span class="search-suggestion-name">
-          {{ product.item_name || product.name || 'Unnamed product' }}
-        </span>
-        <span class="search-suggestion-meta">
-          <span v-if="product.brand">{{ product.brand }}</span>
-          <span v-if="product.item_code">{{ product.item_code }}</span>
-        </span>
-      </span>
+              <span v-else class="search-suggestion-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.5" />
+                  <path d="m4 15 5-5 4 4 2-2 5 5" stroke="currentColor" stroke-width="1.5" />
+                </svg>
+              </span>
 
-      <span v-if="getSuggestionPrice(product)" class="search-suggestion-price">
-        {{ getSuggestionPrice(product) }}
-      </span>
-    </button>
+              <span class="search-suggestion-details">
+                <span class="search-suggestion-name">
+                  {{ product.item_name || product.name || 'Unnamed product' }}
+                </span>
+                <span class="search-suggestion-meta">
+                  <span v-if="product.brand">{{ product.brand }}</span>
+                  <span v-if="product.item_code">{{ product.item_code }}</span>
+                </span>
+              </span>
 
-    <button
-      type="button"
-      class="search-all-results"
-      @mousedown.prevent="searchProducts"
-    >
-      Search all results for "{{ searchText.trim() }}"
-    </button>
-  </div>
-</form>
+              <span v-if="getSuggestionPrice(product)" class="search-suggestion-price">
+                {{ getSuggestionPrice(product) }}
+              </span>
+            </button>
 
+            <button
+                type="button"
+                class="search-all-results"
+                @mousedown.prevent="searchProducts"
+            >
+              Search all results for "{{ searchText.trim() }}"
+            </button>
+          </div>
+        </form>
 
         <RouterLink to="/cart" class="cart-link" aria-label="Shopping cart">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -577,63 +589,92 @@ ref="searchFormRef"
     </div>
   </header>
 
-<Teleport to="body">
-  <div
-    v-if="showLogoutModal"
-    class="logout-modal-overlay"
-    @click.self="cancelLogout"
-    @keydown.esc="cancelLogout"
-  >
+  <!--
+    Seasonal artwork sits directly under the header, in its own band.
+    It scrolls away with the page and never covers the header controls.
+  -->
+  <SeasonalDecorations />
+
+  <Teleport to="body">
     <div
-      class="logout-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="logout-modal-title"
-      aria-describedby="logout-modal-description"
+      v-if="showLogoutModal"
+      class="logout-modal-overlay"
+      @click.self="cancelLogout"
+      @keydown.esc="cancelLogout"
     >
-      <div class="logout-modal-icon">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M10 17l5-5-5-5M15 12H3m9-8h5a3 3 0 013 3v10a3 3 0 01-3 3h-5"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </div>
+      <div
+        class="logout-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="logout-modal-title"
+        aria-describedby="logout-modal-description"
+      >
+        <div class="logout-modal-icon">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M10 17l5-5-5-5M15 12H3m9-8h5a3 3 0 013 3v10a3 3 0 01-3 3h-5"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </div>
 
-      <h2 id="logout-modal-title">Log out?</h2>
+        <h2 id="logout-modal-title">Log out?</h2>
 
-      <p id="logout-modal-description">
-        Are you sure you want to log out of your South West account?
-      </p>
+        <p id="logout-modal-description">
+          Are you sure you want to log out of your South West account?
+        </p>
 
-      <div class="logout-modal-actions">
-        <button
-          type="button"
-          class="logout-cancel-button"
-          @click="cancelLogout"
-        >
-          Cancel
-        </button>
+        <div class="logout-modal-actions">
+          <button
+            type="button"
+            class="logout-cancel-button"
+            @click="cancelLogout"
+          >
+            Cancel
+          </button>
 
-        <button
-          type="button"
-          class="logout-confirm-button"
-          @click="logout"
-        >
-          Logout
-        </button>
+          <button
+            type="button"
+            class="logout-confirm-button"
+            @click="logout"
+          >
+            Logout
+          </button>
+        </div>
       </div>
     </div>
-  </div>
-</Teleport>
-
+  </Teleport>
 </template>
 
 <style scoped>
+/* =========================================================
+   Header shell
+   ========================================================= */
+
+.brand {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 160px;
+  height: 50px;
+  margin-right: 10px;
+  text-decoration: none;
+}
+
+.brand-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left center;
+}
+
 .site-header {
+  --control-h: 42px;
+
   position: sticky;
   top: calc(var(--strip-height) * -1);
   z-index: 200;
@@ -651,15 +692,18 @@ ref="searchFormRef"
   padding-right: env(safe-area-inset-right);
 }
 
-/* ---------- Top strip ---------- */
+/* =========================================================
+   Top strip
+   ========================================================= */
+
 .top-strip {
-  background: var(--color-black);
-  color: rgb(255 255 255 / 72%);
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.02em;
-  border-bottom: 1px solid rgb(255 255 255 / 6%);
   position: relative;
   z-index: 202;
+  background: var(--color-black);
+  color: rgb(255 255 255 / 74%);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
 }
 
 .top-strip-inner {
@@ -699,7 +743,7 @@ ref="searchFormRef"
 .top-divider {
   width: 1px;
   height: 14px;
-  background: rgb(255 255 255 / 18%);
+  background: rgb(255 255 255 / 20%);
 }
 
 .guest-actions {
@@ -719,12 +763,15 @@ ref="searchFormRef"
 
 .top-links .register-button {
   padding: 3px 14px;
-  border: 1px solid rgb(255 255 255 / 35%);
+  border: 1px solid rgb(255 255 255 / 38%);
   border-radius: var(--radius-pill);
   color: var(--color-on-primary);
   font-weight: var(--font-weight-semibold);
   line-height: 1.5;
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  transition:
+      background var(--transition-fast),
+      border-color var(--transition-fast),
+      color var(--transition-fast);
 }
 
 .top-links .register-button:hover {
@@ -733,87 +780,59 @@ ref="searchFormRef"
   color: var(--color-primary);
 }
 
-/* ---------- Main header ---------- */
+/* =========================================================
+   Main header
+   ========================================================= */
+
 .main-header {
   background: var(--gradient-metal);
   color: var(--color-on-primary);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%),
-  inset 0 -1px 0 rgb(0 0 0 / 45%);
+  box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 9%),
+      inset 0 -1px 0 rgb(0 0 0 / 45%);
 }
 
 .main-header-inner {
-  min-height: 72px;
+  min-height: 76px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--color-on-primary);
-  text-decoration: none;
-  flex-shrink: 0;
-  margin-right: 10px;
-}
 
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 1.5px solid rgb(255 255 255 / 80%);
-  border-radius: 10px;
-  background: linear-gradient(145deg, rgb(255 255 255 / 20%), rgb(255 255 255 / 4%));
-  box-shadow: var(--highlight-inset);
-  font-family: var(--font-family-display);
-  font-size: 22px;
-  font-weight: 800;
-}
+/* ---------- Search ---------- */
 
-.brand-name {
-  font-family: var(--font-family-display);
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  white-space: nowrap;
-}
-
-.brand-name span {
-  color: var(--color-accent);
-  font-weight: var(--font-weight-medium);
-}
-
-/* Search: smaller, centred between brand and cart */
 .search-form {
+  position: relative;
   display: flex;
   flex: 1;
   max-width: 760px;
   min-width: 120px;
-  height: 40px;
+  height: var(--control-h);
   margin: 0;
   background: var(--color-surface);
-  border: 1px solid rgb(255 255 255 / 25%);
+  border: 1px solid rgb(255 255 255 / 28%);
   border-radius: var(--radius-md);
-  overflow: hidden;
-  transition: box-shadow var(--transition-fast);
+  transition:
+      box-shadow var(--transition-fast),
+      border-color var(--transition-fast);
 }
 
 .search-form:focus-within {
+  border-color: var(--color-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
 
 .search-form input {
   flex: 1;
   min-width: 0;
+  padding: 0 16px;
   border: 0;
   outline: 0;
-  padding: 0 14px;
   background: transparent;
-  font: inherit;
-  font-size: var(--font-size-xs);
   color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm, 14px);
   text-overflow: ellipsis;
 }
 
@@ -821,42 +840,171 @@ ref="searchFormRef"
   color: var(--color-text-muted);
 }
 
-.search-form button {
+.search-submit {
   display: grid;
   place-items: center;
-  width: 46px;
+  width: 50px;
   border: 0;
+  border-radius: 0 calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0;
   background: var(--color-primary);
   color: var(--color-on-primary);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: filter var(--transition-fast);
 }
 
-.search-form button:hover {
-  background: var(--color-primary-hover);
+.search-submit:hover {
+  filter: brightness(1.08);
 }
 
-.search-form svg {
+.search-submit svg {
   width: 20px;
   height: 20px;
 }
 
-/* Cart: inline icon + label, pill style */
+/* Suggestions */
+
+.search-suggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  box-sizing: border-box;
+  max-height: min(440px, 70vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.search-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 68px;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.search-suggestion:hover,
+.search-suggestion.active {
+  background: var(--color-surface-muted);
+}
+
+.search-suggestion-image,
+.search-suggestion-placeholder {
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+  object-fit: contain;
+  background: var(--color-surface-muted);
+}
+
+.search-suggestion-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+}
+
+.search-suggestion-placeholder svg {
+  width: 22px;
+  height: 22px;
+}
+
+.search-suggestion-details {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.search-suggestion-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-suggestion-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.search-suggestion-price {
+  flex-shrink: 0;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.search-suggestion-state {
+  margin: 0;
+  padding: 18px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.search-all-results {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 0;
+  background: var(--color-surface-muted);
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  white-space: normal;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.search-all-results:hover {
+  background: var(--color-border-soft);
+}
+
+/* ---------- Cart ---------- */
+
 .cart-link {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 16px;
-  border: 1px solid rgb(255 255 255 / 22%);
+  height: var(--control-h);
+  box-sizing: border-box;
+  padding: 0 16px;
+  border: 1px solid rgb(255 255 255 / 24%);
   border-radius: var(--radius-md);
-  background: rgb(255 255 255 / 6%);
+  background: rgb(255 255 255 / 7%);
   color: var(--color-on-primary);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   text-decoration: none;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition:
+      background var(--transition-fast),
+      border-color var(--transition-fast);
 }
 
 .cart-link svg {
@@ -865,27 +1013,30 @@ ref="searchFormRef"
 }
 
 .cart-link:hover {
-  border-color: rgb(255 255 255 / 45%);
-  background: rgb(255 255 255 / 12%);
+  border-color: rgb(255 255 255 / 48%);
+  background: rgb(255 255 255 / 14%);
 }
 
-/* ---------- Account menu (top strip) ---------- */
+/* =========================================================
+   Account menu
+   ========================================================= */
+
 .account-menu {
+  position: relative;
+  z-index: 203;
   height: 100%;
   display: flex;
   align-items: center;
-  position: relative;
-  z-index: 203;
 }
 
 .account-button {
   display: flex;
   align-items: center;
-  gap: 7px;
-  max-width: 230px;
-  padding: 6px 9px;
+  gap: 8px;
+  max-width: 250px;
+  padding: 4px 9px 4px 5px;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   background: transparent;
   color: rgb(255 255 255 / 92%);
   cursor: pointer;
@@ -900,11 +1051,25 @@ ref="searchFormRef"
 .account-button:hover,
 .account-button.open {
   background: rgb(255 255 255 / 10%);
-  border-color: rgb(255 255 255 / 15%);
+  border-color: rgb(255 255 255 / 16%);
+}
+
+.account-avatar {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-on-accent, var(--color-black));
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .account-label {
-  max-width: 190px;
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -932,7 +1097,7 @@ ref="searchFormRef"
   top: 100%;
   right: 0;
   z-index: 204;
-  width: 250px;
+  width: 254px;
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - var(--strip-height) - 16px);
   max-height: calc(100dvh - var(--strip-height) - 16px);
@@ -985,17 +1150,25 @@ ref="searchFormRef"
   background: var(--color-danger-bg);
 }
 
-/* ---------- Focus ---------- */
+/* =========================================================
+   Focus
+   ========================================================= */
+
 .top-links a:focus-visible,
 .brand:focus-visible,
-.search-form button:focus-visible,
+.search-submit:focus-visible,
 .cart-link:focus-visible,
 .account-button:focus-visible,
-.dropdown-menu button:focus-visible {
+.dropdown-menu button:focus-visible,
+.search-suggestion:focus-visible,
+.search-all-results:focus-visible {
   outline: 2px solid var(--color-focus-outline);
   outline-offset: 2px;
 }
 
+/* =========================================================
+   Logout modal
+   ========================================================= */
 
 .logout-modal-overlay {
   position: fixed;
@@ -1065,7 +1238,7 @@ ref="searchFormRef"
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 150ms ease, transform 150ms ease;
+  transition: background 150ms ease, filter 150ms ease;
 }
 
 .logout-cancel-button {
@@ -1081,7 +1254,7 @@ ref="searchFormRef"
 .logout-confirm-button {
   border: 1px solid var(--color-danger);
   background: var(--color-danger);
-  color: white;
+  color: #fff;
 }
 
 .logout-confirm-button:hover {
@@ -1105,145 +1278,10 @@ ref="searchFormRef"
   }
 }
 
+/* =========================================================
+   Touch devices: bigger tap targets, same visual size
+   ========================================================= */
 
-/* Keep the dropdown anchored to the search bar */
-.search-form {
-  position: relative;
-  overflow: visible;
-}
-
-/* Product suggestions must not inherit the search button's 46px width */
-.search-form .search-suggestions {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  max-height: min(440px, 70vh);
-  overflow-y: auto;
-  background: var(--color-surface);
-  color: var(--color-text);
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-}
-
-/* Override .search-form button */
-.search-form button.search-suggestion {
-  display: flex;
-  place-items: initial;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 70px;
-  box-sizing: border-box;
-  padding: 10px 12px;
-  border: 0;
-  border-bottom: 1px solid var(--color-border-soft);
-  border-radius: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.search-form button.search-suggestion:hover,
-.search-form button.search-suggestion.active {
-  background: var(--color-surface-muted);
-}
-
-.search-form button.search-all-results {
-  display: block;
-  width: 100%;
-  height: auto;
-  box-sizing: border-box;
-  padding: 14px;
-  border: 0;
-  border-radius: 0;
-  background: var(--color-surface-muted);
-  color: var(--color-primary);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-  white-space: normal;
-  cursor: pointer;
-}
-
-.search-form button.search-all-results:hover {
-  background: var(--color-border-soft);
-}
-
-.search-suggestion-image,
-.search-suggestion-placeholder {
-  flex: 0 0 48px;
-  width: 48px;
-  height: 48px;
-  border-radius: 6px;
-  object-fit: contain;
-  background: var(--color-surface-muted);
-}
-
-.search-suggestion-placeholder {
-  display: grid;
-  place-items: center;
-}
-
-.search-suggestion-details {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-}
-
-.search-suggestion-name {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.search-suggestion-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: var(--color-text-muted);
-  font-size: 11px;
-}
-
-.search-suggestion-price {
-  flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.search-suggestion-state {
-  margin: 0;
-  padding: 18px;
-  color: var(--color-text-muted);
-  font-size: 13px;
-}
-
-@media (max-width: 850px) {
-  .search-form .search-suggestions {
-    max-height: 55vh;
-  }
-}
-
-
-@media (prefers-reduced-motion: reduce) {
-  .logout-modal {
-    animation: none;
-  }
-}
-
-
-/* ---------- Touch devices: bigger tap targets, same visual size ---------- */
 @media (pointer: coarse) {
   .top-links a,
   .account-button {
@@ -1266,7 +1304,10 @@ ref="searchFormRef"
   }
 }
 
-/* ---------- Tablet portrait / unfolded foldables / large phones ---------- */
+/* =========================================================
+   Tablet portrait / unfolded foldables / large phones
+   ========================================================= */
+
 @media (max-width: 850px) {
   .site-header {
     position: relative;
@@ -1289,7 +1330,7 @@ ref="searchFormRef"
     order: 3;
     flex-basis: 100%;
     max-width: none;
-    height: 44px;
+    height: 46px;
   }
 
   /* 16px stops iOS Safari from zooming the page on focus */
@@ -1297,12 +1338,19 @@ ref="searchFormRef"
     font-size: 16px;
   }
 
-  .search-form button {
+  .search-submit {
     width: 52px;
+  }
+
+  .search-suggestions {
+    max-height: 55vh;
   }
 }
 
-/* ---------- Phones ---------- */
+/* =========================================================
+   Phones
+   ========================================================= */
+
 @media (max-width: 520px) {
   .welcome {
     display: none;
@@ -1316,22 +1364,17 @@ ref="searchFormRef"
     gap: 14px;
   }
 
-  .brand-mark {
-    width: 34px;
-    height: 34px;
-    font-size: 19px;
-  }
-
-  .brand-name {
-    font-size: 15px;
-  }
+.brand {
+  width: 155px;
+  height: 42px;
+}
 
   .account-label {
     max-width: 85px;
   }
 
   .cart-link {
-    padding: 8px 10px;
+    padding: 0 12px;
   }
 
   .cart-link span {
@@ -1352,22 +1395,21 @@ ref="searchFormRef"
 }
 
 /* ---------- Small phones ---------- */
+
 @media (max-width: 420px) {
   .shop-link {
     display: none; /* brand already links home */
   }
 }
 
-/* ---------- Fold cover screens (≈280–360px) ---------- */
+/* ---------- Fold cover screens (about 280-360px) ---------- */
+
 @media (max-width: 360px) {
   .header-container {
     width: 96%;
   }
 
-  .top-links {
-    gap: 12px;
-  }
-
+  .top-links,
   .guest-actions {
     gap: 12px;
   }
@@ -1396,6 +1438,7 @@ ref="searchFormRef"
 }
 
 /* ---------- Landscape phones: do not pin the header over a short screen ---------- */
+
 @media (max-height: 480px) and (orientation: landscape) {
   .site-header {
     position: relative;
@@ -1408,11 +1451,14 @@ ref="searchFormRef"
 }
 
 /* ---------- Reduced motion ---------- */
+
 @media (prefers-reduced-motion: reduce) {
   .site-header *,
   .site-header *::before,
-  .site-header *::after {
+  .site-header *::after,
+  .logout-modal {
     transition: none !important;
+    animation: none !important;
   }
 }
 </style>

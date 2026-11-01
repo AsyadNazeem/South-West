@@ -7,7 +7,8 @@ const {
     DiscountCampaign,
     DiscountCampaignItem,
     DiscountCampaignCategory,
-    DiscountCampaignBrand
+    DiscountCampaignBrand,
+    CampaignFrame
 } = db;
 
 /**
@@ -37,6 +38,11 @@ async function getActiveCampaigns(now = new Date(), transaction = undefined) {
                 model: DiscountCampaignBrand,
                 as: 'campaignBrands',
                 attributes: ['brand_id'],
+                required: false
+            },
+            {
+                model: CampaignFrame,
+                as: 'visualFrame',
                 required: false
             }
         ],
@@ -193,9 +199,64 @@ async function getBestDiscountForItem(
     return bestResult;
 }
 
+
+/**
+ * Select an active campaign visual independently from discount pricing.
+ */
+function getBestVisualCampaignForItem(item, campaigns = []) {
+    if (!item || item.id == null) return null;
+
+    const eligible = campaigns.filter(campaign => {
+        if (!campaign.visual_frame_enabled) {
+            return false;
+        }
+
+        const frame = campaign.visualFrame;
+
+        if (
+            !frame ||
+            !frame.is_active ||
+            !frame.image_path
+        ) {
+            return false;
+        }
+
+        return campaignTargetsItem(campaign, item);
+    });
+
+    eligible.sort((a, b) => {
+        const priorityDifference =
+            Number(b.visual_priority || 0) -
+            Number(a.visual_priority || 0);
+
+        if (priorityDifference !== 0) return priorityDifference;
+
+        const dateDifference =
+            new Date(b.start_date).getTime() -
+            new Date(a.start_date).getTime();
+
+        if (dateDifference !== 0) return dateDifference;
+
+        return Number(b.id) - Number(a.id);
+    });
+
+    const selected = eligible[0];
+
+    if (!selected) return null;
+
+    return {
+        campaign_id: selected.id,
+        campaign_name: selected.campaign_name,
+        frame_id: selected.visualFrame.id,
+        frame_name: selected.visualFrame.name,
+        frame_path: selected.visualFrame.image_path,
+    };
+}
+
 module.exports = {
     getActiveCampaigns,
     campaignTargetsItem,
     calculateDiscount,
-    getBestDiscountForItem
+    getBestDiscountForItem,
+    getBestVisualCampaignForItem
 };

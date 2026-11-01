@@ -4,7 +4,9 @@ const fs = require('fs');
 const path = require('path');
 
 // <project root>/uploads  (served at /uploads)
-const UPLOAD_ROOT = path.resolve(__dirname, '..', 'uploads');
+const UPLOAD_ROOT = path.resolve(
+    process.env.UPLOAD_ROOT || path.resolve(__dirname, '..', 'uploads')
+);
 
 // file_path is stored relative to UPLOAD_ROOT, e.g. "items/images/<uuid>.jpg"
 const buildFileUrl = (filePath) => {

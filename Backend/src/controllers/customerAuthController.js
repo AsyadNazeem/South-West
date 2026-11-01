@@ -168,7 +168,7 @@ async function issueVerificationCode(customer, purpose) {
         }
     );
 
-    await CustomerEmailVerification.create({
+    const verification = await CustomerEmailVerification.create({
         customer_id: customer.id,
         email,
         code_hash: codeHash,
@@ -179,7 +179,13 @@ async function issueVerificationCode(customer, purpose) {
     });
 
     // Never log or return the verification code.
-    await sendVerificationCode(email, code, purpose);
+    try {
+        await sendVerificationCode(email, code, purpose);
+    } catch (emailError) {
+        // An undelivered verification code must never remain usable.
+        await verification.update({ consumed_at: new Date() });
+        throw emailError;
+    }
 }
 
 // ============================================================
@@ -453,8 +459,9 @@ exports.activate = async (req, res) => {
                 description: 'Customer activation request rejected.',
             });
 
-            return res.status(400).json({
-                message: 'The account cannot be activated with these details.',
+            return res.status(200).json({
+                message:
+                    'If the account is eligible, a verification code has been sent to its registered email.',
             });
         }
 
@@ -482,10 +489,9 @@ exports.activate = async (req, res) => {
             description: 'Unexpected error during customer activation request.',
         });
 
-        return res.status(error.status || 503).json({
-            message: error.status
-                ? error.message
-                : 'Unable to send the activation code.',
+        return res.status(200).json({
+            message:
+                'If the account is eligible, a verification code has been sent to its registered email.',
         });
     }
 };
@@ -901,6 +907,19 @@ exports.login = async (req, res) => {
 
 exports.logout = async (req, res) => {
     try {
+        if (!req.customer || !req.customer.id) {
+            await auditCustomerAuthSafely({
+                action: 'CUSTOMER_LOGOUT_FAILED',
+                req,
+                description:
+                    'Customer logout rejected because authentication context was missing.',
+            });
+
+            return res.status(401).json({
+                message: 'Customer authentication is required.',
+            });
+        }
+
         const authorization = req.headers.authorization;
 
         if (
@@ -939,6 +958,7 @@ exports.logout = async (req, res) => {
         const session = await CustomerSession.findOne({
             where: {
                 token_hash: tokenHash,
+                customer_id: req.customer.id,
                 revoked_at: null,
             },
             attributes: ['customer_id'],
@@ -949,6 +969,7 @@ exports.logout = async (req, res) => {
             {
                 where: {
                     token_hash: tokenHash,
+                    customer_id: req.customer.id,
                     revoked_at: null,
                 },
             }

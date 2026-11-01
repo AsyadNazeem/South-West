@@ -1,8 +1,11 @@
 'use strict';
 
+const crypto = require('crypto');
+
 const {
     sequelize,
     Order,
+    OrderAddress,
     Customer,
     Delivery,
     DeliveryStatusHistory,
@@ -260,42 +263,16 @@ exports.updateOrderStatus = async (req, res) => {
             lock: transaction.LOCK.UPDATE
         });
 
-        if (nextStatus === 'shipped' && deliveries.length !== 1) {
-            await transaction.rollback();
-            transaction = null;
-
-            return res.status(409).json({
-                message:
-                    'Courier handover requires exactly one associated delivery. Resolve the delivery records before continuing.',
-                delivery_count: deliveries.length
-            });
-        }
-
         if (nextStatus === 'shipped') {
-            const delivery = deliveries[0];
-
-            if (
-                !['pending', 'processing', 'ready_for_dispatch']
-                    .includes(delivery.delivery_status)
-            ) {
+            if (deliveries.length > 1) {
                 await transaction.rollback();
                 transaction = null;
 
                 return res.status(409).json({
                     message:
-                        `This delivery cannot be dispatched from ${delivery.delivery_status}.`
+                        'Courier handover cannot continue because multiple delivery records are associated with this order.',
+                    delivery_count: deliveries.length
                 });
-            }
-
-            const courierName = body.courier_name.trim();
-            const trackingNumber = body.tracking_number.trim();
-
-            delivery.delivery_status = 'dispatched';
-            delivery.courier_name = courierName;
-            delivery.tracking_number = trackingNumber;
-
-            if (!delivery.dispatched_at) {
-                delivery.dispatched_at = new Date();
             }
 
             if (body.expected_delivery_date !== undefined) {
@@ -311,12 +288,86 @@ exports.updateOrderStatus = async (req, res) => {
                         message: 'Expected delivery date must be a valid date.'
                     });
                 }
-
-                delivery.expected_delivery_date =
-                    new Date(body.expected_delivery_date);
             }
 
-            await delivery.save({ transaction });
+            const courierName = body.courier_name.trim();
+            const trackingNumber = body.tracking_number.trim();
+            let delivery = deliveries[0];
+
+            if (!delivery) {
+                const shippingAddress = await OrderAddress.findOne({
+                    where: {
+                        order_id: order.id,
+                        address_type: 'shipping'
+                    },
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                });
+
+                if (!shippingAddress) {
+                    await transaction.rollback();
+                    transaction = null;
+
+                    return res.status(409).json({
+                        message:
+                            'Courier handover cannot continue because the order has no saved shipping address.'
+                    });
+                }
+
+                delivery = await Delivery.create({
+                    delivery_reference:
+                        `SWD-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`,
+                    order_id: order.id,
+                    delivery_method: 'standard',
+                    delivery_status: 'dispatched',
+                    recipient_name: shippingAddress.recipient_name,
+                    recipient_phone: shippingAddress.phone,
+                    address_line_1: shippingAddress.address_line_1,
+                    address_line_2: shippingAddress.address_line_2,
+                    city: shippingAddress.city,
+                    state: shippingAddress.state,
+                    postal_code: shippingAddress.postal_code,
+                    country: shippingAddress.country,
+                    delivery_charge: order.shipping_amount ?? 0,
+                    courier_name: courierName,
+                    tracking_number: trackingNumber,
+                    dispatched_at: new Date(),
+                    expected_delivery_date:
+                        body.expected_delivery_date !== undefined
+                            ? new Date(body.expected_delivery_date)
+                            : null
+                }, { transaction });
+
+                deliveries.push(delivery);
+            } else {
+                if (
+                    !['pending', 'processing', 'ready_for_dispatch']
+                        .includes(delivery.delivery_status)
+                ) {
+                    await transaction.rollback();
+                    transaction = null;
+
+                    return res.status(409).json({
+                        message:
+                            `This delivery cannot be dispatched from ${delivery.delivery_status}.`
+                    });
+                }
+
+                delivery.delivery_status = 'dispatched';
+                delivery.courier_name = courierName;
+                delivery.tracking_number = trackingNumber;
+
+                if (!delivery.dispatched_at) {
+                    delivery.dispatched_at = new Date();
+                }
+
+                if (body.expected_delivery_date !== undefined) {
+                    delivery.expected_delivery_date =
+                        new Date(body.expected_delivery_date);
+                }
+
+                await delivery.save({ transaction });
+            }
 
             await DeliveryStatusHistory.create({
                 delivery_id: delivery.id,
@@ -329,6 +380,18 @@ exports.updateOrderStatus = async (req, res) => {
         }
 
         if (nextStatus === 'delivered') {
+            if (order.payment_status !== 'paid') {
+                await transaction.rollback();
+                transaction = null;
+
+                return res.status(409).json({
+                    message:
+                        'The order cannot be completed until payment has been fully received.',
+                    payment_status: order.payment_status,
+                    total_amount: order.total_amount
+                });
+            }
+
             if (deliveries.length === 0) {
                 await transaction.rollback();
                 transaction = null;

@@ -1,36 +1,44 @@
 'use strict';
 
-const { Payment, Order, User } = require('../models');
+const {
+    Payment,
+    Order,
+    User,
+    Delivery,
+    Notification,
+    Customer
+} = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
+const { sendOrderStatusEmail } = require('../services/emailService');
 
 
 const updatePaymentStatus = async (req, res) => {
     let transaction;
+    let completionEmailPayload = null;
+    let completedOrderNumber = null;
 
     try {
         const { id } = req.params;
-        const { payment_status } = req.body;
+        const actorId = req.user?.id ?? req.user?.user_id ?? null;
+        const requestBody = req.body;
 
-        const allowedStatuses = [
-            'unpaid',
-            'partially_paid',
-            'paid',
-            'refunded',
-            'partially_refunded'
-        ];
+        if (
+            !requestBody ||
+            typeof requestBody !== 'object' ||
+            Array.isArray(requestBody) ||
+            Object.keys(requestBody).length !== 1 ||
+            requestBody.payment_status !== 'paid'
+        ) {
+            return res.status(400).json({
+                message: "Only an explicit payment_status: 'paid' confirmation is accepted."
+            });
+        }
 
         if (!/^[1-9]\d*$/.test(id)) {
             return res.status(400).json({
                 message: 'Invalid payment ID'
             });
         }
-
-        // This generic handler must not directly change payment status.
-        // Use a dedicated, authorized workflow for collection, gateway
-        // confirmation, or refunds.
-        return res.status(400).json({
-            message: 'Direct payment status changes are disabled'
-        });
 
         transaction = await Payment.sequelize.transaction();
 
@@ -48,72 +56,275 @@ const updatePaymentStatus = async (req, res) => {
             });
         }
 
-        const oldStatus = payment.payment_status;
+        // COD payment is confirmed automatically when an admin marks
+        // its delivery as delivered. Online payments require provider
+        // confirmation and must never use this manual endpoint.
+        await transaction.rollback();
+        transaction = null;
 
-        if (oldStatus === payment_status) {
-            await transaction.commit();
+        return res.status(409).json({
+            message:
+                payment.payment_method === 'cash'
+                    ? 'COD payments are automatically confirmed when the delivery is marked as delivered.'
+                    : 'Online payments require verified provider confirmation.',
+            payment_method: payment.payment_method
+        });
+
+        if (!['unpaid', 'partially_paid'].includes(payment.payment_status)) {
+            await transaction.rollback();
             transaction = null;
 
-            return res.status(200).json({
-                message: 'Payment status unchanged',
-                data: payment
+            return res.status(409).json({
+                message: 'Only unpaid or partially paid transactions can be confirmed.',
+                payment_status: payment.payment_status
             });
         }
 
-        const oldPaymentDate = payment.payment_date;
+        const order = await Order.findByPk(payment.order_id, {
+            include: [{
+                model: Customer,
+                as: 'customer',
+                attributes: ['id', 'first_name', 'last_name', 'email']
+            }],
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
-        payment.payment_status = payment_status;
+        if (!order) {
+            await transaction.rollback();
+            transaction = null;
 
-        if (payment_status === 'paid' && !payment.payment_date) {
-            payment.payment_date = new Date();
+            return res.status(404).json({
+                message: 'The associated order could not be found.'
+            });
         }
+
+        if (['refunded', 'partially_refunded'].includes(order.payment_status)) {
+            await transaction.rollback();
+            transaction = null;
+
+            return res.status(409).json({
+                message: 'Payments cannot be confirmed while the order has a refund status.'
+            });
+        }
+
+        const oldPaymentValues = {
+            payment_status: payment.payment_status,
+            payment_date: payment.payment_date,
+            processed_by: payment.processed_by
+        };
+
+        const oldOrderValues = {
+            payment_status: order.payment_status,
+            status: order.status
+        };
+
+        payment.payment_status = 'paid';
+        payment.payment_date = new Date();
+        payment.processed_by = actorId;
 
         await payment.save({ transaction });
 
+        const orderPayments = await Payment.findAll({
+            where: { order_id: order.id },
+            attributes: ['id', 'amount', 'payment_status'],
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        const confirmedAmountCents = orderPayments.reduce(
+            (total, record) => {
+                if (record.payment_status !== 'paid') {
+                    return total;
+                }
+
+                return total + Math.round(Number(record.amount || 0) * 100);
+            },
+            0
+        );
+
+        const orderTotalCents = Math.round(
+            Number(order.total_amount || 0) * 100
+        );
+
+        if (confirmedAmountCents > orderTotalCents) {
+            await transaction.rollback();
+            transaction = null;
+
+            return res.status(409).json({
+                message: 'Confirming this payment would cause the order to be overpaid.',
+                order_total: order.total_amount,
+                confirmed_payments_total: (confirmedAmountCents / 100).toFixed(2)
+            });
+        }
+
+        let nextPaymentStatus = 'unpaid';
+
+        if (confirmedAmountCents > 0 && confirmedAmountCents < orderTotalCents) {
+            nextPaymentStatus = 'partially_paid';
+        } else if (
+            orderTotalCents > 0 &&
+            confirmedAmountCents === orderTotalCents
+        ) {
+            nextPaymentStatus = 'paid';
+        }
+
+        await order.update(
+            { payment_status: nextPaymentStatus },
+            { transaction, fields: ['payment_status'] }
+        );
+
         await recordAuditLog({
-            userId: req.user ? req.user.id : null,
-            action: 'PAYMENT_STATUS_UPDATED',
+            userId: actorId,
+            action: 'PAYMENT_STATUS_CONFIRMED',
             module: 'payments',
             entityType: 'payment',
             entityId: payment.id,
-            description: `Payment status changed from ${oldStatus} to ${payment_status}`,
-            oldValues: {
-                payment_status: oldStatus,
-                payment_date: oldPaymentDate
-            },
+            description: `Payment ${payment.payment_reference} confirmed as paid`,
+            oldValues: oldPaymentValues,
             newValues: {
                 payment_status: payment.payment_status,
-                payment_date: payment.payment_date
+                payment_date: payment.payment_date,
+                processed_by: payment.processed_by,
+                order_payment_status: nextPaymentStatus
             },
             ipAddress: req.ip || null,
             userAgent: req.get('user-agent') || null,
-            requestId: null,
+            requestId: req.id || req.requestId || null,
             transaction
         });
+
+        let orderStatusUpdated = false;
+
+        if (
+            nextPaymentStatus === 'paid' &&
+            ['shipped', 'partially_shipped'].includes(order.status)
+        ) {
+            const deliveries = await Delivery.findAll({
+                where: { order_id: order.id },
+                attributes: ['id', 'delivery_status'],
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+
+            const allDeliveriesCompleted =
+                deliveries.length > 0 &&
+                deliveries.every(
+                    delivery => delivery.delivery_status === 'delivered'
+                );
+
+            if (allDeliveriesCompleted) {
+                const previousOrderStatus = order.status;
+
+                await order.update(
+                    { status: 'delivered' },
+                    { transaction, fields: ['status'] }
+                );
+
+                if (order.customer) {
+                    await Notification.create({
+                        customer_id: order.customer.id,
+                        type: 'order_status',
+                        title: 'Order Completed',
+                        message: 'Your order has been completed and delivered.',
+                        reference_type: 'order',
+                        reference_id: order.id,
+                        is_read: false,
+                        read_at: null
+                    }, { transaction });
+                }
+
+                await recordAuditLog({
+                    userId: actorId,
+                    action: 'ORDER_STATUS_AUTO_COMPLETED',
+                    module: 'orders',
+                    entityType: 'order',
+                    entityId: order.id,
+                    description:
+                        `Order ${order.order_number} automatically completed ` +
+                        'after full payment confirmation and delivery completion',
+                    oldValues: { status: previousOrderStatus },
+                    newValues: {
+                        status: 'delivered',
+                        payment_status: 'paid',
+                        trigger: 'payment_confirmed_after_all_deliveries'
+                    },
+                    ipAddress: req.ip || null,
+                    userAgent: req.get('user-agent') || null,
+                    requestId: req.id || req.requestId || null,
+                    transaction
+                });
+
+                orderStatusUpdated = true;
+                completedOrderNumber = order.order_number;
+
+                if (order.customer?.email) {
+                    completionEmailPayload = {
+                        email: order.customer.email,
+                        customerName: [
+                            order.customer.first_name,
+                            order.customer.last_name
+                        ].filter(Boolean).join(' '),
+                        orderNumber: order.order_number,
+                        statusLabel: 'Order Completed',
+                        reason: null
+                    };
+                }
+            }
+        }
 
         await transaction.commit();
         transaction = null;
 
+        let emailStatus = 'not_required';
+
+        if (completionEmailPayload) {
+            try {
+                await sendOrderStatusEmail(completionEmailPayload);
+                emailStatus = 'sent';
+            } catch (emailError) {
+                emailStatus = 'failed';
+                console.error(
+                    `Order completion email failed for ${completedOrderNumber}:`,
+                    emailError
+                );
+            }
+        }
+
+        const updatedPayment = await Payment.findByPk(id, {
+            include: [
+                { model: Order, as: 'order' },
+                {
+                    model: User,
+                    as: 'processor',
+                    attributes: { exclude: ['password', 'password_hash'] }
+                }
+            ]
+        });
+
         return res.status(200).json({
-            message: 'Payment status updated successfully',
-            data: payment
+            message: 'Payment confirmed successfully',
+            data: updatedPayment,
+            order_payment_status: nextPaymentStatus,
+            order_status_update: {
+                updated: orderStatusUpdated,
+                status: orderStatusUpdated ? 'delivered' : order.status
+            },
+            completion_email: emailStatus
         });
     } catch (error) {
         if (transaction && !transaction.finished) {
             try {
                 await transaction.rollback();
             } catch (rollbackError) {
-                console.error(
-                    'Payment status rollback error:',
-                    rollbackError
-                );
+                console.error('Payment confirmation rollback error:', rollbackError);
             }
         }
 
-        console.error('Update payment status error:', error);
+        console.error('Confirm payment error:', error);
 
         return res.status(500).json({
-            message: 'Failed to update payment status'
+            message: 'Failed to confirm payment'
         });
     }
 };

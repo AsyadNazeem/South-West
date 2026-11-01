@@ -6,7 +6,8 @@ const router = express.Router();
 
 const {
     getPayments,
-    getPaymentById
+    getPaymentById,
+    updatePaymentStatus
 } = require('../controllers/paymentController');
 
 const authenticate = require('../middleware/authMiddleware');
@@ -26,6 +27,13 @@ router.get(
     authenticate,
     requirePermission('payments.view'),
     getPaymentById
+);
+
+router.patch(
+    '/:id/status',
+    authenticate,
+    requirePermission('payments.update'),
+    updatePaymentStatus
 );
 
 module.exports = router;

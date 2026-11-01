@@ -69,6 +69,7 @@ function audit(action, req, customerId) {
 exports.requestCode = async (req, res) => {
     const customer = req.customer;
     let verification = null;
+    let transaction = null;
 
     try {
         if (!customer || !customer.is_active || !customer.email) {
@@ -77,7 +78,28 @@ exports.requestCode = async (req, res) => {
             });
         }
 
-        const email = customer.email.trim().toLowerCase();
+        transaction = await db.sequelize.transaction();
+
+        // Serialise password-change code requests for this customer.
+        const lockedCustomer = await Customer.findByPk(customer.id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+        });
+
+        if (
+            !lockedCustomer ||
+            !lockedCustomer.is_active ||
+            !lockedCustomer.email
+        ) {
+            await transaction.rollback();
+            transaction = null;
+
+            return res.status(400).json({
+                message: 'A valid customer email address is required.',
+            });
+        }
+
+        const email = lockedCustomer.email.trim().toLowerCase();
         const now = new Date();
 
         const code = crypto.randomInt(100000, 1000000).toString();
@@ -86,28 +108,36 @@ exports.requestCode = async (req, res) => {
             now.getTime() + CODE_EXPIRY_MINUTES * 60 * 1000
         );
 
-        // Invalidate previous unused password-change codes.
+        // Invalidate previous unused codes inside the same transaction.
         await CustomerEmailVerification.update(
             { consumed_at: now },
             {
                 where: {
-                    customer_id: customer.id,
+                    customer_id: lockedCustomer.id,
                     purpose: 'password_change',
                     consumed_at: null,
                 },
+                transaction,
             }
         );
 
-        verification = await CustomerEmailVerification.create({
-            customer_id: customer.id,
-            email,
-            code_hash: codeHash,
-            purpose: 'password_change',
-            expires_at: expiresAt,
-            attempts: 0,
-            consumed_at: null,
-        });
+        verification = await CustomerEmailVerification.create(
+            {
+                customer_id: lockedCustomer.id,
+                email,
+                code_hash: codeHash,
+                purpose: 'password_change',
+                expires_at: expiresAt,
+                attempts: 0,
+                consumed_at: null,
+            },
+            { transaction }
+        );
 
+        await transaction.commit();
+        transaction = null;
+
+        // Send only after the database transaction has committed.
         try {
             await sendVerificationCode(email, code, 'password_change');
         } catch (emailError) {
@@ -116,13 +146,17 @@ exports.requestCode = async (req, res) => {
             throw emailError;
         }
 
-        audit('CUSTOMER_PASSWORD_CHANGE_CODE_SENT', req, customer.id);
+        audit('CUSTOMER_PASSWORD_CHANGE_CODE_SENT', req, lockedCustomer.id);
 
         return res.status(200).json({
             message: 'A password-change code has been sent to your registered email address.',
             expires_in_seconds: CODE_EXPIRY_MINUTES * 60,
         });
     } catch (error) {
+        if (transaction) {
+            await transaction.rollback().catch(() => {});
+        }
+
         console.error('Password-change code request failed:', error.message);
 
         return res.status(500).json({

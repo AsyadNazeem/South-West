@@ -5,12 +5,19 @@ const {
     sequelize,
     Delivery,
     Order,
+    Payment,
     Customer,
-    DeliveryStatusHistory
+    DeliveryStatusHistory,
+    Notification
 } = require('../models');
 
 const { recordAuditLog } = require('../services/auditLogService');
-const { sendDeliveryTrackingEmail } = require('../services/emailService');
+const {
+    sendDeliveryTrackingEmail,
+    sendOrderStatusEmail
+} = require('../services/emailService');
+
+const ORDER_DELIVERED_LABEL = 'Order Completed';
 
 const AUDIT_MODULE = 'DELIVERY';
 
@@ -175,6 +182,8 @@ exports.updateDelivery = async (req, res) => {
     let emailPayload = null;
     let committed = false;
     let updatedDelivery;
+    let completionEmailPayload = null;
+    let completedOrderSnapshot = null;
 
     try {
         transaction = await sequelize.transaction();
@@ -406,6 +415,207 @@ exports.updateDelivery = async (req, res) => {
             );
         }
 
+        // Automatically complete the order when every associated delivery
+        // has reached delivered. Keep this inside the delivery transaction.
+        let order = null;
+
+        if (
+            previousStatus !== 'delivered' &&
+            delivery.delivery_status === 'delivered'
+        ) {
+            order = await Order.findByPk(delivery.order_id, {
+                include: [
+                    {
+                        model: Customer,
+                        as: 'customer',
+                        attributes: ['id', 'first_name', 'last_name', 'email']
+                    }
+                ],
+                transaction
+            });
+
+            if (order) {
+                // A courier's successful delivery confirmation means COD
+                // has been collected. The admin records this by setting
+                // the delivery status to delivered.
+                const orderPayments = await Payment.findAll({
+                    where: { order_id: order.id },
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                });
+
+                const codPayments = orderPayments.filter(
+                    record =>
+                        record.payment_method === 'cash' &&
+                        ['unpaid', 'partially_paid'].includes(record.payment_status)
+                );
+
+                for (const codPayment of codPayments) {
+                    await codPayment.update({
+                        payment_status: 'paid',
+                        payment_date: new Date(),
+                        processed_by: getActorId(req)
+                    }, { transaction });
+                }
+
+                if (orderPayments.some(record => record.payment_method === 'cash')) {
+                    const confirmedAmountCents = orderPayments.reduce(
+                        (total, record) => {
+                            const status = codPayments.includes(record)
+                                ? 'paid'
+                                : record.payment_status;
+
+                            if (status !== 'paid') return total;
+
+                            return total + Math.round(
+                                Number(record.amount || 0) * 100
+                            );
+                        },
+                        0
+                    );
+
+                    const orderTotalCents = Math.round(
+                        Number(order.total_amount || 0) * 100
+                    );
+
+                    if (confirmedAmountCents > orderTotalCents) {
+                        const error = new Error(
+                            'COD confirmation would cause the order to be overpaid.'
+                        );
+                        error.statusCode = 409;
+                        throw error;
+                    }
+
+                    let nextPaymentStatus = 'unpaid';
+
+                    if (
+                        confirmedAmountCents > 0 &&
+                        confirmedAmountCents < orderTotalCents
+                    ) {
+                        nextPaymentStatus = 'partially_paid';
+                    } else if (
+                        orderTotalCents > 0 &&
+                        confirmedAmountCents === orderTotalCents
+                    ) {
+                        nextPaymentStatus = 'paid';
+                    }
+
+                    if (order.payment_status !== nextPaymentStatus) {
+                        await order.update(
+                            { payment_status: nextPaymentStatus },
+                            { transaction, fields: ['payment_status'] }
+                        );
+                    }
+
+                    for (const codPayment of codPayments) {
+                        await recordAuditLog({
+                            userId: getActorId(req),
+                            action: 'COD_PAYMENT_AUTO_CONFIRMED',
+                            module: 'payments',
+                            entityType: 'payment',
+                            entityId: codPayment.id,
+                            description:
+                                `COD payment ${codPayment.payment_reference} automatically confirmed after delivery`,
+                            newValues: {
+                                payment_status: 'paid',
+                                confirmation_source: 'delivery_status'
+                            },
+                            ipAddress: req.ip || null,
+                            userAgent: req.get('user-agent') || null,
+                            requestId: req.id || req.requestId || null,
+                            transaction
+                        });
+                    }
+                }
+            }
+
+            if (
+                order &&
+                ['shipped', 'partially_shipped'].includes(order.status)
+            ) {
+                const orderDeliveries = await Delivery.findAll({
+                    where: { order_id: order.id },
+                    attributes: ['id', 'delivery_status'],
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                });
+
+                const allDeliveriesCompleted =
+                    orderDeliveries.length > 0 &&
+                    orderDeliveries.every(
+                        record => record.delivery_status === 'delivered'
+                    );
+
+                if (
+                    allDeliveriesCompleted &&
+                    order.payment_status === 'paid'
+                ) {
+                    const previousOrderStatus = order.status;
+
+                    await order.update(
+                        { status: 'delivered' },
+                        { transaction, fields: ['status'] }
+                    );
+
+                    if (order.customer) {
+                        await Notification.create({
+                            customer_id: order.customer.id,
+                            type: 'order_status',
+                            title: ORDER_DELIVERED_LABEL,
+                            message: 'Your order has been completed and delivered.',
+                            reference_type: 'order',
+                            reference_id: order.id,
+                            is_read: false,
+                            read_at: null
+                        }, { transaction });
+                    }
+
+                    await recordAuditLog({
+                        userId: getActorId(req),
+                        action: 'ORDER_STATUS_AUTO_COMPLETED',
+                        module: 'orders',
+                        entityType: 'order',
+                        entityId: order.id,
+                        description:
+                            `Order ${order.order_number} automatically changed ` +
+                            `from ${previousOrderStatus} to delivered after all deliveries were completed`,
+                        oldValues: { status: previousOrderStatus },
+                        newValues: {
+                            status: 'delivered',
+                            trigger: 'all_deliveries_delivered',
+                            delivery_ids: orderDeliveries.map(record => record.id)
+                        },
+                        ipAddress: req.ip || null,
+                        userAgent: req.get('user-agent') || null,
+                        requestId: req.id || req.requestId || null,
+                        transaction
+                    });
+
+                    completedOrderSnapshot = {
+                        id: order.id,
+                        order_number: order.order_number,
+                        previous_status: previousOrderStatus,
+                        status: 'delivered',
+                        customer_name: [
+                            order.customer?.first_name,
+                            order.customer?.last_name
+                        ].filter(Boolean).join(' '),
+                        customer_email: order.customer?.email || null
+                    };
+
+                    if (completedOrderSnapshot.customer_email) {
+                        completionEmailPayload = {
+                            email: completedOrderSnapshot.customer_email,
+                            customerName: completedOrderSnapshot.customer_name,
+                            orderNumber: order.order_number,
+                            statusLabel: ORDER_DELIVERED_LABEL,
+                            reason: null
+                        };
+                    }
+                }
+            }
+        }
+
         if (isNewDispatch) {
             const order = await Order.findByPk(delivery.order_id, {
                 include: [
@@ -452,6 +662,30 @@ exports.updateDelivery = async (req, res) => {
         });
 
         let emailStatus = 'not_required';
+        let orderEmailStatus = 'not_required';
+
+        if (completionEmailPayload) {
+            try {
+                await sendOrderStatusEmail(completionEmailPayload);
+                orderEmailStatus = 'sent';
+            } catch (emailError) {
+                orderEmailStatus = 'failed';
+
+                console.error(
+                    `Automatic order completion email failed for order ${completedOrderSnapshot.order_number}:`,
+                    emailError.message
+                );
+
+                await auditDeliveryAction(req, {
+                    action: 'ORDER_COMPLETION_EMAIL_FAILED',
+                    entityId: completedOrderSnapshot.id,
+                    description:
+                        `Order ${completedOrderSnapshot.order_number} was completed, but the customer email failed`
+                });
+            }
+        } else if (completedOrderSnapshot) {
+            orderEmailStatus = 'skipped_missing_customer_email';
+        }
 
         if (isNewDispatch && emailPayload) {
             try {
@@ -487,7 +721,19 @@ exports.updateDelivery = async (req, res) => {
                     ? 'Delivery updated, but the tracking email could not be sent.'
                     : 'Delivery updated successfully',
             data: updatedDelivery,
-            tracking_email_status: emailStatus
+            tracking_email_status: emailStatus,
+            order_status_update: completedOrderSnapshot
+                ? {
+                    updated: true,
+                    order_id: completedOrderSnapshot.id,
+                    order_number: completedOrderSnapshot.order_number,
+                    previous_status: completedOrderSnapshot.previous_status,
+                    status: completedOrderSnapshot.status,
+                    email_status: orderEmailStatus
+                }
+                : {
+                    updated: false
+                }
         });
     } catch (error) {
         if (transaction && !committed) {
@@ -506,8 +752,14 @@ exports.updateDelivery = async (req, res) => {
             description: `Unexpected error while updating delivery ${id}`
         });
 
-        return res.status(500).json({
-            message: 'Failed to update delivery'
+        const statusCode = Number.isInteger(error.statusCode)
+            ? error.statusCode
+            : 500;
+
+        return res.status(statusCode).json({
+            message: statusCode === 409
+                ? error.message
+                : 'Failed to update delivery'
         });
     }
 };

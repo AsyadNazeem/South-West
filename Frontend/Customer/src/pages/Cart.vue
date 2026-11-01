@@ -1,4 +1,5 @@
 <script setup>
+import { getMediaUrl } from '../utils/mediaUrl'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../services/api'
@@ -14,9 +15,6 @@ const notice = ref('')
 // Products whose image failed to load fall back to the "SW" tile.
 const failedImages = reactive({})
 
-const BACKEND_URL = (
-    import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
-).replace(/\/api\/?$/, '')
 
 const cartItems = computed(() => {
   const value = cart.value?.items ??
@@ -35,13 +33,38 @@ function getItemId(item) {
   return item.id ?? item.cart_item_id ?? item.cartItemId
 }
 
+function getVariantId(item) {
+  return item.variant_id ??
+    item.variant?.id ??
+    item.Variant?.id ??
+    null
+}
+
+function getGuestToken() {
+  return sessionStorage.getItem('guestCheckoutToken')
+}
+
+function getGuestHeaders() {
+  return {
+    'x-guest-checkout-token': getGuestToken()
+  }
+}
+
+function getCartItemKey(item) {
+  const id = getItemId(item)
+
+  if (id != null) return `registered-${id}`
+
+  return `guest-${getProductId(item)}-${getVariantId(item) ?? 'null'}`
+}
+
 function getProductId(item) {
   const product = getProduct(item)
   return product.id ?? item.item_id ?? item.product_id
 }
 
 function itemKey(item) {
-  return getItemId(item) ?? getProductId(item)
+  return getCartItemKey(item)
 }
 
 function getName(item) {
@@ -85,9 +108,7 @@ function getImage(item) {
       ''
 
   if (!value) return ''
-  if (/^https?:\/\//i.test(value)) return value
-
-  return `${BACKEND_URL}/${String(value).replace(/^\/+/, '')}`
+  return getMediaUrl(value)
 }
 
 // Empty once an image has failed, so the fallback tile shows.
@@ -113,7 +134,9 @@ function getOriginalPrice(item) {
 
 function getUnitPrice(item) {
   return Number(
-    item.discounted_unit_price ?? getOriginalPrice(item)
+    item.discounted_price ??
+    item.discounted_unit_price ??
+    getOriginalPrice(item)
   ) || 0
 }
 
@@ -143,10 +166,11 @@ function discountPercent(item) {
 }
 
 function isBusy(item) {
-  const id = getItemId(item)
-  return updatingIds.value.includes(id) || removingIds.value.includes(id)
-}
+  const key = itemKey(item)
 
+  return updatingIds.value.includes(key) ||
+    removingIds.value.includes(key)
+}
 const totalDiscount = computed(() =>
   cartItems.value.reduce(
     (total, item) =>
@@ -174,9 +198,8 @@ function getVariant(item) {
 }
 
 function getVariantName(item) {
-    const variant = getVariant(item)
-
-    return variant.variant_name || ''
+  const variant = getVariant(item)
+  return variant.variant_name || item.variant_name || ''
 }
 
 function getVariantSku(item) {
@@ -207,88 +230,119 @@ async function loadCart() {
   error.value = ''
   notice.value = ''
 
-  if (!sessionStorage.getItem('customerToken')) {
+  const customerToken = sessionStorage.getItem('customerToken')
+
+  if (!customerToken && !getGuestToken()) {
+    cart.value = { items: [] }
     loading.value = false
-    router.replace({
-      path: '/login',
-      query: { redirect: '/cart' },
-    })
     return
   }
 
   try {
-    const response = await api.get('/customer-cart/')
+    const response = customerToken
+      ? await api.get('/customer-cart/')
+      : await api.get('/guest-checkout/session', {
+          headers: getGuestHeaders()
+        })
+
     setCartResponse(response.data)
   } catch (err) {
-    error.value =
+    if (
+      !customerToken &&
+      [401, 403].includes(err.response?.status)
+    ) {
+      sessionStorage.removeItem('guestCheckoutToken')
+      cart.value = { items: [] }
+      notice.value = 'Your guest cart session expired. Please add your items again.'
+    } else {
+      error.value =
         err.response?.data?.message ??
         'Unable to load your cart. Please try again.'
+    }
   } finally {
     loading.value = false
   }
 }
 
 async function updateQuantity(item, nextQuantity) {
-  const id = getItemId(item)
+  const customerToken = sessionStorage.getItem('customerToken')
+  const id = itemKey(item)
 
-  if (id == null || nextQuantity < 1) return
-  if (updatingIds.value.includes(id)) return
+  if (nextQuantity < 1 || updatingIds.value.includes(id)) return
+
+  if (!customerToken && !getGuestToken()) return
 
   updatingIds.value = [...updatingIds.value, id]
   error.value = ''
   notice.value = ''
 
   try {
-    await api.patch(`/customer-cart/items/${encodeURIComponent(id)}`, {
-      quantity: nextQuantity,
-    })
+    if (customerToken) {
+      const cartItemId = getItemId(item)
 
+      if (cartItemId == null) return
 
-const response = await api.get('/customer-cart/')
-
-console.log('CART API RESPONSE:', response.data)
-
-setCartResponse(response.data)
-
-console.log('CART ITEMS:', cartItems.value)
-console.log(
-  'IMAGE FIELDS:',
-  cartItems.value.map(item => ({
-    name: getName(item),
-    product: getProduct(item),
-    variant: getVariant(item),
-    resolvedImage: getImage(item),
-  }))
-)
-
+      await api.patch(
+        `/customer-cart/items/${encodeURIComponent(cartItemId)}`,
+        { quantity: nextQuantity }
+      )
+    } else {
+      await api.patch(
+        '/guest-checkout/session/items',
+        {
+          item_id: getProductId(item),
+          variant_id: getVariantId(item),
+          quantity: nextQuantity
+        },
+        { headers: getGuestHeaders() }
+      )
+    }
 
     await loadCart()
   } catch (err) {
     error.value =
-        err.response?.data?.message ??
-        'Unable to update the quantity. Please try again.'
+      err.response?.data?.message ??
+      'Unable to update the quantity. Please try again.'
   } finally {
     updatingIds.value = updatingIds.value.filter(value => value !== id)
   }
 }
 
 async function removeItem(item) {
-  const id = getItemId(item)
+  const customerToken = sessionStorage.getItem('customerToken')
+  const id = itemKey(item)
 
-  if (id == null || removingIds.value.includes(id)) return
+  if (removingIds.value.includes(id)) return
 
   removingIds.value = [...removingIds.value, id]
   error.value = ''
   notice.value = ''
 
   try {
-    await api.delete(`/customer-cart/items/${encodeURIComponent(id)}`)
+    if (customerToken) {
+      const cartItemId = getItemId(item)
+
+      if (cartItemId == null) return
+
+      await api.delete(
+        `/customer-cart/items/${encodeURIComponent(cartItemId)}`
+      )
+    } else {
+      await api.delete('/guest-checkout/session/items', {
+        data: {
+          item_id: getProductId(item),
+          variant_id: getVariantId(item)
+        },
+        headers: getGuestHeaders()
+      })
+    }
+
     await loadCart()
     notice.value = 'Item removed from your cart.'
   } catch (err) {
     error.value =
-        err.response?.data?.message ??
-        'Unable to remove this item. Please try again.'
+      err.response?.data?.message ??
+      'Unable to remove this item. Please try again.'
   } finally {
     removingIds.value = removingIds.value.filter(value => value !== id)
   }

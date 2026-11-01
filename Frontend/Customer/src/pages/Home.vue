@@ -24,9 +24,7 @@ let touchStartX = 0
 const categories = ref([])
 const selectedCategoryId = ref(null)
 
-const API_BASE_URL = (
-    import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
-).replace(/\/api\/?$/, '')
+import { getMediaUrl } from '../utils/mediaUrl'
 
 // Short promises shown under the banner. Edit the text to match your store.
 const BENEFITS = [
@@ -122,16 +120,7 @@ function prefersReducedMotion() {
 }
 
 function getBannerImageUrl(path) {
-    if (!path) return ''
-
-    if (/^https?:\/\//i.test(path)) {
-        return path
-    }
-
-    return new URL(
-        path.startsWith('/') ? path : `/${path}`,
-        `${API_BASE_URL}/`,
-    ).href
+    return getMediaUrl(path)
 }
 
 function bannerLinkAttrs(banner) {

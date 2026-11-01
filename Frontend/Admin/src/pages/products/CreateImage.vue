@@ -40,21 +40,9 @@ const cropQueue = ref([])
 
 const cropperInstance = ref(null)
 
-// Files are served by the backend (e.g. http://localhost:5001/uploads/...).
-// If the API returns a relative URL, prefix it with the API origin.
-const API_ORIGIN = (() => {
-  try {
-    return new URL(import.meta.env.VITE_API_URL).origin
-  } catch {
-    return ''
-  }
-})()
+import { getMediaUrl } from '../../utils/mediaUrl'
 
-const fileUrl = (url) => {
-  if (!url) return ''
-
-  return url.startsWith('/') ? `${API_ORIGIN}${url}` : url
-}
+const fileUrl = (url) => getMediaUrl(url)
 
 // ==========================================
 // State

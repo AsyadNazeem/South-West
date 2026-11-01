@@ -1,12 +1,23 @@
 <script setup>
-// The header is rendered once here, so it shows on every page.
-// Adjust the import path to where SiteHeader.vue lives in your project.
+import { onMounted } from 'vue'
+
 import SiteHeader from './layouts/AppHeader.vue'
 import AppFooter from './layouts/AppFooter.vue'
+
+import { useWebsiteTheme } from './composables/useWebsiteTheme'
+
+const { loadActiveTheme } = useWebsiteTheme()
+
+onMounted(() => {
+  loadActiveTheme()
+})
 </script>
 
 <template>
   <SiteHeader />
+
   <RouterView />
-      <AppFooter />
+
+  <AppFooter />
+
 </template>
