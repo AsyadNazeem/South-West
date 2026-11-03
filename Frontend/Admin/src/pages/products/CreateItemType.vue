@@ -400,7 +400,7 @@ const payload = {
 
     alert('Item type and specifications created successfully.')
 
-    router.push('/item-types')
+    router.push('/admin/products/item-types')
 
   } catch (error) {
 

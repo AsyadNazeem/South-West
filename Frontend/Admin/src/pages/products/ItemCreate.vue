@@ -330,46 +330,104 @@
       <section class="form-section">
         <div class="section-header">
           <h2>Shipping Information</h2>
-          <p>Enter the item's shipping weight for delivery charge calculation.</p>
+          <p>Select a predefined weight range or enter a custom range.</p>
         </div>
 
         <div class="form-grid">
-
           <div class="form-group">
-            <label for="shipping_weight">
-              Shipping Weight <span>*</span>
-            </label>
-
-            <input
-                id="shipping_weight"
-                v-model="form.shipping_weight"
-                type="number"
-                min="0"
-                step="0.001"
-                placeholder="e.g. 2.500"
-                required
-            />
-
-            <small>
-              Enter the approximate packed/shipping weight of the item.
-            </small>
-          </div>
-
-          <div class="form-group">
-            <label for="shipping_weight_unit">
-              Weight Unit <span>*</span>
+            <label for="shipping_weight_range">
+              Shipping Weight Range <span>*</span>
             </label>
 
             <select
-                id="shipping_weight_unit"
-                v-model="form.shipping_weight_unit"
-                required
+              id="shipping_weight_range"
+              v-model="form.shipping_weight_range"
+              @change="form.shipping_weight_range_changed = form.shipping_weight_range !== 'preserve'"
+              required
             >
-              <option value="kg">Kilograms (kg)</option>
-              <option value="g">Grams (g)</option>
+              <option value="">Select shipping weight range</option>
+              <option
+                v-if="
+                  isEditMode &&
+                  (
+                    !form.shipping_weight_range ||
+                    form.shipping_weight_range === 'preserve'
+                  )
+                "
+                value="preserve"
+              >
+                Preserve existing shipping weight
+              </option>
+              <option value="0.5">Below 1 kg</option>
+              <option value="1.5">1 kg to below 2 kg</option>
+              <option value="2.5">2 kg to below 3 kg</option>
+              <option value="3.5">3 kg to below 4 kg</option>
+              <option value="4.5">4 kg to below 5 kg</option>
+              <option value="custom">Add custom weight range</option>
             </select>
           </div>
 
+          <template v-if="form.shipping_weight_range === 'custom'">
+            <div class="form-group">
+              <label for="shipping_weight_min">
+                Minimum Weight (kg) <span>*</span>
+              </label>
+
+              <input
+                id="shipping_weight_min"
+                v-model.number="form.shipping_weight_min"
+                type="number"
+                min="0"
+                step="0.001"
+                placeholder="e.g. 5"
+                required
+                @input="form.shipping_weight_range_changed = true"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="shipping_weight_max">
+                Maximum Weight (kg) <span>*</span>
+              </label>
+
+              <input
+                id="shipping_weight_max"
+                v-model.number="form.shipping_weight_max"
+                type="number"
+                min="0"
+                step="0.001"
+                placeholder="e.g. 6"
+                required
+                @input="form.shipping_weight_range_changed = true"
+              />
+            </div>
+
+            <div class="form-group">
+              <small>
+                The estimated shipping weight is calculated using the midpoint
+                of the selected range.
+              </small>
+
+              <small
+                v-if="
+                  Number.isFinite(Number(form.shipping_weight_min)) &&
+                  Number.isFinite(Number(form.shipping_weight_max)) &&
+                  form.shipping_weight_max > form.shipping_weight_min &&
+                  form.shipping_weight_min >= 0
+                "
+              >
+                Estimated weight:
+                {{ ((form.shipping_weight_min + form.shipping_weight_max) / 2).toFixed(3) }} kg
+              </small>
+            </div>
+          </template>
+
+          <div v-else class="form-group">
+            <small>
+              The selected range is converted into an estimated weight for
+              delivery charge calculation.
+            </small>
+          </div>
         </div>
       </section>
 
@@ -1014,6 +1072,22 @@ const closeUnitModal = () => {
   resetUnitForm()
 }
 
+const getShippingWeightRange = (weight, unit = "kg") => {
+  if (weight === null || weight === undefined || weight === "") return "preserve"
+
+  const weightKg = unit === "g"
+    ? Number(weight) / 1000
+    : Number(weight)
+
+  if (!Number.isFinite(weightKg) || weightKg <= 0) return "preserve"
+  if (weightKg < 1) return "0.5"
+  if (weightKg < 2) return "1.5"
+  if (weightKg < 3) return "2.5"
+  if (weightKg < 4) return "3.5"
+  if (weightKg < 5) return "4.5"
+  return "custom"
+}
+
 /* =========================================================
    FORM
 ========================================================= */
@@ -1031,6 +1105,10 @@ item_name: "",
 
   shipping_weight: "",
   shipping_weight_unit: "kg",
+  shipping_weight_range: "",
+  shipping_weight_range_changed: false,
+  shipping_weight_min: "",
+  shipping_weight_max: "",
 
   condition: "new",
   is_serialized: false,
@@ -1537,6 +1615,31 @@ const loadItem = async () => {
   form.value.shipping_weight_unit =
       item.shipping_weight_unit ?? "kg"
 
+  form.value.shipping_weight_range =
+      getShippingWeightRange(
+          item.shipping_weight,
+          item.shipping_weight_unit ?? "kg"
+      )
+
+  const existingWeightKg =
+      item.shipping_weight_unit === "g"
+          ? Number(item.shipping_weight) / 1000
+          : Number(item.shipping_weight)
+
+  if (
+      Number.isFinite(existingWeightKg) &&
+      existingWeightKg >= 5
+  ) {
+      form.value.shipping_weight_min = Math.floor(existingWeightKg)
+      form.value.shipping_weight_max = Math.floor(existingWeightKg) + 1
+  } else {
+      form.value.shipping_weight_min = ""
+      form.value.shipping_weight_max = ""
+  }
+
+  // Preserve the original exact weight unless the admin changes the range.
+  form.value.shipping_weight_range_changed = false
+
   form.value.condition =
       item.condition ?? "new"
 
@@ -1602,6 +1705,46 @@ const loadItem = async () => {
 const submitForm = async () => {
   errorMessage.value = ""
 
+  if (
+    !isEditMode.value &&
+    (
+      !form.value.shipping_weight_range ||
+      form.value.shipping_weight_range === "preserve"
+    )
+  ) {
+    errorMessage.value = "Please select a shipping weight range."
+    alert(errorMessage.value)
+    return
+  }
+
+  if (
+    isEditMode.value &&
+    form.value.shipping_weight_range === "preserve" &&
+    form.value.shipping_weight_range_changed
+  ) {
+    errorMessage.value = "Please select a valid shipping weight range."
+    alert(errorMessage.value)
+    return
+  }
+
+  if (form.value.shipping_weight_range === "custom") {
+    const min = Number(form.value.shipping_weight_min)
+    const max = Number(form.value.shipping_weight_max)
+
+    if (
+      form.value.shipping_weight_min === "" ||
+      form.value.shipping_weight_max === "" ||
+      !Number.isFinite(min) ||
+      !Number.isFinite(max) ||
+      min < 0 ||
+      max <= min
+    ) {
+      errorMessage.value = "Enter a valid custom weight range. The maximum must be greater than the minimum."
+      alert(errorMessage.value)
+      return
+    }
+  }
+
   try {
 
     loading.value = true
@@ -1636,12 +1779,23 @@ qb_item_code: null,
           (form.value.description || "").trim() || null,
 
       shipping_weight:
-          form.value.shipping_weight
-              ? Number(form.value.shipping_weight)
-              : null,
+          form.value.shipping_weight_range_changed
+              ? (
+                  form.value.shipping_weight_range === "custom"
+                      ? Number((
+                          Number(form.value.shipping_weight_min) +
+                          Number(form.value.shipping_weight_max)
+                      ) / 2)
+                      : Number(form.value.shipping_weight_range)
+                )
+              : (form.value.shipping_weight !== ""
+                  ? Number(form.value.shipping_weight)
+                  : null),
 
       shipping_weight_unit:
-      form.value.shipping_weight_unit,
+          form.value.shipping_weight_range_changed
+              ? "kg"
+              : form.value.shipping_weight_unit,
 
       condition:
       form.value.condition,
