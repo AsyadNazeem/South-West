@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
+import SearchableSelect from '../../components/SearchableSelect.vue'
 
 const MAX_ADDRESSES = 3
 
@@ -125,9 +126,17 @@ async function openForm(address = null) {
     suppressAreaReset = true
     Object.assign(form, {
       ...blankForm(),
-      ...address,
+      recipient_name: address.recipient_name || '',
+      phone: address.phone || '',
+      address_line_1: address.address_line_1 || '',
+      address_line_2: address.address_line_2 || '',
+      city: address.city || '',
+      state: address.state || '',
+      postal_code: address.postal_code || '',
+      country: address.country || 'Sri Lanka',
       district_id: address.district_id ? String(address.district_id) : '',
       area_id: address.area_id ? String(address.area_id) : '',
+      address_type: address.address_type || 'shipping',
       is_default: Boolean(address.is_default),
     })
   }
@@ -192,13 +201,16 @@ async function makeDefault(address) {
 
   try {
     await api.patch(`/customer/addresses/${address.id}`, {
-      ...address,
       is_default: true,
     })
+
     flash('Default address updated.')
     await loadAddresses()
   } catch (error) {
-    errorMessage.value = getError(error, 'We could not update your default address.')
+    errorMessage.value = getError(
+      error,
+      'We could not update your default address.'
+    )
   }
 }
 
@@ -259,6 +271,9 @@ onMounted(async () => {
           :disabled="!canAdd"
           @click="openForm()"
       >
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
         Add address
       </button>
     </header>
@@ -270,10 +285,29 @@ onMounted(async () => {
       You have saved {{ MAX_ADDRESSES }} addresses. Delete one to add a new address.
     </p>
 
-    <p v-if="loading" class="muted">Loading your addresses…</p>
+    <!-- Loading skeletons -->
+    <ul v-if="loading" class="address-list" aria-busy="true" aria-label="Loading your addresses">
+      <li v-for="n in 2" :key="n" class="address-card skeleton" aria-hidden="true">
+        <span class="bar w-40"></span>
+        <span class="bar w-30"></span>
+        <span class="bar w-90 tall"></span>
+        <span class="bar w-60"></span>
+      </li>
+    </ul>
 
     <!-- Empty state -->
     <div v-else-if="!addresses.length && !formOpen" class="empty">
+      <span class="empty-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linejoin="round"
+          />
+          <circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.8" />
+        </svg>
+      </span>
       <p class="empty-title">No saved addresses yet</p>
       <p class="muted">Add a delivery address so checkout is faster next time.</p>
       <button type="button" class="button primary" @click="openForm()">
@@ -290,11 +324,16 @@ onMounted(async () => {
           :class="{ 'is-default': address.is_default }"
       >
         <div class="card-top">
-          <div>
+          <div class="who">
             <p class="name">{{ address.recipient_name }}</p>
             <p class="muted">{{ address.phone }}</p>
           </div>
-          <span v-if="address.is_default" class="badge">Default</span>
+          <span v-if="address.is_default" class="badge">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m5 12.5 4.5 4.5L19 7.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Default
+          </span>
         </div>
 
         <p class="address-text">{{ formatAddress(address) }}</p>
@@ -310,7 +349,7 @@ onMounted(async () => {
           >
             Make default
           </button>
-          <button type="button" class="link danger" @click="confirmingId = address.id">
+          <button type="button" class="link danger push" @click="confirmingId = address.id">
             Delete
           </button>
         </div>
@@ -352,24 +391,37 @@ onMounted(async () => {
 
       <fieldset class="group">
         <legend>Delivery area</legend>
+
         <div class="grid">
           <div class="field">
             <label for="ab-district">District *</label>
-            <select id="ab-district" v-model="form.district_id" required>
-              <option value="">Select district</option>
-              <option v-for="district in districts" :key="district.id" :value="String(district.id)">
-                {{ district.district_name }}
-              </option>
-            </select>
+
+            <SearchableSelect
+              id="ab-district"
+              :model-value="form.district_id"
+              :options="districts"
+              :get-value="district => String(district.id)"
+              :get-label="district => district.district_name"
+              placeholder="Search or select district"
+              empty-text="No districts found"
+              @update:model-value="form.district_id = $event"
+            />
           </div>
+
           <div class="field">
             <label for="ab-area">Area *</label>
-            <select id="ab-area" v-model="form.area_id" required :disabled="!form.district_id">
-              <option value="">{{ form.district_id ? 'Select area' : 'Choose a district first' }}</option>
-              <option v-for="area in areas" :key="area.id" :value="String(area.id)">
-                {{ area.area_name }}
-              </option>
-            </select>
+
+            <SearchableSelect
+              id="ab-area"
+              :model-value="form.area_id"
+              :options="areas"
+              :get-value="area => String(area.id)"
+              :get-label="area => area.area_name"
+              :placeholder="form.district_id ? 'Search or select area' : 'Choose a district first'"
+              empty-text="No areas found"
+              :disabled="!form.district_id"
+              @update:model-value="form.area_id = $event"
+            />
           </div>
         </div>
       </fieldset>
@@ -449,25 +501,31 @@ onMounted(async () => {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
 }
 
 .page-head h2 {
   margin: 0 0 var(--space-1);
   font-family: var(--font-family-display);
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-lg, var(--font-size-md));
   font-weight: var(--font-weight-bold);
+  line-height: 1.25;
 }
 
 .muted {
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
+  line-height: 1.5;
 }
 
 /* Buttons */
 .button {
-  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 44px;
   padding: 0 var(--space-5);
   border-radius: var(--radius-md);
   font: inherit;
@@ -475,22 +533,42 @@ onMounted(async () => {
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .button.primary {
   border: 1px solid var(--color-primary);
   background: var(--color-primary);
   color: var(--color-on-primary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
 }
 
 .button.primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
 }
 
 .button.secondary {
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text);
+}
+
+.button.secondary:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .button:disabled {
@@ -500,25 +578,38 @@ onMounted(async () => {
 
 .button:focus-visible,
 .link:focus-visible,
-.choice input:focus-visible,
-.check input:focus-visible {
+.choice:has(input:focus-visible),
+.check:has(input:focus-visible) {
   outline: 2px solid var(--color-focus-outline);
   outline-offset: 2px;
 }
 
+/* Text buttons */
 .link {
-  padding: 0;
+  min-height: 36px;
+  margin: 0 calc(var(--space-2) * -1);
+  padding: 0 var(--space-3);
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--color-primary);
   font: inherit;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.link:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
 }
 
 .link.danger {
   color: var(--color-danger);
+}
+
+.link.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 9%, transparent);
 }
 
 .link:disabled {
@@ -531,33 +622,58 @@ onMounted(async () => {
   margin: 0 0 var(--space-4);
   padding: var(--space-3) var(--space-4);
   border-left: 3px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--color-surface-muted);
   font-size: var(--font-size-sm);
+  line-height: 1.5;
 }
 
 .notice.success {
   border-left-color: var(--color-success);
   background: var(--color-success-bg);
   color: var(--color-success);
+  font-weight: var(--font-weight-medium);
 }
 
 .notice.error {
   border-left-color: var(--color-danger);
   background: var(--color-danger-bg);
   color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
 }
 
 /* Empty state */
 .empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding: var(--space-8) var(--space-5);
-  border: 1px dashed var(--color-border);
+  border: 1.5px dashed var(--color-border);
   border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface-muted) 55%, transparent);
   text-align: center;
+}
+
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--space-4);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+}
+
+.empty-icon svg {
+  width: 28px;
+  height: 28px;
 }
 
 .empty-title {
   margin: 0 0 var(--space-1);
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -576,6 +692,7 @@ onMounted(async () => {
 }
 
 .address-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -583,10 +700,20 @@ onMounted(async () => {
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-md);
   background: var(--color-surface);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+@media (hover: hover) {
+  .address-card:not(.skeleton):hover {
+    border-color: var(--color-border);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 7%);
+  }
 }
 
 .address-card.is-default {
-  border-color: var(--color-accent-deep);
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface));
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 
 .card-top {
@@ -596,40 +723,59 @@ onMounted(async () => {
   gap: var(--space-3);
 }
 
+.who {
+  min-width: 0;
+}
+
 .name {
-  margin: 0 0 var(--space-1);
+  margin: 0 0 2px;
   font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
 }
 
 .badge {
-  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
   border-radius: var(--radius-pill);
   background: var(--color-primary);
   color: var(--color-on-primary);
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
   white-space: nowrap;
 }
 
+.badge svg {
+  width: 12px;
+  height: 12px;
+}
+
 .address-text {
-  margin: var(--space-4) 0 var(--space-2);
+  margin: var(--space-4) 0 var(--space-3);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
   overflow-wrap: anywhere;
 }
 
 .type {
+  align-self: flex-start;
   margin: 0;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-muted);
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
 }
 
 .card-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-4);
   margin-top: auto;
-  padding-top: var(--space-4);
+  padding-top: var(--space-3);
   border-top: 1px solid var(--color-border-soft);
 }
 
@@ -637,15 +783,24 @@ onMounted(async () => {
   margin-top: var(--space-4);
 }
 
+.card-actions .push {
+  margin-left: auto;
+}
+
 .confirm {
   margin-top: auto;
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border-soft);
+  padding: var(--space-3) var(--space-4);
+  margin-inline: calc(var(--space-4) * -1);
+  margin-bottom: calc(var(--space-3) * -1);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-bg);
 }
 
 .confirm p {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-1);
+  color: var(--color-danger);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
 }
 
 .confirm .card-actions {
@@ -654,16 +809,53 @@ onMounted(async () => {
   border-top: 0;
 }
 
+/* Loading skeleton */
+.skeleton {
+  gap: var(--space-3);
+}
+
+.bar {
+  display: block;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-muted) 25%,
+    color-mix(in srgb, var(--color-border) 55%, var(--color-surface-muted)) 50%,
+    var(--color-surface-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.bar.tall {
+  height: 16px;
+  margin-top: var(--space-2);
+}
+
+.w-30 { width: 30%; }
+.w-40 { width: 40%; }
+.w-60 { width: 60%; }
+.w-90 { width: 90%; }
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
 /* Form */
 .address-form {
   padding: var(--space-6);
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-md);
   background: var(--color-surface);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 5%);
 }
 
 .form-head {
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border-soft);
 }
 
 .form-head h3 {
@@ -681,13 +873,22 @@ onMounted(async () => {
 }
 
 .group legend {
-  margin-bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  margin-bottom: var(--space-4);
   padding: 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.group legend::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border-soft);
 }
 
 .grid {
@@ -709,14 +910,14 @@ onMounted(async () => {
 
 .field label {
   color: var(--color-text-label);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
 }
 
-.field input,
-.field select {
+.field input {
   box-sizing: border-box;
   width: 100%;
+  min-height: 48px;
   height: var(--field-height);
   padding: 0 var(--space-4);
   border: var(--border-width-field) solid var(--color-border);
@@ -730,42 +931,62 @@ onMounted(async () => {
 
 .field input::placeholder {
   color: var(--color-text-muted);
+  opacity: 0.8;
 }
 
-.field input:focus,
-.field select:focus {
-  outline: none;
+@media (hover: hover) {
+  .field input:hover:not(:focus) {
+    border-color: var(--color-text-muted);
+  }
+}
+
+.field input:focus {
+  outline: 2px solid transparent; /* keeps a visible ring in forced-colors mode */
   border-color: var(--color-focus);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-focus-outline) 40%, transparent);
-}
-
-.field select:disabled {
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-  cursor: not-allowed;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-focus-outline) 35%, transparent);
 }
 
 /* Address type choices */
 .choices {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
+  max-width: 420px;
 }
 
 .choice {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  height: var(--field-height);
-  padding: 0 var(--space-5);
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: 0 var(--space-4);
   border: var(--border-width-field) solid var(--color-border);
   border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
   cursor: pointer;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.choice input,
+.check input {
+  accent-color: var(--color-primary);
+}
+
+.choice input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+@media (hover: hover) {
+  .choice:hover {
+    border-color: var(--color-text-muted);
+  }
 }
 
 .choice:has(input:checked) {
   border-color: var(--color-primary);
-  background: var(--color-surface-muted);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
   font-weight: var(--font-weight-semibold);
 }
 
@@ -774,17 +995,26 @@ onMounted(async () => {
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 
 .check input {
-  margin-top: 3px;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
 }
 
 .check small {
   display: block;
   margin-top: 2px;
+  font-weight: var(--font-weight-normal);
 }
 
 .form-actions {
@@ -812,7 +1042,8 @@ onMounted(async () => {
     width: 100%;
   }
 
-  .grid {
+  .grid,
+  .choices {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -820,8 +1051,31 @@ onMounted(async () => {
     padding: var(--space-5);
   }
 
+  .form-actions {
+    flex-direction: column-reverse;
+  }
+
   .form-actions .button {
-    flex: 1;
+    width: 100%;
+  }
+
+  /* 16px stops iOS zooming into the field on focus */
+  .field input {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .link,
+  .address-card,
+  .field input,
+  .choice {
+    transition: none;
+  }
+
+  .bar {
+    animation: none;
   }
 }
 </style>

@@ -33,6 +33,8 @@ const permissionCatalog = [
     { name: 'deliveries.create', module: 'deliveries', description: 'Create deliveries' },
     { name: 'deliveries.update', module: 'deliveries', description: 'Update deliveries' },
     { name: 'deliveries.delete', module: 'deliveries', description: 'Delete deliveries' },
+    { name: 'delivery_charges.view', module: 'delivery_charges', description: 'View delivery charge settings' },
+    { name: 'delivery_charges.update', module: 'delivery_charges', description: 'Update delivery charge settings' },
     { name: 'invoices.view', module: 'invoices', description: 'View invoices' },
     { name: 'item_images.view', module: 'item_images', description: 'View item images and videos' },
     { name: 'item_images.create', module: 'item_images', description: 'Create item images and videos' },

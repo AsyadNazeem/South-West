@@ -2,6 +2,14 @@ const express = require("express")
 
 const router = express.Router()
 
+const authenticate = require("../middleware/authMiddleware")
+const { requirePermission } = require("../middleware/requirePermission")
+const {
+    getPrepaidDeliveryPricing,
+    updatePrepaidDeliveryPricing
+} = require("../controllers/prepaidDeliverySettingController")
+
+
 const {
     getDeliveryAreas,
     getAreasByDistrict,
@@ -16,6 +24,21 @@ const {
 // Optional:
 // GET /delivery-areas?district_id=1
 // =====================================================
+
+// Protected prepaid delivery pricing settings.
+router.get(
+    "/prepaid-pricing",
+    authenticate,
+    requirePermission('delivery_charges.view'),
+    getPrepaidDeliveryPricing
+)
+
+router.put(
+    "/prepaid-pricing",
+    authenticate,
+    requirePermission('delivery_charges.update'),
+    updatePrepaidDeliveryPricing
+)
 
 router.get("/", getDeliveryAreas)
 

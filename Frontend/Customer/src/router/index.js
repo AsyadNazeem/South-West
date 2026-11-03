@@ -26,6 +26,7 @@ import ReturnsCancellations from '../pages/account/ReturnsCancellations.vue'
 import ProductDetails from '../pages/ProductDetails.vue'
 import Cart from '../pages/Cart.vue'
 import Checkout from '../pages/Checkout.vue'
+import GuestCheckoutAddress from '../pages/GuestCheckoutAddress.vue'
 
 import GoogleCallback from '../pages/auth/GoogleCallback.vue'
 
@@ -74,6 +75,12 @@ const routes = [
         name: 'customer-cart',
         component: Cart,
         meta: { title: 'Shopping Cart' },
+    },
+    {
+        path: '/checkout/address/:token?',
+        name: 'guest-checkout-address',
+        component: GuestCheckoutAddress,
+        meta: { title: 'Delivery Details' },
     },
     {
         path: '/checkout/:token?',

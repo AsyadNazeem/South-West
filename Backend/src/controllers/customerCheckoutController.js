@@ -40,6 +40,10 @@ const {
     calculatePromotionDiscount
 } = require('../services/promotionService');
 
+const {
+    calculateDeliveryCharge
+} = require('../services/prepaidDeliveryPricingService');
+
 const CURRENCY = 'LKR';
 const PRICE_TYPE = 'selling';
 const IDEMPOTENCY_KEY_MAX_LENGTH = 100;
@@ -923,17 +927,15 @@ items.push({
       }
 
 
-        const billableKg = Math.max(1, Math.ceil(totalWeightKg));
+        const deliveryPricing = await calculateDeliveryCharge({
+            paymentMethod: payment_method,
+            district,
+            area,
+            totalWeightKg,
+            transaction
+        });
 
-        const shippingAmount = money(
-            (
-                ['card', 'koko', 'mintpay'].includes(payment_method)
-                    ? (Number(district.id) === 1 ? 450 : 500) +
-                        (billableKg - 1) * 100
-                    : Number(area.first_kg_charge) +
-                        (billableKg - 1) * Number(area.additional_kg_charge)
-            )
-        );
+        const shippingAmount = money(deliveryPricing.deliveryCharge);
 
 let promotion = null;
 let promoDiscount = null;
@@ -977,7 +979,7 @@ const totalAmount = money(
 discount_amount: combinedDiscountAmount,
 promo_code: promotion ? promotion.promotion_code : null,
 promo_discount_amount: promoDiscountAmount,
-                billable_weight_kg: billableKg,
+                billable_weight_kg: deliveryPricing.billableKg,
                 items
             }
         });
@@ -1407,17 +1409,15 @@ discountCampaign: campaignDiscount
          * Delivery charge:
          * first_kg_charge + additional_kg_charge for every extra billable kg.
          */
-        const billableKg = Math.max(1, Math.ceil(totalWeightKg));
+        const deliveryPricing = await calculateDeliveryCharge({
+            paymentMethod: payment_method,
+            district,
+            area,
+            totalWeightKg,
+            transaction
+        });
 
-        const shippingAmount = money(
-            (
-                ['card', 'koko', 'mintpay'].includes(payment_method)
-                    ? (Number(district.id) === 1 ? 450 : 500) +
-                        (billableKg - 1) * 100
-                    : Number(area.first_kg_charge) +
-                        (billableKg - 1) * Number(area.additional_kg_charge)
-            )
-        );
+        const shippingAmount = money(deliveryPricing.deliveryCharge);
 
         // Discounts and taxes remain zero until approved rules are implemented.
 
@@ -1605,7 +1605,7 @@ line_total: entry.lineTotal
             amount: totalAmount,
             transaction_reference: null,
             payment_date: null,
-            notes: payment_method === 'online'
+            notes: ['card', 'koko', 'mintpay'].includes(payment_method)
                 ? 'Awaiting payment provider integration and verified confirmation.'
                 : 'Cash on delivery. Payment is outstanding.',
             processed_by: null

@@ -366,8 +366,23 @@ function continueShopping() {
 }
 
 function proceedToCheckout() {
-  // The checkout page will be connected in the next step.
-  router.push('/checkout')
+  const customerToken = sessionStorage.getItem('customerToken')
+
+  // Registered customers keep the existing checkout flow.
+  if (customerToken) {
+    router.push('/checkout')
+    return
+  }
+
+  // Guests reuse their existing cart session.
+  const guestToken = getGuestToken()
+
+  if (!/^[a-f0-9]{64}$/i.test(guestToken || '')) {
+    error.value = 'Your guest cart session could not be identified. Please refresh your cart.'
+    return
+  }
+
+  router.push(`/checkout/address/${guestToken}`)
 }
 
 onMounted(loadCart)

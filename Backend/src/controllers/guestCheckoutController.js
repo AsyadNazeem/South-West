@@ -4,6 +4,10 @@ const crypto = require('crypto');
 const { Op } = require('sequelize');
 
 const {
+    calculateDeliveryCharge
+} = require('../services/prepaidDeliveryPricingService');
+
+const {
     sequelize,
     GuestCheckoutSession,
     Item,
@@ -854,11 +858,17 @@ async function quoteGuestCheckout(req, res) {
             });
         }
 
-        const paymentMethod = details.payment_method || 'cash';
+        const requestedPaymentMethod = String(
+            details.payment_method || 'cash'
+        ).trim().toLowerCase();
 
-        if (paymentMethod !== 'cash') {
+        const paymentMethod = requestedPaymentMethod === 'cod'
+            ? 'cash'
+            : requestedPaymentMethod;
+
+        if (!['cash', 'card', 'koko', 'mintpay'].includes(paymentMethod)) {
             return res.status(400).json({
-                message: 'Cash on delivery is the only available guest payment method.'
+                message: 'Invalid payment method.'
             });
         }
 
@@ -936,12 +946,15 @@ async function quoteGuestCheckout(req, res) {
                 totalWeightKg += weightKg * quantity;
             }
 
-            const billableKg = Math.max(1, Math.ceil(totalWeightKg));
+            const deliveryPricing = await calculateDeliveryCharge({
+                paymentMethod,
+                district,
+                area,
+                totalWeightKg,
+                transaction
+            });
 
-            const shippingAmount = money(
-                Number(area.first_kg_charge) +
-                (billableKg - 1) * Number(area.additional_kg_charge)
-            );
+            const shippingAmount = money(deliveryPricing.deliveryCharge);
 
             if (
                 !Number.isFinite(shippingAmount) ||
@@ -1028,7 +1041,7 @@ async function quoteGuestCheckout(req, res) {
                 tax_amount: taxAmount,
                 shipping_amount: shippingAmount,
                 total_weight_kg: money(totalWeightKg),
-                billable_weight_kg: billableKg,
+                billable_weight_kg: deliveryPricing.billableKg,
                 total_amount: totalAmount,
                 payment_method: paymentMethod,
                 delivery: {
@@ -1223,9 +1236,17 @@ async function checkoutGuest(req, res) {
             });
         }
 
-        if ((details.payment_method || 'cash') !== 'cash') {
+        const requestedPaymentMethod = String(
+            details.payment_method || 'cash'
+        ).trim().toLowerCase();
+
+        const paymentMethod = requestedPaymentMethod === 'cod'
+            ? 'cash'
+            : requestedPaymentMethod;
+
+        if (!['cash', 'card', 'koko', 'mintpay'].includes(paymentMethod)) {
             return res.status(400).json({
-                message: 'Cash on delivery is the only available guest payment method.'
+                message: 'Invalid payment method.'
             });
         }
 
@@ -1492,12 +1513,15 @@ async function checkoutGuest(req, res) {
             });
         }
 
-        const billableKg = Math.max(1, Math.ceil(totalWeightKg));
+        const deliveryPricing = await calculateDeliveryCharge({
+            paymentMethod,
+            district,
+            area,
+            totalWeightKg,
+            transaction
+        });
 
-        const shippingAmount = money(
-            Number(area.first_kg_charge) +
-            (billableKg - 1) * Number(area.additional_kg_charge)
-        );
+        const shippingAmount = money(deliveryPricing.deliveryCharge);
 
         if (
             !Number.isFinite(shippingAmount) ||
@@ -1665,12 +1689,14 @@ async function checkoutGuest(req, res) {
         const payment = await Payment.create({
             payment_reference: paymentReference,
             order_id: order.id,
-            payment_method: 'cash',
+            payment_method: paymentMethod,
             payment_status: 'unpaid',
             amount: totalAmount,
             transaction_reference: null,
             payment_date: null,
-            notes: 'Cash on delivery. Payment is outstanding.',
+            notes: ['card', 'koko', 'mintpay'].includes(paymentMethod)
+                ? 'Awaiting payment provider integration and verified confirmation.'
+                : 'Cash on delivery. Payment is outstanding.',
             processed_by: null
         }, { transaction });
 

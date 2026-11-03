@@ -1366,6 +1366,13 @@ async function buyNow() {
         return
       }
 
+      const checkoutToken = checkoutUrl.split('/').pop()
+
+      sessionStorage.setItem(
+        `southWestCheckoutReturn:${checkoutToken}`,
+        route.fullPath
+      )
+
       await router.push(checkoutUrl)
     } else {
       const response = await api.post(
@@ -1380,7 +1387,13 @@ async function buyNow() {
         return
       }
 
-      await router.push(`/checkout/${guestToken}`)
+      // Keep this Buy Now session separate from the normal guest cart.
+      sessionStorage.setItem(
+        `southWestCheckoutReturn:${guestToken}`,
+        route.fullPath
+      )
+
+      await router.push(`/checkout/address/${guestToken}`)
     }
   } catch (error) {
     cartError.value =

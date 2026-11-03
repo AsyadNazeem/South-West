@@ -17,6 +17,20 @@ const districts = ref([])
 const loading = ref(false)
 const error = ref('')
 
+const canViewPrepaidPricing = hasPermission('delivery_charges.view')
+const canUpdatePrepaidPricing = hasPermission('delivery_charges.update')
+
+const prepaidPricing = ref({
+  colombo_first_kg_charge: 450,
+  outside_colombo_first_kg_charge: 550,
+  additional_kg_charge: 100
+})
+
+const prepaidPricingLoading = ref(false)
+const prepaidPricingSaving = ref(false)
+const prepaidPricingError = ref('')
+const prepaidPricingSuccess = ref('')
+
 const search = ref('')
 const districtFilter = ref('')
 const statusFilter = ref('')
@@ -39,6 +53,32 @@ const loadDistricts = async () => {
     console.error('Failed to load delivery districts:', err)
 
     districts.value = []
+  }
+}
+
+const loadPrepaidPricing = async () => {
+  if (!canViewPrepaidPricing) return
+
+  prepaidPricingLoading.value = true
+  prepaidPricingError.value = ''
+
+  try {
+    const response = await deliveryAreaApi.getPrepaidPricing()
+    const data = response?.data || response
+
+    prepaidPricing.value = {
+      colombo_first_kg_charge: Number(data.colombo_first_kg_charge),
+      outside_colombo_first_kg_charge: Number(data.outside_colombo_first_kg_charge),
+      additional_kg_charge: Number(data.additional_kg_charge)
+    }
+  } catch (err) {
+    console.error('Failed to load prepaid delivery pricing:', err)
+    prepaidPricingError.value =
+      err?.response?.data?.message ||
+      err?.message ||
+      'Failed to load prepaid delivery pricing.'
+  } finally {
+    prepaidPricingLoading.value = false
   }
 }
 
@@ -213,6 +253,57 @@ const deleteDeliveryArea = async (area) => {
   }
 }
 
+const savePrepaidPricing = async () => {
+  if (!canUpdatePrepaidPricing || prepaidPricingSaving.value) return
+
+  prepaidPricingError.value = ''
+  prepaidPricingSuccess.value = ''
+
+  const fields = [
+    'colombo_first_kg_charge',
+    'outside_colombo_first_kg_charge',
+    'additional_kg_charge'
+  ]
+
+  for (const field of fields) {
+    const value = Number(prepaidPricing.value[field])
+
+    if (!Number.isFinite(value) || value < 0 || !/^\d{1,10}(\.\d{1,2})?$/.test(String(prepaidPricing.value[field]))) {
+      prepaidPricingError.value = 'Enter valid non-negative amounts with up to two decimal places.'
+      return
+    }
+  }
+
+  prepaidPricingSaving.value = true
+
+  try {
+    const response = await deliveryAreaApi.updatePrepaidPricing({
+      colombo_first_kg_charge: Number(prepaidPricing.value.colombo_first_kg_charge),
+      outside_colombo_first_kg_charge: Number(prepaidPricing.value.outside_colombo_first_kg_charge),
+      additional_kg_charge: Number(prepaidPricing.value.additional_kg_charge)
+    })
+
+    const data = response?.data || response
+
+    prepaidPricing.value = {
+      colombo_first_kg_charge: Number(data.colombo_first_kg_charge),
+      outside_colombo_first_kg_charge: Number(data.outside_colombo_first_kg_charge),
+      additional_kg_charge: Number(data.additional_kg_charge)
+    }
+
+    prepaidPricingSuccess.value =
+      response?.message || 'Prepaid delivery pricing updated successfully.'
+  } catch (err) {
+    console.error('Failed to save prepaid delivery pricing:', err)
+    prepaidPricingError.value =
+      err?.response?.data?.message ||
+      err?.message ||
+      'Failed to update prepaid delivery pricing.'
+  } finally {
+    prepaidPricingSaving.value = false
+  }
+}
+
 const clearFilters = () => {
   search.value = ''
   districtFilter.value = ''
@@ -238,7 +329,11 @@ onMounted(async () => {
   loading.value = true
 
   try {
-    await Promise.all([loadDistricts(), loadDeliveryAreas()])
+    await Promise.all([
+      loadDistricts(),
+      loadDeliveryAreas(),
+      canViewPrepaidPricing ? loadPrepaidPricing() : Promise.resolve()
+    ])
   } finally {
     loading.value = false
   }
@@ -270,6 +365,96 @@ onMounted(async () => {
     <div v-if="error" class="error-message">
       {{ error }}
     </div>
+
+    <!-- Prepaid Delivery Pricing -->
+    <section v-if="canViewPrepaidPricing" class="prepaid-pricing-card">
+      <div class="prepaid-pricing-header">
+        <div>
+          <h2>Prepaid Delivery Pricing</h2>
+          <p>Rates applied to Card, KOKO and Mintpay orders. COD continues using the delivery-area rates below.</p>
+        </div>
+        <span class="pricing-status">Prepaid methods</span>
+      </div>
+
+      <div v-if="prepaidPricingLoading" class="pricing-loading">
+        Loading prepaid delivery rates...
+      </div>
+
+      <template v-else>
+        <div class="prepaid-pricing-grid">
+          <div class="pricing-field">
+            <label for="prepaid-colombo">Colombo first 1 KG</label>
+            <div class="pricing-input-wrap">
+              <span>Rs.</span>
+              <input
+                id="prepaid-colombo"
+                v-model="prepaidPricing.colombo_first_kg_charge"
+                type="number"
+                min="0"
+                max="9999999999.99"
+                step="0.01"
+                :disabled="!canUpdatePrepaidPricing || prepaidPricingSaving"
+              />
+            </div>
+          </div>
+
+          <div class="pricing-field">
+            <label for="prepaid-outside">Outside Colombo first 1 KG</label>
+            <div class="pricing-input-wrap">
+              <span>Rs.</span>
+              <input
+                id="prepaid-outside"
+                v-model="prepaidPricing.outside_colombo_first_kg_charge"
+                type="number"
+                min="0"
+                max="9999999999.99"
+                step="0.01"
+                :disabled="!canUpdatePrepaidPricing || prepaidPricingSaving"
+              />
+            </div>
+          </div>
+
+          <div class="pricing-field">
+            <label for="prepaid-additional">Every additional 1 KG</label>
+            <div class="pricing-input-wrap">
+              <span>Rs.</span>
+              <input
+                id="prepaid-additional"
+                v-model="prepaidPricing.additional_kg_charge"
+                type="number"
+                min="0"
+                max="9999999999.99"
+                step="0.01"
+                :disabled="!canUpdatePrepaidPricing || prepaidPricingSaving"
+              />
+            </div>
+          </div>
+        </div>
+
+        <p class="pricing-help">
+          Additional weight is rounded up to the next kilogram. These rates do not affect Cash on Delivery.
+        </p>
+
+        <div v-if="prepaidPricingError" class="error-message pricing-feedback">
+          {{ prepaidPricingError }}
+        </div>
+
+        <div v-if="prepaidPricingSuccess" class="pricing-success">
+          {{ prepaidPricingSuccess }}
+        </div>
+
+        <div v-if="canUpdatePrepaidPricing" class="pricing-actions">
+          <button
+            type="button"
+            class="btn-primary"
+            :disabled="prepaidPricingSaving"
+            @click="savePrepaidPricing"
+          >
+            {{ prepaidPricingSaving ? 'Saving...' : 'Save Prepaid Rates' }}
+          </button>
+        </div>
+      </template>
+    </section>
 
     <!-- Summary -->
     <div class="stats-grid">
@@ -933,6 +1118,142 @@ tbody tr:last-child td {
 }
 
 /* =========================
+   Prepaid Delivery Pricing
+   ========================= */
+
+.prepaid-pricing-card {
+  margin-bottom: var(--spacing-xl);
+  padding: var(--spacing-xl);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.prepaid-pricing-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+}
+
+.prepaid-pricing-header h2 {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.prepaid-pricing-header p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.pricing-status {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-hover-bg);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.prepaid-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-lg);
+}
+
+.pricing-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.pricing-field label {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pricing-input-wrap {
+  display: flex;
+  align-items: center;
+  height: 42px;
+  padding: 0 var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+}
+
+.pricing-input-wrap:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.pricing-input-wrap span {
+  margin-right: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pricing-input-wrap input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.pricing-input-wrap input:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.pricing-help {
+  margin: var(--spacing-md) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.pricing-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--spacing-lg);
+}
+
+.pricing-actions button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.pricing-feedback {
+  margin-top: var(--spacing-md);
+  margin-bottom: 0;
+}
+
+.pricing-success {
+  margin-top: var(--spacing-md);
+  color: var(--color-success);
+  font-size: var(--font-size-sm);
+}
+
+.pricing-loading {
+  padding: var(--spacing-lg) 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* =========================
    Responsive
    ========================= */
 
@@ -953,6 +1274,18 @@ tbody tr:last-child td {
 }
 
 @media (max-width: 700px) {
+  .prepaid-pricing-header {
+    flex-direction: column;
+  }
+
+  .prepaid-pricing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pricing-actions button {
+    width: 100%;
+  }
+
   .page-header {
     flex-direction: column;
     align-items: flex-start;

@@ -28,6 +28,12 @@ const guestToken = computed(() => {
   return sessionStorage.getItem('guestCheckoutToken') || ''
 })
 
+const guestAddressStorageKey = computed(() =>
+  guestToken.value
+    ? `southWestGuestCheckoutAddress:${guestToken.value}`
+    : ''
+)
+
 const guestDetails = reactive({
   recipient_name: '',
   customer_email: '',
@@ -70,8 +76,6 @@ const billingDetails = computed(() =>
   isGuest.value ? guestBillingDetails : registeredBillingDetails
 )
 
-const districts = ref([])
-const areas = ref([])
 const guestCart = ref(null)
 
 const order = ref(null)
@@ -170,7 +174,20 @@ const checkoutToken = computed(() => {
     : ''
 })
 
-const directPurchase = computed(() => Boolean(route.params.token))
+const directPurchase = computed(() => {
+  if (!checkoutToken.value) return false
+
+  // Registered customer Buy Now sessions use a checkout token.
+  if (!isGuest.value) return true
+
+  // Guest cart checkout also has a token. Only classify it as
+  // Buy Now when ProductDetails saved a product return destination.
+  return Boolean(
+    sessionStorage.getItem(
+      `southWestCheckoutReturn:${checkoutToken.value}`
+    )
+  )
+})
 
 const validDirectPurchase = computed(() =>
   Boolean(checkoutToken.value)
@@ -237,6 +254,7 @@ const canPlaceOrder = computed(() => {
       Number(quote.value?.address_id) === Number(selectedAddressId.value)
 
   return (
+    selectedPaymentId.value === 'cod' &&
     !submitting.value &&
     !quoteLoading.value &&
     Boolean(quote.value) &&
@@ -244,8 +262,7 @@ const canPlaceOrder = computed(() => {
     cartReady.value &&
     addressReady &&
     billingAddressReady.value &&
-    Boolean(paymentMethod.value) &&
-    selectedPaymentId.value === 'cod'
+    Boolean(paymentMethod.value)
   )
 })
 
@@ -373,49 +390,6 @@ function guestHeaders() {
     },
   }
 }
-
-async function loadGuestDistricts() {
-  const response = await api.get('/delivery-districts')
-  const data = getData(response)
-
-  districts.value = Array.isArray(data) ? data : []
-}
-
-async function loadGuestAreas(districtId) {
-  areas.value = []
-  guestDetails.area_id = ''
-
-  if (!districtId) return
-
-  const response = await api.get('/delivery-areas', {
-    params: { district_id: districtId },
-  })
-
-  const data = getData(response)
-
-  areas.value = Array.isArray(data)
-    ? data
-    : Array.isArray(data?.areas)
-      ? data.areas
-      : []
-}
-
-watch(
-  () => guestDetails.district_id,
-  async (districtId, oldDistrictId) => {
-    if (districtId !== oldDistrictId) {
-      guestDetails.area_id = ''
-    }
-
-    try {
-      await loadGuestAreas(districtId)
-    } catch (err) {
-      error.value =
-        err.response?.data?.message ||
-        'Unable to load delivery areas.'
-    }
-  }
-)
 
 async function refreshQuote() {
 const requestNumber = ++quoteRequestNumber
@@ -606,14 +580,10 @@ async function loadCheckout() {
         return
       }
 
-      if (route.params.token) {
-        sessionStorage.setItem('guestCheckoutToken', guestToken.value)
-      }
-
-      const [cartResponse] = await Promise.all([
-        api.get('/guest-checkout/session', guestHeaders()),
-        loadGuestDistricts(),
-      ])
+      const cartResponse = await api.get(
+        '/guest-checkout/session',
+        guestHeaders()
+      )
 
       const data = getData(cartResponse)
       const session =
@@ -639,6 +609,47 @@ async function loadCheckout() {
         error.value = 'Your cart is empty. Please add products before checkout.'
         return
       }
+
+      // Restore the address collected on the separate guest address page.
+      let savedAddress = null
+
+      try {
+        const storedAddress = sessionStorage.getItem(
+          guestAddressStorageKey.value
+        )
+        savedAddress = storedAddress ? JSON.parse(storedAddress) : null
+      } catch {
+        sessionStorage.removeItem(guestAddressStorageKey.value)
+      }
+
+      const requiredAddressFields = [
+        'recipient_name',
+        'customer_email',
+        'phone',
+        'address_line_1',
+        'city',
+        'district_id',
+        'area_id',
+      ]
+
+      const addressReady =
+        savedAddress &&
+        requiredAddressFields.every(field =>
+          String(savedAddress[field] ?? '').trim()
+        )
+
+      if (!addressReady) {
+        await router.replace(`/checkout/address/${guestToken.value}`)
+        return
+      }
+
+      Object.assign(guestDetails, {
+        ...savedAddress,
+        country: 'Sri Lanka',
+      })
+
+      // Calculate delivery only after the complete address is restored.
+      await refreshQuote()
 
       return
     }
@@ -815,7 +826,7 @@ async function placeOrder() {
         district_id: Number(guestDetails.district_id),
         area_id: Number(guestDetails.area_id),
         country: guestDetails.country || 'Sri Lanka',
-        payment_method: 'cash',
+        payment_method: paymentMethod.value?.value || 'cash',
         billing_same_as_shipping: billingSameAsShipping.value,
 billing_address: billingSameAsShipping.value
   ? null
@@ -928,7 +939,13 @@ const payload = {
     idempotencyKey.value = ''
 
     if (isGuest.value) {
-      sessionStorage.removeItem('guestCheckoutToken')
+      sessionStorage.removeItem(guestAddressStorageKey.value)
+
+      // A Buy Now session must not clear the customer's normal guest cart.
+      if (!directPurchase.value) {
+        sessionStorage.removeItem('guestCheckoutToken')
+      }
+
       guestCart.value = { ...guestCart.value, items: [] }
     } else if (!directPurchase.value) {
       cart.value = { ...cart.value, items: [] }
@@ -945,13 +962,17 @@ const payload = {
 
 
 function goBack() {
-  if (!directPurchase.value) {
-    router.push('/cart')
-    return
+  if (directPurchase.value && checkoutToken.value) {
+    const returnPath = sessionStorage.getItem(
+      `southWestCheckoutReturn:${checkoutToken.value}`
+    )
+
+    if (returnPath) {
+      router.push(returnPath)
+      return
+    }
   }
 
-  // The token intentionally contains no product slug or public ID.
-  // Return to the cart if the product page cannot be identified.
   router.push('/cart')
 }
 
@@ -971,6 +992,10 @@ function viewOrders() {
   }
 
   router.push('/account/orders')
+}
+
+function editGuestAddress() {
+  router.push(`/checkout/address/${guestToken.value}`)
 }
 
 function manageAddresses() {
@@ -995,7 +1020,7 @@ watch(selectedAddressId, newAddressId => {
 watch(
   () => paymentMethod.value?.value,
   () => {
-    if (!loading.value && !order.value && selectedAddressId.value) {
+    if (!loading.value && !order.value) {
       refreshQuote();
     }
   }
@@ -1251,12 +1276,22 @@ onMounted(loadCheckout)
       You are checking out as a guest. No account is needed.
     </p>
 
-    <CheckoutAddressForm
-      mode="delivery"
-      :details="guestDetails"
-      :districts="districts"
-      :areas="areas"
-    />
+    <div class="guest-address-summary">
+      <div class="guest-address-content">
+        <strong>{{ guestDetails.recipient_name }}</strong>
+        <p>{{ guestDetails.phone }}</p>
+        <p>{{ guestDetails.customer_email }}</p>
+        <p>{{ addressBody(guestDetails) }}</p>
+      </div>
+
+      <button
+        type="button"
+        class="link-button"
+        @click="editGuestAddress"
+      >
+        Edit address
+      </button>
+    </div>
   </template>
 
   <!-- your existing v-else-if / v-else address blocks continue here -->
@@ -1840,6 +1875,48 @@ onMounted(loadCheckout)
   color: var(--color-primary);
 }
 
+.guest-address-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.guest-address-content {
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.guest-address-content strong {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.guest-address-content p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.guest-address-summary .link-button {
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .guest-address-summary {
+    flex-direction: column;
+  }
+
+  .guest-address-summary .link-button {
+    margin-left: 0;
+  }
+}
+
 .billing-same-option {
   display: flex;
   align-items: center;
@@ -2016,6 +2093,7 @@ onMounted(loadCheckout)
   border-radius: var(--radius-md);
   background: var(--color-surface-muted);
   text-align: center;
+  margin-top: 20px;
 }
 
 .empty-address h3 {

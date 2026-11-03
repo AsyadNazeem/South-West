@@ -64,6 +64,18 @@ const deliveryAreaApi = {
         return response.data
     },
 
+    // Get prepaid delivery pricing settings
+    getPrepaidPricing: async () => {
+        const response = await api.get('/delivery-areas/prepaid-pricing')
+        return response.data
+    },
+
+    // Update prepaid delivery pricing settings
+    updatePrepaidPricing: async (data) => {
+        const response = await api.put('/delivery-areas/prepaid-pricing', data)
+        return response.data
+    },
+
     // Calculate delivery charge
     calculateCharge: async (data) => {
         const response = await api.post(
