@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+const { UPLOAD_ROOT } = require('./utils/fileStorage');
+
 const { getPublicBanners } = require('./controllers/homepageBannerController');
 
 
@@ -196,7 +198,7 @@ app.use('/api/customer-orders', customerOrderRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/item-payment-prices', itemPaymentPriceRoutes);
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(UPLOAD_ROOT));
 app.use('/api/item-videos', require('./routes/itemVideoRoutes'));
 
 app.use('/api/customer/addresses', customerSelfAddressRoutes);
