@@ -1,8 +1,8 @@
 ---
 deployment:
   tasks:
-    - /bin/bash -c 'source /home/southwes/nodevenv/southwest-backend/22/bin/activate && cd /home/southwes/southwest-repo/Frontend/Customer && npm ci --include=dev && npm run build'
-    - /bin/bash -c 'source /home/southwes/nodevenv/southwest-backend/22/bin/activate && cd /home/southwes/southwest-repo/Frontend/Admin && npm ci --include=dev && npm run build'
+    - /bin/bash -c 'source /home/southwes/nodevenv/southwest-backend/22/bin/activate && cd /home/southwes/southwest-repo/Frontend/Customer && npm ci --include=dev && VITE_API_URL=https://api.southwest.lk/api npm run build'
+    - /bin/bash -c 'source /home/southwes/nodevenv/southwest-backend/22/bin/activate && cd /home/southwes/southwest-repo/Frontend/Admin && npm ci --include=dev && VITE_API_URL=https://api.southwest.lk/api npm run build'
     - export DEPLOYPATH=/home/southwes
     - /bin/mkdir -p $DEPLOYPATH/public_html
     - /bin/mkdir -p $DEPLOYPATH/public_html/admin
