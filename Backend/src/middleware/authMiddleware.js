@@ -1,7 +1,12 @@
-const {Op} = require('sequelize');
-const {verifyToken} = require('../utils/jwt');
-const {User, UserSession} = require('../models');
-const {hashSessionToken} = require('../services/authService');
+'use strict';
+
+const { Op } = require('sequelize');
+const { sequelize, User, UserSession } = require('../models');
+const { verifyToken } = require('../utils/jwt');
+const { hashSessionToken } = require('../services/authService');
+
+const ADMIN_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+const MAX_FUTURE_ACTIVITY_SKEW_MS = 30 * 1000;
 
 async function authenticate(req, res, next) {
     try {
@@ -22,20 +27,83 @@ async function authenticate(req, res, next) {
         }
 
         const decoded = verifyToken(token);
-        const session = await UserSession.findOne({
-            where: {
-                user_id: decoded.userId,
-                refresh_token_hash: hashSessionToken(token),
-                revoked_at: null,
-                expires_at: {
-                    [Op.gt]: new Date()
-                }
-            }
-        });
+        const now = Date.now();
+        const suppliedActivity = Number(
+            req.headers['x-user-activity-at']
+        );
 
-        if (!session) {
+        const sessionResult = await sequelize.transaction(
+            async (transaction) => {
+                const session = await UserSession.findOne({
+                    where: {
+                        user_id: decoded.userId,
+                        refresh_token_hash: hashSessionToken(token),
+                        revoked_at: null,
+                        expires_at: {
+                            [Op.gt]: new Date(now)
+                        }
+                    },
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                });
+
+                if (!session) {
+                    return { status: 'invalid' };
+                }
+
+                const storedActivity = new Date(
+                    session.updated_at
+                ).getTime();
+
+                let lastActivity = storedActivity;
+
+                if (
+                    Number.isFinite(suppliedActivity) &&
+                    suppliedActivity > 0 &&
+                    suppliedActivity <= now + MAX_FUTURE_ACTIVITY_SKEW_MS &&
+                    suppliedActivity > storedActivity
+                ) {
+                    lastActivity = Math.min(suppliedActivity, now);
+                }
+
+                if (
+                    !Number.isFinite(lastActivity) ||
+                    now - lastActivity >= ADMIN_INACTIVITY_TIMEOUT_MS
+                ) {
+                    await session.update(
+                        { revoked_at: new Date(now) },
+                        { transaction }
+                    );
+
+                    return { status: 'inactive' };
+                }
+
+                if (lastActivity > storedActivity) {
+                    await session.update(
+                        { updated_at: new Date(lastActivity) },
+                        {
+                            transaction,
+                            silent: true
+                        }
+                    );
+                }
+
+                return {
+                    status: 'valid',
+                    session
+                };
+            }
+        );
+
+        if (sessionResult.status === 'invalid') {
             return res.status(401).json({
                 message: 'Session is expired or has been revoked'
+            });
+        }
+
+        if (sessionResult.status === 'inactive') {
+            return res.status(401).json({
+                message: 'Admin session expired due to inactivity'
             });
         }
 
@@ -54,9 +122,9 @@ async function authenticate(req, res, next) {
         }
 
         req.user = user;
-        req.session = session;
+        req.session = sessionResult.session;
 
-        next();
+        return next();
     } catch (error) {
         if (
             error.name === 'JsonWebTokenError' ||

@@ -30,7 +30,7 @@ function generateToken(payload) {
         { userId: payload.userId },
         getJwtSecret(),
         {
-            expiresIn: process.env.JWT_EXPIRES_IN || '15m',
+            expiresIn: process.env.JWT_EXPIRES_IN || '12h',
             algorithm: 'HS256',
             issuer: JWT_ISSUER,
             audience: JWT_AUDIENCE

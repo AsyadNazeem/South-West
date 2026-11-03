@@ -6,6 +6,7 @@ import {
 
 const TOKEN_KEY = 'token'
 const USER_KEY = 'user'
+const LAST_ACTIVITY_KEY = 'admin_last_activity'
 
 export const authorizationState = reactive({
     user: null,
@@ -53,6 +54,7 @@ export const setAuthenticatedSession = ({ token, user }) => {
     const authorizedUser = normalizeUser(user)
 
     localStorage.setItem(TOKEN_KEY, token)
+    localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()))
     localStorage.setItem(
         USER_KEY,
         JSON.stringify(authorizedUser)
@@ -65,6 +67,7 @@ export const setAuthenticatedSession = ({ token, user }) => {
 export const clearAuthentication = () => {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
+    localStorage.removeItem(LAST_ACTIVITY_KEY)
 
     authorizationState.user = null
     authorizationState.initialized = true

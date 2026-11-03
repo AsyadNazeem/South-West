@@ -116,7 +116,8 @@ app.use(cors({
     'Content-Type',
     'Authorization',
     'Idempotency-Key',
-    'X-Guest-Checkout-Token'
+    'X-Guest-Checkout-Token',
+    'X-User-Activity-At'
   ]
 }));
 
