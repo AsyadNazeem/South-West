@@ -1150,6 +1150,7 @@ const requestHash = hashCheckoutRequest({
 });
 
     let transaction;
+    let checkoutSession = null;
 
     try {
         transaction = await sequelize.transaction();
@@ -1168,7 +1169,6 @@ const requestHash = hashCheckoutRequest({
 
 let cart = null;
 let cartItems = [];
-let checkoutSession = null;
 
 if (directPurchase) {
     checkoutSession = await getValidCheckoutSession({

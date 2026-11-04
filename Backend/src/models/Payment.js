@@ -51,18 +51,24 @@ module.exports = (sequelize, DataTypes) => {
                     'online',
                     'wallet',
                     'cheque',
-                    'other'
+                    'other',
+                    'koko',
+                    'mintpay'
                 ),
                 allowNull: false
             },
 
             payment_status: {
                 type: DataTypes.ENUM(
-                    'unpaid',
-                    'partially_paid',
+                    'pending',
+                    'authorized',
                     'paid',
+                    'failed',
+                    'cancelled',
                     'refunded',
-                    'partially_refunded'
+                    'partially_refunded',
+                    'unpaid',
+                    'partially_paid'
                 ),
                 allowNull: false,
                 defaultValue: 'unpaid'
