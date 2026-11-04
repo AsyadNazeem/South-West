@@ -26,7 +26,7 @@ router.get(
     getAdminBanners
 );
 
-// Create a banner; multipart/form-data field name: image
+// Create a banner; required field: image, optional field: mobile_image
 router.post(
     '/',
     requirePermission('homepage_banners.create'),
@@ -41,7 +41,7 @@ router.patch(
     updateBannerStatus
 );
 
-// Update banner fields; optional replacement image field: image
+// Update banner fields; optional replacement fields: image and mobile_image
 router.put(
     '/:id',
     requirePermission('homepage_banners.update'),

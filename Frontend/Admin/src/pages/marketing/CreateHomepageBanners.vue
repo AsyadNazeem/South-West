@@ -40,6 +40,11 @@ const imagePreview = ref('')
 const existingImageUrl = ref('')
 const originalImagePath = ref('')
 
+const mobileImageInput = ref(null)
+const mobileImageFile = ref(null)
+const mobileImagePreview = ref('')
+const existingMobileImageUrl = ref('')
+
 const form = reactive({
     title: '',
     subtitle: '',
@@ -129,6 +134,11 @@ const loadBanner = async () => {
 existingImageUrl.value = getBannerImageUrl(banner.image_url)
 originalImagePath.value = banner.image_path || ''
 imagePreview.value = existingImageUrl.value
+
+        existingMobileImageUrl.value = banner.mobile_image_url
+            ? getBannerImageUrl(banner.mobile_image_url)
+            : ''
+        mobileImagePreview.value = existingMobileImageUrl.value
     } catch (err) {
         error.value =
             err.response?.data?.message ||
@@ -184,6 +194,53 @@ const removeSelectedImage = () => {
 
     if (imageInput.value) {
         imageInput.value.value = ''
+    }
+}
+
+const openMobileImagePicker = () => {
+    mobileImageInput.value?.click()
+}
+
+const onMobileImageSelected = (event) => {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    error.value = ''
+
+    const allowedTypes = ['image/jpeg', 'image/png']
+
+    if (!allowedTypes.includes(file.type)) {
+        error.value = 'Mobile image must be a JPG or PNG image.'
+        event.target.value = ''
+        return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+        error.value = 'The mobile image must be smaller than 5 MB.'
+        event.target.value = ''
+        return
+    }
+
+    if (mobileImagePreview.value?.startsWith('blob:')) {
+        URL.revokeObjectURL(mobileImagePreview.value)
+    }
+
+    mobileImageFile.value = file
+    mobileImagePreview.value = URL.createObjectURL(file)
+}
+
+const removeSelectedMobileImage = () => {
+    mobileImageFile.value = null
+
+    if (mobileImagePreview.value?.startsWith('blob:')) {
+        URL.revokeObjectURL(mobileImagePreview.value)
+    }
+
+    mobileImagePreview.value = existingMobileImageUrl.value
+
+    if (mobileImageInput.value) {
+        mobileImageInput.value.value = ''
     }
 }
 
@@ -290,6 +347,10 @@ const submitForm = async () => {
             payload.append('image', imageFile.value)
         }
 
+        if (mobileImageFile.value) {
+            payload.append('mobile_image', mobileImageFile.value)
+        }
+
         if (isEditing.value) {
             await updateHomepageBanner(bannerId.value, payload)
             success.value = 'Homepage banner updated successfully.'
@@ -318,6 +379,10 @@ onMounted(loadBanner)
 onBeforeUnmount(() => {
     if (imagePreview.value?.startsWith('blob:')) {
         URL.revokeObjectURL(imagePreview.value)
+    }
+
+    if (mobileImagePreview.value?.startsWith('blob:')) {
+        URL.revokeObjectURL(mobileImagePreview.value)
     }
 })
 </script>
@@ -432,6 +497,83 @@ onBeforeUnmount(() => {
                             ? 'Leave the current image unchanged, or choose a replacement.'
                             : 'An image is required to create a banner.' }}
                     </p>
+                    <div class="mobile-banner-upload">
+                        <div class="section-heading">
+                            <div class="section-icon">
+                                <ImagePlus :size="19" />
+                            </div>
+                            <div>
+                                <h2>Mobile banner image</h2>
+                                <p>Optional. Recommended for a portrait mobile layout.</p>
+                            </div>
+                        </div>
+
+                        <input
+                            ref="mobileImageInput"
+                            class="hidden-input"
+                            type="file"
+                            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                            @change="onMobileImageSelected"
+                        />
+
+                        <div
+                            class="image-dropzone"
+                            :class="{ 'has-image': mobileImagePreview }"
+                            @click="openMobileImagePicker"
+                        >
+                            <img
+                                v-if="mobileImagePreview"
+                                :src="mobileImagePreview"
+                                alt="Mobile banner preview"
+                                class="image-preview"
+                            />
+
+                            <div v-else class="upload-placeholder">
+                                <div class="upload-icon">
+                                    <Upload :size="24" />
+                                </div>
+                                <strong>Choose a mobile banner image</strong>
+                                <span>JPG or PNG · Maximum 5 MB</span>
+                            </div>
+
+                            <div v-if="mobileImagePreview" class="image-overlay">
+                                <Upload :size="17" />
+                                Change mobile image
+                            </div>
+                        </div>
+
+                        <div v-if="mobileImagePreview" class="image-file-row">
+                            <div class="file-info">
+                                <ImagePlus :size="17" />
+                                <div>
+                                    <strong>
+                                        {{ mobileImageFile?.name || 'Current mobile banner image' }}
+                                    </strong>
+                                    <span>
+                                        {{ mobileImageFile
+                                            ? `${(mobileImageFile.size / 1024 / 1024).toFixed(2)} MB`
+                                            : 'Existing uploaded image' }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <button
+                                v-if="mobileImageFile"
+                                type="button"
+                                class="icon-button"
+                                aria-label="Discard selected mobile image"
+                                @click="removeSelectedMobileImage"
+                            >
+                                <X :size="17" />
+                            </button>
+                        </div>
+
+                        <p class="field-help">
+                            {{ mobileImagePreview
+                                ? 'Leave the current mobile image unchanged, or choose a replacement.'
+                                : 'No separate mobile image. The desktop banner will be used on mobile.' }}
+                        </p>
+                    </div>
                 </section>
 
                 <section class="form-card">

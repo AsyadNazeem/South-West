@@ -322,15 +322,34 @@ const getAdminBannerById = async (req, res) => {
 };
 
 
-const createBanner = async (req, res) => {
-    let uploadedPath = null;
+function getBannerUploads(req) {
+    return {
+        desktop: req.files?.image?.[0] || null,
+        mobile: req.files?.mobile_image?.[0] || null,
+    };
+}
 
+async function cleanupBannerUploads(req) {
+    const { desktop, mobile } = getBannerUploads(req);
+
+    await Promise.all([
+        cleanupUpload(desktop),
+        cleanupUpload(mobile),
+    ]);
+}
+
+const createBanner = async (req, res) => {
     try {
-        if (!req.file) {
-            throw new BannerError('A banner image is required');
+        const { desktop, mobile } = getBannerUploads(req);
+
+        if (!desktop) {
+            throw new BannerError('A desktop banner image is required');
         }
 
-        uploadedPath = getStoredPath(req.file);
+        const uploadedPath = getStoredPath(desktop);
+        const mobileUploadedPath = mobile
+            ? getStoredPath(mobile)
+            : null;
 
         const title = cleanOptionalText(req.body.title, 'title', 150);
         const subtitle = cleanOptionalText(req.body.subtitle, 'subtitle', 255);
@@ -352,7 +371,6 @@ const createBanner = async (req, res) => {
         validateSchedule(startAt, endAt);
 
         const banner = await sequelize.transaction(async (transaction) => {
-            // Lock the permanent row until the transaction finishes.
             const lockRows = await sequelize.query(
                 'SELECT id FROM homepage_banner_locks WHERE id = 1 FOR UPDATE',
                 {
@@ -382,7 +400,7 @@ const createBanner = async (req, res) => {
                     title,
                     subtitle,
                     image_path: uploadedPath,
-                    mobile_image_path: null,
+                    mobile_image_path: mobileUploadedPath,
                     button_text: buttonText,
                     link_url: linkUrl,
                     sort_order: sortOrder,
@@ -408,9 +426,7 @@ const createBanner = async (req, res) => {
             data: adminBannerResponse(banner),
         });
     } catch (error) {
-        if (req.file) {
-            await cleanupUpload(req.file);
-        }
+        await cleanupBannerUploads(req);
 
         return handleError(
             res,
@@ -422,14 +438,15 @@ const createBanner = async (req, res) => {
 
 
 const updateBanner = async (req, res) => {
-    let uploadedPath = null;
     let oldImagePath = null;
+    let oldMobileImagePath = null;
     let updateSucceeded = false;
 
     try {
-        if (req.file) {
-            uploadedPath = getStoredPath(req.file);
-        }
+        const { desktop, mobile } = getBannerUploads(req);
+
+        const uploadedPath = desktop ? getStoredPath(desktop) : null;
+        const mobileUploadedPath = mobile ? getStoredPath(mobile) : null;
 
         const result = await sequelize.transaction(async (transaction) => {
             const banner = await HomepageBanner.findByPk(req.params.id, {
@@ -485,6 +502,11 @@ const updateBanner = async (req, res) => {
                 changes.image_path = uploadedPath;
             }
 
+            if (mobileUploadedPath) {
+                oldMobileImagePath = banner.mobile_image_path;
+                changes.mobile_image_path = mobileUploadedPath;
+            }
+
             const nextStart = changes.start_at !== undefined
                 ? changes.start_at
                 : banner.start_at;
@@ -514,18 +536,28 @@ const updateBanner = async (req, res) => {
             await cleanupStoredFile(oldImagePath);
         }
 
+        if (
+            oldMobileImagePath &&
+            mobileUploadedPath &&
+            oldMobileImagePath !== mobileUploadedPath &&
+            oldMobileImagePath !== oldImagePath
+        ) {
+            await cleanupStoredFile(oldMobileImagePath);
+        }
+
         return res.status(200).json({
             message: 'Homepage banner updated successfully',
             data: adminBannerResponse(result),
         });
     } catch (error) {
-        if (req.file && !updateSucceeded) {
-            await cleanupUpload(req.file);
+        if (!updateSucceeded) {
+            await cleanupBannerUploads(req);
         }
 
         return handleError(res, error, 'Update homepage banner error');
     }
 };
+
 
 const updateBannerStatus = async (req, res) => {
     try {
@@ -579,6 +611,7 @@ const updateBannerStatus = async (req, res) => {
 
 const deleteBanner = async (req, res) => {
     let removedImagePath = null;
+    let removedMobileImagePath = null;
 
     try {
         const deleted = await sequelize.transaction(async (transaction) => {
@@ -593,6 +626,7 @@ const deleteBanner = async (req, res) => {
 
             const oldValues = auditSnapshot(banner);
             removedImagePath = banner.image_path;
+            removedMobileImagePath = banner.mobile_image_path;
 
             await writeAuditLog(req, transaction, {
                 action: 'HOMEPAGE_BANNER_DELETED',
@@ -610,6 +644,13 @@ const deleteBanner = async (req, res) => {
             await cleanupStoredFile(removedImagePath);
         }
 
+        if (
+            removedMobileImagePath &&
+            removedMobileImagePath !== removedImagePath
+        ) {
+            await cleanupStoredFile(removedMobileImagePath);
+        }
+
         return res.status(200).json({
             message: 'Homepage banner deleted successfully',
             data: deleted,
@@ -618,6 +659,7 @@ const deleteBanner = async (req, res) => {
         return handleError(res, error, 'Delete homepage banner error');
     }
 };
+
 
 module.exports = {
     getPublicBanners,
