@@ -290,6 +290,21 @@ async function validateCartItems(items, transaction) {
         }
 
         const item = await Item.findByPk(Number(entry.item_id), {
+            include: [{
+                model: ItemImage,
+                as: 'images',
+                attributes: [
+                    'id',
+                    'file_name',
+                    'file_path',
+                    'url',
+                    'alt_text',
+                    'sort_order',
+                    'is_primary'
+                ],
+                where: { is_active: true },
+                required: false
+            }],
             transaction
         });
 
@@ -371,6 +386,7 @@ async function validateCartItems(items, transaction) {
             unit_price: unitPrice,
             available_quantity: available,
             item_name: item.item_name,
+            images: item.images ?? [],
             variant_name: variant.variant_name,
             original_price: unitPrice,
             discount_amount: bestDiscount?.discount_amount || 0,

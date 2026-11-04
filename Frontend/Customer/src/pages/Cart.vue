@@ -89,26 +89,25 @@ function getBrand(item) {
 function getImage(item) {
   const product = getProduct(item)
   const variant = getVariant(item)
-  const images = product.images ?? product.ItemImages ?? []
-  const primary = Array.isArray(images)
-      ? images.find(image => image.is_primary)?.url ??
-      images.find(image => image.is_primary)?.file_path ??
-      images[0]?.url ??
-      images[0]?.file_path
-      : ''
+  const images = product.images ?? product.ItemImages ?? item.images ?? item.ItemImages ?? []
 
-  const value = variant.image ??
-      variant.image_url ??
-      product.image ??
-      product.image_url ??
-      product.thumbnail ??
-      primary ??
-      item.image ??
-      item.image_url ??
-      ''
+  const primaryImage = Array.isArray(images)
+    ? images.find(image => image.is_primary) || images[0]
+    : null
 
-  if (!value) return ''
-  return getMediaUrl(value)
+  const value =
+    variant.image ||
+    variant.image_url ||
+    product.image ||
+    product.image_url ||
+    product.thumbnail ||
+    primaryImage?.url ||
+    primaryImage?.file_path ||
+    item.image ||
+    item.image_url ||
+    ''
+
+  return value ? getMediaUrl(value) : ''
 }
 
 // Empty once an image has failed, so the fallback tile shows.
