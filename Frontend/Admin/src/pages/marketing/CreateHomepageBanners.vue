@@ -1,7 +1,9 @@
 
 <script setup>
 import { getMediaUrl } from '../../utils/mediaUrl'
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import Cropper from 'cropperjs'
+import 'cropperjs/dist/cropper.css'
 import { useRoute, useRouter } from 'vue-router'
 import {
     ArrowLeft,
@@ -44,6 +46,15 @@ const mobileImageInput = ref(null)
 const mobileImageFile = ref(null)
 const mobileImagePreview = ref('')
 const existingMobileImageUrl = ref('')
+
+const cropModalOpen = ref(false)
+const cropImageElement = ref(null)
+const cropperInstance = ref(null)
+const cropSourceUrl = ref('')
+const cropSourceFile = ref(null)
+const cropTarget = ref('desktop')
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024
+
 
 const form = reactive({
     title: '',
@@ -153,34 +164,160 @@ const openImagePicker = () => {
     imageInput.value?.click()
 }
 
-const onImageSelected = (event) => {
-    const file = event.target.files?.[0]
+const destroyCropper = () => {
+    if (cropperInstance.value) {
+        cropperInstance.value.destroy()
+        cropperInstance.value = null
+    }
+}
 
+const closeCropModal = () => {
+    destroyCropper()
+    cropModalOpen.value = false
+
+    if (cropSourceUrl.value) {
+        URL.revokeObjectURL(cropSourceUrl.value)
+        cropSourceUrl.value = ''
+    }
+
+    cropSourceFile.value = null
+}
+
+const initializeCropper = async () => {
+    await nextTick()
+
+    const image = cropImageElement.value
+    if (!image) return
+
+    try {
+        await image.decode()
+    } catch {
+        error.value = 'Unable to load this image. Please choose another file.'
+        closeCropModal()
+        return
+    }
+
+    destroyCropper()
+
+    cropperInstance.value = new Cropper(image, {
+        aspectRatio: 4 / 3,
+        viewMode: 1,
+        autoCropArea: 1,
+        responsive: true,
+        background: false,
+        movable: true,
+        zoomable: true,
+        scalable: false,
+        rotatable: false,
+        checkOrientation: true,
+        guides: true,
+        center: true,
+        highlight: false,
+        cropBoxMovable: false,
+        cropBoxResizable: false,
+        toggleDragModeOnDblclick: false,
+    })
+}
+
+const startImageCrop = async (file, target) => {
+    error.value = ''
+
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+        error.value = 'Only JPG and PNG images are allowed.'
+        return
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+        error.value = 'Each image must not exceed 2 MB.'
+        return
+    }
+
+    closeCropModal()
+
+    cropTarget.value = target
+    cropSourceFile.value = file
+    cropSourceUrl.value = URL.createObjectURL(file)
+    cropModalOpen.value = true
+
+    await initializeCropper()
+}
+
+const onImageSelected = async (event) => {
+    const file = event.target.files?.[0]
     if (!file) return
+
+    await startImageCrop(file, 'desktop')
+    event.target.value = ''
+}
+
+const onMobileImageSelected = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    await startImageCrop(file, 'mobile')
+    event.target.value = ''
+}
+
+const applyImageCrop = async () => {
+    if (!cropperInstance.value || !cropSourceFile.value) return
 
     error.value = ''
 
-    const allowedTypes = ['image/jpeg', 'image/png']
+    const canvas = cropperInstance.value.getCroppedCanvas({
+        width: 1200,
+        height: 900,
+        imageSmoothingEnabled: true,
+        imageSmoothingQuality: 'high',
+        fillColor: '#ffffff',
+    })
 
-    if (!allowedTypes.includes(file.type)) {
-        error.value = 'Only JPG and PNG images are allowed.'
-        event.target.value = ''
+    if (!canvas) {
+        error.value = 'Unable to crop this image. Please try another image.'
         return
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-        error.value = 'The image must be smaller than 5 MB.'
-        event.target.value = ''
+    const qualities = [0.9, 0.85, 0.8, 0.75, 0.7]
+    let blob = null
+
+    for (const quality of qualities) {
+        blob = await new Promise((resolve) => {
+            canvas.toBlob(resolve, 'image/jpeg', quality)
+        })
+
+        if (blob && blob.size <= MAX_IMAGE_SIZE) break
+    }
+
+    if (!blob || blob.size > MAX_IMAGE_SIZE) {
+        error.value = 'The cropped image is still larger than 2 MB. Please use a smaller image.'
         return
     }
 
-    imageFile.value = file
+    const originalName = cropSourceFile.value.name.replace(/\.[^.]+$/, '')
+    const croppedFile = new File(
+        [blob],
+        `${originalName}-cropped.jpg`,
+        { type: 'image/jpeg', lastModified: Date.now() }
+    )
 
-    if (imagePreview.value?.startsWith('blob:')) {
-        URL.revokeObjectURL(imagePreview.value)
+    const previewUrl = URL.createObjectURL(croppedFile)
+
+    if (cropTarget.value === 'desktop') {
+        if (imagePreview.value?.startsWith('blob:')) {
+            URL.revokeObjectURL(imagePreview.value)
+        }
+
+        imageFile.value = croppedFile
+        imagePreview.value = previewUrl
+    } else {
+        if (mobileImagePreview.value?.startsWith('blob:')) {
+            URL.revokeObjectURL(mobileImagePreview.value)
+        }
+
+        mobileImageFile.value = croppedFile
+        mobileImagePreview.value = previewUrl
     }
 
-    imagePreview.value = URL.createObjectURL(file)
+    closeCropModal()
 }
 
 const removeSelectedImage = () => {
@@ -192,42 +329,7 @@ const removeSelectedImage = () => {
 
     imagePreview.value = existingImageUrl.value
 
-    if (imageInput.value) {
-        imageInput.value.value = ''
-    }
-}
-
-const openMobileImagePicker = () => {
-    mobileImageInput.value?.click()
-}
-
-const onMobileImageSelected = (event) => {
-    const file = event.target.files?.[0]
-
-    if (!file) return
-
-    error.value = ''
-
-    const allowedTypes = ['image/jpeg', 'image/png']
-
-    if (!allowedTypes.includes(file.type)) {
-        error.value = 'Mobile image must be a JPG or PNG image.'
-        event.target.value = ''
-        return
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-        error.value = 'The mobile image must be smaller than 5 MB.'
-        event.target.value = ''
-        return
-    }
-
-    if (mobileImagePreview.value?.startsWith('blob:')) {
-        URL.revokeObjectURL(mobileImagePreview.value)
-    }
-
-    mobileImageFile.value = file
-    mobileImagePreview.value = URL.createObjectURL(file)
+    if (imageInput.value) imageInput.value.value = ''
 }
 
 const removeSelectedMobileImage = () => {
@@ -239,9 +341,7 @@ const removeSelectedMobileImage = () => {
 
     mobileImagePreview.value = existingMobileImageUrl.value
 
-    if (mobileImageInput.value) {
-        mobileImageInput.value.value = ''
-    }
+    if (mobileImageInput.value) mobileImageInput.value.value = ''
 }
 
 const validateForm = () => {
@@ -377,13 +477,11 @@ const goBack = () => {
 onMounted(loadBanner)
 
 onBeforeUnmount(() => {
-    if (imagePreview.value?.startsWith('blob:')) {
-        URL.revokeObjectURL(imagePreview.value)
-    }
+    destroyCropper()
 
-    if (mobileImagePreview.value?.startsWith('blob:')) {
-        URL.revokeObjectURL(mobileImagePreview.value)
-    }
+    if (cropSourceUrl.value) URL.revokeObjectURL(cropSourceUrl.value)
+    if (imagePreview.value?.startsWith('blob:')) URL.revokeObjectURL(imagePreview.value)
+    if (mobileImagePreview.value?.startsWith('blob:')) URL.revokeObjectURL(mobileImagePreview.value)
 })
 </script>
 
@@ -428,7 +526,7 @@ onBeforeUnmount(() => {
                         </div>
                         <div>
                             <h2>Banner image</h2>
-                            <p>Use a high-quality JPG or PNG image, up to 5 MB.</p>
+                            <p>Use a high-quality JPG or PNG image, up to 2 MB. Images are cropped to 4:3.</p>
                         </div>
                     </div>
 
@@ -457,7 +555,7 @@ onBeforeUnmount(() => {
                                 <Upload :size="24" />
                             </div>
                             <strong>Choose a banner image</strong>
-                            <span>JPG or PNG · Maximum 5 MB</span>
+                            <span>JPG or PNG · Maximum 2 MB</span>
                         </div>
 
                         <div v-if="imagePreview" class="image-overlay">
@@ -533,7 +631,7 @@ onBeforeUnmount(() => {
                                     <Upload :size="24" />
                                 </div>
                                 <strong>Choose a mobile banner image</strong>
-                                <span>JPG or PNG · Maximum 5 MB</span>
+                                <span>JPG or PNG · Maximum 2 MB</span>
                             </div>
 
                             <div v-if="mobileImagePreview" class="image-overlay">
@@ -792,6 +890,44 @@ onBeforeUnmount(() => {
                 </button>
             </div>
         </form>
+
+        <div
+            v-if="cropModalOpen"
+            class="crop-modal-overlay"
+            @click.self="closeCropModal"
+        >
+            <div class="crop-modal" role="dialog" aria-modal="true" aria-label="Crop banner image">
+                <div class="crop-modal-header">
+                    <div>
+                        <h2>Crop banner image</h2>
+                        <p>Adjust the image position and zoom. The 4:3 ratio is fixed.</p>
+                    </div>
+                    <button type="button" class="crop-close-button" @click="closeCropModal">
+                        <X :size="20" />
+                    </button>
+                </div>
+
+                <div class="crop-image-container">
+                    <img
+                        ref="cropImageElement"
+                        :src="cropSourceUrl"
+                        alt="Image to crop"
+                    />
+                </div>
+
+                <div class="crop-modal-footer">
+                    <span>Output: 1200 × 900 px · Maximum 2 MB</span>
+                    <div class="crop-modal-actions">
+                        <button type="button" class="button button-secondary" @click="closeCropModal">
+                            Cancel
+                        </button>
+                        <button type="button" class="button button-primary" @click="applyImageCrop">
+                            Apply crop
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </section>
 </template>
 
@@ -1442,4 +1578,117 @@ onBeforeUnmount(() => {
         transition: none;
     }
 }
+
+.crop-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.72);
+}
+
+.crop-modal {
+    width: min(760px, 100%);
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--color-surface, #fff);
+    border-radius: 14px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.25);
+}
+
+.crop-modal-header,
+.crop-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+}
+
+.crop-modal-header {
+    border-bottom: 1px solid var(--form-border);
+}
+
+.crop-modal-header h2 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.crop-modal-header p {
+    margin: 5px 0 0;
+    color: var(--form-muted);
+    font-size: 13px;
+}
+
+.crop-close-button {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.crop-image-container {
+    width: 100%;
+    height: min(58vh, 520px);
+    min-height: 240px;
+    overflow: hidden;
+    background: #111827;
+}
+
+.crop-image-container img {
+    display: block;
+    max-width: 100%;
+}
+
+.crop-modal-footer {
+    border-top: 1px solid var(--form-border);
+}
+
+.crop-modal-footer > span {
+    color: var(--form-muted);
+    font-size: 12px;
+}
+
+.crop-modal-actions {
+    display: flex;
+    gap: 10px;
+}
+
+@media (max-width: 600px) {
+    .crop-modal-overlay {
+        padding: 10px;
+    }
+
+    .crop-modal-header,
+    .crop-modal-footer {
+        padding: 12px;
+    }
+
+    .crop-modal-footer {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .crop-modal-actions {
+        width: 100%;
+    }
+
+    .crop-modal-actions button {
+        flex: 1;
+    }
+
+    .crop-image-container {
+        height: 48vh;
+    }
+}
+
 </style>

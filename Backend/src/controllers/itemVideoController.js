@@ -129,7 +129,7 @@ const createItemVideo = async (req, res) => {
         const video = await ItemVideo.create(
             {
                 item_id,
-                file_name: file.originalname.slice(0, 255),
+                file_name: file.filename,
                 file_path: file.relativePath,
                 mime_type: file.mimetype,
                 file_size: file.size,
