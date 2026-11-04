@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../services/api'
 import ProductGrid from '../components/products/ProductGrid.vue'
@@ -9,8 +9,13 @@ const route = useRoute()
 const products = ref([])
 const categories = ref([])
 const loading = ref(true)
+const loadingMore = ref(false)
 const error = ref('')
 const sortBy = ref('relevance')
+
+const hasMore = ref(false)
+const nextCursor = ref(null)
+const shuffleSeed = ref(null)
 
 const selectedCategoryId = computed(() => {
   const value = Number(route.query.category)
@@ -31,12 +36,15 @@ function getCategoryIds(parentId) {
 
     function visit(items) {
       for (const item of items || []) {
-        if (item.parent_id != null &&
-            ids.has(Number(item.parent_id)) &&
-            !ids.has(Number(item.id))) {
+        if (
+          item.parent_id != null &&
+          ids.has(Number(item.parent_id)) &&
+          !ids.has(Number(item.id))
+        ) {
           ids.add(Number(item.id))
           changed = true
         }
+
         visit(item.children)
       }
     }
@@ -53,63 +61,56 @@ const description = computed(() => isOffers.value
   ? 'Explore products with active discounts and special prices.'
   : 'Browse our complete collection of products.')
 
-const visibleProducts = computed(() => {
-  let result = [...products.value]
+const visibleProducts = computed(() => products.value)
 
-  if (isOffers.value) {
-    result = result.filter(p => Number(p.discount_amount) > 0)
+async function loadProducts(reset = true) {
+  if (reset) {
+    products.value = []
+    nextCursor.value = null
+    shuffleSeed.value = null
+    hasMore.value = false
+    loading.value = true
+    error.value = ''
+  } else {
+    if (loading.value || loadingMore.value || !hasMore.value) return
+    loadingMore.value = true
   }
-
-  if (selectedCategoryId.value !== null) {
-    const categoryIds = getCategoryIds(selectedCategoryId.value)
-    result = result.filter(product => {
-      const id = product.category_id ??
-        product.categoryId ??
-        product.Category?.id ??
-        product.category?.id
-      return id != null && categoryIds.has(Number(id))
-    })
-  }
-
-  if (selectedBrandId.value !== null) {
-    result = result.filter(product => {
-      const id = product.brand_id ??
-        product.brandId ??
-        product.Brand?.id ??
-        product.brand?.id
-      return id != null && Number(id) === selectedBrandId.value
-    })
-  }
-
-  if (sortBy.value === 'price_asc') {
-    result.sort((a, b) => Number(a.price) - Number(b.price))
-  } else if (sortBy.value === 'price_desc') {
-    result.sort((a, b) => Number(b.price) - Number(a.price))
-  } else if (sortBy.value === 'name_asc') {
-    result.sort((a, b) =>
-      String(a.item_name || '').localeCompare(String(b.item_name || '')))
-  }
-
-  return result
-})
-
-async function loadProducts() {
-  loading.value = true
-  error.value = ''
 
   try {
-    const response = await api.get('/store/products')
+    const params = {
+      paginate: 1,
+      limit: 20,
+      sort: sortBy.value,
+    }
+
+    if (shuffleSeed.value) params.seed = shuffleSeed.value
+    if (!reset && nextCursor.value) params.cursor = nextCursor.value
+
+    if (selectedCategoryId.value !== null) {
+      params.categoryIds = [...getCategoryIds(
+        selectedCategoryId.value
+      )].join(',')
+    }
+
+    if (selectedBrandId.value !== null) {
+      params.brandIds = String(selectedBrandId.value)
+    }
+
+    if (isOffers.value) params.offers = 1
+
+    const response = await api.get('/store/products', { params })
     const payload = response.data
-    const list = Array.isArray(payload) ? payload
-      : Array.isArray(payload?.products) ? payload.products
-      : Array.isArray(payload?.data?.products) ? payload.data.products
-      : Array.isArray(payload?.data) ? payload.data
-      : null
+    const list = Array.isArray(payload?.data) ? payload.data : null
 
-    if (!list) throw new Error('Unexpected product response from the store.')
+    if (!list || !payload?.pagination) {
+      throw new Error('Unexpected paginated product API response.')
+    }
 
-    products.value = list.map(product => {
-      const discountedPrice = Number(product.price ?? product.selling_price) || 0
+    const mappedProducts = list.map(product => {
+      const discountedPrice = Number(
+        product.price ?? product.selling_price
+      ) || 0
+
       const discount = Number(product.discount_amount) || 0
 
       return {
@@ -123,11 +124,31 @@ async function loadProducts() {
         ) || 0,
       }
     })
+
+    if (reset) {
+      products.value = mappedProducts
+    } else {
+      const existingIds = new Set(
+        products.value.map(product => String(product.id))
+      )
+
+      products.value.push(
+        ...mappedProducts.filter(
+          product => !existingIds.has(String(product.id))
+        )
+      )
+    }
+
+    shuffleSeed.value = payload.pagination.seed
+    nextCursor.value = payload.pagination.nextCursor
+    hasMore.value = Boolean(payload.pagination.hasMore)
   } catch (err) {
     error.value = err.response?.data?.message ||
-      err.message || 'Please try again later.'
+      err.message ||
+      'Please try again later.'
   } finally {
     loading.value = false
+    loadingMore.value = false
   }
 }
 
@@ -135,6 +156,7 @@ async function loadCategories() {
   try {
     const response = await api.get('/store/categories')
     const payload = response.data
+
     categories.value = Array.isArray(payload?.data) ? payload.data
       : Array.isArray(payload) ? payload : []
   } catch {
@@ -142,9 +164,19 @@ async function loadCategories() {
   }
 }
 
-onMounted(() => {
-  loadProducts()
-  loadCategories()
+watch(
+  [
+    () => route.path,
+    () => route.query.category,
+    () => route.query.brand,
+    sortBy,
+  ],
+  () => loadProducts(true)
+)
+
+onMounted(async () => {
+  await loadCategories()
+  await loadProducts(true)
 })
 </script>
 
@@ -178,6 +210,26 @@ onMounted(() => {
         :loading="loading"
         :error="error"
       />
+
+      <div v-if="hasMore && !loading" class="load-more-container">
+        <button
+          class="load-more-button"
+          type="button"
+          :disabled="loadingMore"
+          @click="loadProducts(false)"
+        >
+          {{ loadingMore ? 'Loading...' : 'Load More' }}
+        </button>
+      </div>
+
+      <button
+        v-if="error"
+        class="retry-button"
+        type="button"
+        @click="loadProducts(products.length === 0)"
+      >
+        Try again
+      </button>
     </div>
   </main>
 </template>
@@ -255,4 +307,33 @@ onMounted(() => {
   .store-heading { align-items: flex-start; flex-direction: column; }
   .store-toolbar { align-items: flex-start; flex-direction: column; }
 }
+
+.load-more-container {
+  display: flex;
+  justify-content: center;
+  padding: 28px 0 40px;
+}
+
+.load-more-button {
+  min-width: 160px;
+  padding: 12px 28px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.load-more-button:hover:not(:disabled) {
+  background: var(--color-primary, #263b63);
+  color: white;
+}
+
+.load-more-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 </style>

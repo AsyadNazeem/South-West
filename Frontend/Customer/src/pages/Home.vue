@@ -22,6 +22,7 @@ let bannerTimer = null
 let touchStartX = 0
 
 const categories = ref([])
+const categoriesLoaded = ref(false)
 const selectedCategoryId = ref(null)
 
 import { getMediaUrl } from '../utils/mediaUrl'
@@ -111,6 +112,8 @@ async function loadCategories() {
     } catch (error) {
         console.error('Failed to load categories:', error);
         categories.value = [];
+    } finally {
+        categoriesLoaded.value = true;
     }
 }
 
@@ -263,17 +266,23 @@ const searchQuery = computed(() =>
     typeof route.query.search === 'string' ? route.query.search.trim() : '',
 )
 
-// Options for the sidebar, built from the products that were loaded.
-function uniqueValues(getValue) {
-  const values = products.value
-      .map(getValue)
-      .filter(value => value !== undefined && value !== null && value !== '')
-  return [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b)))
-}
+// Filter options are loaded independently of paginated products.
+const availableBrands = ref([])
+const availableWarranties = ref([])
+const availableColors = ref([])
 
-const availableBrands = computed(() => uniqueValues(p => p.brand))
-const availableWarranties = computed(() => uniqueValues(p => p.warranty))
-const availableColors = computed(() => uniqueValues(p => p.color))
+async function loadFilterOptions() {
+  try {
+    const response = await api.get('/store/products/filters')
+    const data = response.data?.data ?? {}
+
+    availableBrands.value = data.brands ?? []
+    availableWarranties.value = data.warranties ?? []
+    availableColors.value = data.colors ?? []
+  } catch (err) {
+    console.error('Unable to load product filter options:', err)
+  }
+}
 
 const minAvailablePrice = computed(() => {
   const prices = products.value.map(p => Number(p.price ?? p.selling_price)).filter(Number.isFinite)
@@ -285,99 +294,13 @@ const maxAvailablePrice = computed(() => {
   return prices.length ? Math.ceil(Math.max(...prices)) : 100000
 })
 
-const visibleProducts = computed(() => {
-  const applied = appliedFilters.value
-  let result = [...products.value]
+// Product filtering and sorting are handled by the backend.
+const visibleProducts = computed(() => products.value)
 
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase()
-    result = result.filter(product =>
-        [
-          product.item_name,
-          product.name,
-          product.product_name,
-          product.brand,
-          product.description,
-        ]
-            .filter(Boolean)
-            .some(value => String(value).toLowerCase().includes(query)),
-    )
-  }
-  
-
-if (selectedCategoryId.value !== null) {
-    const categoryIds = getDescendantCategoryIds(
-        selectedCategoryId.value
-    );
-
-    result = result.filter(product => {
-        const productCategoryId =
-            product.category_id ??
-            product.categoryId ??
-            product.Category?.id ??
-            product.category?.id;
-
-        return (
-            productCategoryId != null &&
-            categoryIds.has(Number(productCategoryId))
-        );
-    });
-}
-
-if (selectedBrandId.value !== null) {
-  result = result.filter(product => {
-    const productBrandId =
-      product.brand_id ??
-      product.brandId ??
-      product.Brand?.id ??
-      product.brand?.id
-
-    return (
-      productBrandId != null &&
-      Number(productBrandId) === selectedBrandId.value
-    )
-  })
-}
-
-  const priceOf = product => Number(product.price ?? product.selling_price)
-
-  result = result.filter(product => priceOf(product) >= Number(applied.minPrice))
-  result = result.filter(product => priceOf(product) <= Number(applied.maxPrice))
-
-  if (applied.brands.length) {
-    result = result.filter(product => applied.brands.includes(product.brand))
-  }
-
-  if (applied.warranties.length) {
-    result = result.filter(product => applied.warranties.includes(product.warranty))
-  }
-
-  if (applied.colors.length) {
-    result = result.filter(product => applied.colors.includes(product.color))
-  }
-
-  if (Number(applied.minRating) > 0) {
-    result = result.filter(product => Number(product.rating) >= Number(applied.minRating))
-  }
-
-  if (applied.inStock) {
-    result = result.filter(product => product.in_stock === true)
-  }
-
-  if (sortBy.value === 'price_asc') {
-    result.sort((a, b) => priceOf(a) - priceOf(b))
-  } else if (sortBy.value === 'price_desc') {
-    result.sort((a, b) => priceOf(b) - priceOf(a))
-  } else if (sortBy.value === 'name_asc') {
-    result.sort((a, b) =>
-        String(a.item_name || a.name || a.product_name || '').localeCompare(
-            String(b.item_name || b.name || b.product_name || ''),
-        ),
-    )
-  }
-
-  return result
-})
+const hasMore = ref(false)
+const nextCursor = ref(null)
+const shuffleSeed = ref(null)
+const loadingMore = ref(false)
 
 // The product rails are rendered by HomeDiscount.vue.
 const isProductListing = computed(() =>
@@ -418,36 +341,116 @@ watch(view, (value) => {
   }
 })
 
-async function loadProducts() {
-  loading.value = true
-  error.value = ''
+function getFilterId(value) {
+  return value && typeof value === 'object' ? value.id : value
+}
+
+async function loadProducts(reset = true) {
+  if (reset) {
+    products.value = []
+    nextCursor.value = null
+    shuffleSeed.value = null
+    hasMore.value = false
+    loading.value = true
+    error.value = ''
+  } else {
+    if (loading.value || loadingMore.value || !hasMore.value) return
+    loadingMore.value = true
+  }
 
   try {
-    // Change this only if your backend uses a different public product route.
-    const response = await api.get('/store/products')
-    const payload = response.data
+    const applied = appliedFilters.value
 
-    const list = Array.isArray(payload)
-        ? payload
-        : Array.isArray(payload?.products)
-            ? payload.products
-            : Array.isArray(payload?.data?.products)
-                ? payload.data.products
-                : Array.isArray(payload?.data)
-                    ? payload.data
-                    : null
-
-    if (!list) {
-      throw new Error('The product API returned an unexpected response format.')
+    const params = {
+      paginate: 1,
+      limit: 20,
+      sort: sortBy.value,
     }
 
-    products.value = list
+    if (shuffleSeed.value) params.seed = shuffleSeed.value
+    if (!reset && nextCursor.value) params.cursor = nextCursor.value
+
+    if (searchQuery.value) params.search = searchQuery.value
+
+    if (selectedCategoryId.value !== null) {
+      params.categoryIds = Array.from(
+        getDescendantCategoryIds(selectedCategoryId.value)
+      ).join(',')
+    }
+
+    const brandIds = [
+      ...(selectedBrandId.value !== null ? [selectedBrandId.value] : []),
+      ...applied.brands.map(getFilterId),
+    ].filter(id => id !== null && id !== undefined)
+
+    if (brandIds.length) params.brandIds = [...new Set(brandIds)].join(',')
+
+    const warrantyIds = applied.warranties
+      .map(getFilterId)
+      .filter(id => id !== null && id !== undefined)
+
+    if (warrantyIds.length) params.warrantyIds = warrantyIds.join(',')
+
+    const colors = applied.colors
+      .map(color => typeof color === 'object' ? color.name : color)
+      .filter(Boolean)
+
+    if (colors.length) params.colors = colors.join(',')
+
+    if (Number(applied.minPrice) > 0) {
+      params.minPrice = Number(applied.minPrice)
+    }
+
+    if (Number(applied.maxPrice) < 100000) {
+      params.maxPrice = Number(applied.maxPrice)
+    }
+
+    if (Number(applied.minRating) > 0) {
+      params.minRating = Number(applied.minRating)
+    }
+
+    if (applied.inStock) params.inStock = 1
+
+    const response = await api.get('/store/products', { params })
+    const payload = response.data
+    const list = Array.isArray(payload?.data) ? payload.data : null
+
+    if (!list || !payload?.pagination) {
+      throw new Error('Unexpected paginated product API response.')
+    }
+
+    if (reset) {
+      products.value = list
+    } else {
+      const existingIds = new Set(
+        products.value.map(product => String(product.id))
+      )
+
+      products.value.push(
+        ...list.filter(product => !existingIds.has(String(product.id)))
+      )
+    }
+
+    shuffleSeed.value = payload.pagination.seed
+    nextCursor.value = payload.pagination.nextCursor
+    hasMore.value = Boolean(payload.pagination.hasMore)
   } catch (err) {
-    error.value = err.response?.data?.message || err.message || 'Please try again later.'
+    error.value = err.response?.data?.message ||
+      err.message ||
+      'Please try again later.'
   } finally {
     loading.value = false
+    loadingMore.value = false
   }
 }
+
+watch(
+  [searchQuery, selectedCategoryId, selectedBrandId, sortBy, appliedFilters, categoriesLoaded],
+  () => {
+    if (categoriesLoaded.value) loadProducts(true)
+  },
+  { deep: true, immediate: true }
+)
 
 watch(activeCategory, value => {
   if (value === 'All Products') {
@@ -480,7 +483,7 @@ watch(
 )
 onMounted(() => {
   restoreView()
-  loadProducts()
+  loadFilterOptions()
   loadCategories()
   loadBanners()
 })
@@ -839,11 +842,22 @@ onBeforeUnmount(() => {
             :view="view"
           />
 
+          <div v-if="hasMore && !loading" class="load-more-container">
+            <button
+              class="load-more-button"
+              type="button"
+              :disabled="loadingMore"
+              @click="loadProducts(false)"
+            >
+              {{ loadingMore ? 'Loading...' : 'Load More' }}
+            </button>
+          </div>
+
           <button
             v-if="error"
             class="retry-button"
             type="button"
-            @click="loadProducts"
+            @click="loadProducts(products.length === 0)"
           >
             Try again
           </button>
@@ -1003,6 +1017,11 @@ onBeforeUnmount(() => {
   width: 18px;
   height: 18px;
   transition: transform var(--transition-fast);
+}
+
+.load-more-container {
+  display: flex;
+  justify-content: center
 }
 
 @media (hover: hover) {

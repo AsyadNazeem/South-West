@@ -1,7 +1,22 @@
 
 'use strict';
 
-const { Op } = require('sequelize');
+const { Op, QueryTypes } = require('sequelize');
+const db = require('../models');
+
+const {
+    DEFAULT_LIMIT,
+    createSeed,
+    parseLimit,
+    validateSeed,
+    createQueryFingerprint,
+    createCursor,
+    parseCursor,
+} = require('../utils/storeProductPagination');
+
+const {
+    getEligibleProductPage,
+} = require('../utils/storeProductListingQuery');
 const {
     Item,
     ItemVariant,
@@ -34,9 +49,126 @@ async function getStoreProducts(req, res) {
 
         const campaigns = await getActiveCampaigns(now);
 
+        // Pagination is opt-in until frontend filters and sorting are integrated.
+        const paginationEnabled = req.query.paginate === '1';
+        const limit = paginationEnabled
+            ? parseLimit(req.query.limit)
+            : null;
+
+        let pagination = null;
+        let selectedIds = null;
+
+        if (paginationEnabled) {
+            const seed = req.query.seed || createSeed();
+
+            if (!validateSeed(seed)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid pagination seed',
+                });
+            }
+
+            const filters = {
+                search: String(req.query.search || '').trim(),
+                categoryIds: String(req.query.categoryIds || '')
+                    .split(',')
+                    .map(value => value.trim())
+                    .filter(value => /^[1-9]\d*$/.test(value)),
+                brandIds: String(req.query.brandIds || '')
+                    .split(',')
+                    .map(value => value.trim())
+                    .filter(value => /^[1-9]\d*$/.test(value)),
+                warrantyIds: String(req.query.warrantyIds || '')
+                    .split(',')
+                    .map(value => value.trim())
+                    .filter(value => /^[1-9]\d*$/.test(value)),
+                colors: String(req.query.colors || '')
+                    .split(',')
+                    .map(value => value.trim())
+                    .filter(Boolean),
+                minPrice: req.query.minPrice === undefined
+                    ? null
+                    : Number(req.query.minPrice),
+                maxPrice: req.query.maxPrice === undefined
+                    ? null
+                    : Number(req.query.maxPrice),
+                minRating: req.query.minRating === undefined
+                    ? null
+                    : Number(req.query.minRating),
+                inStock: req.query.inStock === '1',
+                offers: req.query.offers === '1',
+            };
+
+            const sort = ['relevance', 'name_asc', 'price_asc', 'price_desc'].includes(req.query.sort)
+                ? req.query.sort
+                : 'relevance';
+
+            const queryHash = createQueryFingerprint({
+                filters,
+                sort,
+                campaigns,
+            });
+
+            const cursor = req.query.cursor
+                ? parseCursor(
+                    req.query.cursor,
+                    seed,
+                    queryHash
+                )
+                : null;
+
+            if (req.query.cursor && !cursor) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid or expired pagination cursor',
+                });
+            }
+
+            const pageRows = await getEligibleProductPage({
+                sequelize: db.sequelize,
+                seed,
+                limit,
+                cursor,
+                now,
+                filters,
+                sort,
+                campaigns,
+            });
+
+            const hasMore = pageRows.length > limit;
+            const currentPage = hasMore
+                ? pageRows.slice(0, limit)
+                : pageRows;
+
+            selectedIds = currentPage.map(row => String(row.id));
+
+            const lastRow = currentPage[currentPage.length - 1];
+
+            pagination = {
+                limit,
+                seed,
+                hasMore,
+                nextCursor: hasMore && lastRow
+                    ? createCursor(
+                        lastRow.shuffle_score,
+                        String(lastRow.id),
+                        seed,
+                        queryHash,
+                        undefined,
+                        lastRow.sort_value
+                    )
+                    : null,
+            };
+        }
+
         // Only active products are publicly visible.
         const items = await Item.findAll({
-            where: { is_active: true },
+            where: {
+                is_active: true,
+                ...(selectedIds
+                    ? { id: { [Op.in]: selectedIds } }
+                    : {}),
+            },
             attributes: [
                 'id',
                 'public_id',
@@ -113,6 +245,18 @@ async function getStoreProducts(req, res) {
             order: [['item_name', 'ASC']],
         });
 
+        // Restore the exact database shuffle order after fetching associations.
+        if (selectedIds) {
+            const orderIndex = new Map(
+                selectedIds.map((id, index) => [id, index])
+            );
+
+            items.sort(
+                (a, b) =>
+                    orderIndex.get(String(a.id)) -
+                    orderIndex.get(String(b.id))
+            );
+        }
 
         const ids = items.map(item => item.id);
 
@@ -121,6 +265,13 @@ async function getStoreProducts(req, res) {
                 success: true,
                 message: 'Store products retrieved successfully',
                 data: [],
+                ...(paginationEnabled ? {
+                    pagination: {
+                        ...pagination,
+                        hasMore: false,
+                        nextCursor: null,
+                    },
+                } : {}),
             });
         }
 
@@ -484,6 +635,7 @@ available_quantity: availableQuantity,
             success: true,
             message: 'Store products retrieved successfully',
             data,
+            ...(paginationEnabled ? { pagination } : {}),
         });
     } catch (error) {
         console.error('Get store products failed:', {
@@ -498,6 +650,79 @@ available_quantity: availableQuantity,
     }
 }
 
+
+async function getStoreProductFilters(req, res) {
+    try {
+        const [brands, warranties, itemColors, specificationColors] =
+            await Promise.all([
+                Brand.findAll({
+                    where: { is_active: true },
+                    attributes: ['id', 'name'],
+                    order: [['name', 'ASC']],
+                }),
+                Warranty.findAll({
+                    where: { is_active: true },
+                    attributes: ['id', 'name'],
+                    order: [['name', 'ASC']],
+                }),
+                ItemColor.findAll({
+                    attributes: ['color_name', 'hex_code'],
+                    order: [['color_name', 'ASC']],
+                }),
+                db.sequelize.query(`
+                    SELECT DISTINCT TRIM(color_values.value) AS name
+                    FROM item_specification_values AS color_values
+                    INNER JOIN item_specifications AS color_specs
+                        ON color_specs.id = color_values.specification_id
+                    WHERE color_specs.is_active = 1
+                      AND LOWER(color_specs.name) IN ('color', 'colour')
+                      AND TRIM(color_values.value) <> ''
+                    ORDER BY name ASC
+                `, { type: QueryTypes.SELECT }),
+            ]);
+
+        const colorMap = new Map();
+
+        for (const color of itemColors) {
+            const name = String(color.color_name || '').trim();
+            if (!name) continue;
+
+            colorMap.set(name.toLowerCase(), {
+                name,
+                hex: color.hex_code || null,
+            });
+        }
+
+        for (const color of specificationColors) {
+            const name = String(color.name || '').trim();
+            if (!name) continue;
+
+            const key = name.toLowerCase();
+            if (!colorMap.has(key)) {
+                colorMap.set(key, { name, hex: null });
+            }
+        }
+
+        const uniqueColors = [...colorMap.values()]
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                brands,
+                warranties,
+                colors: uniqueColors,
+            },
+        });
+    } catch (error) {
+        console.error('Get store product filters failed:', error);
+
+        return res.status(500).json({
+            success: false,
+            message: 'Unable to retrieve product filters',
+        });
+    }
+}
 
 async function getStoreProductVariants(req, res) {
     try {
@@ -762,5 +987,6 @@ color: colors[0] || null,
 
 module.exports = {
     getStoreProducts,
+    getStoreProductFilters,
     getStoreProductVariants,
 };
