@@ -4,12 +4,19 @@ const bcrypt = require('bcryptjs');
 
 module.exports = {
   async up(queryInterface) {
-    const now = new Date();
+    const initialPassword = process.env.INITIAL_ADMIN_PASSWORD;
+    if (
+      typeof initialPassword !== 'string' ||
+      initialPassword.length < 12 ||
+      Buffer.byteLength(initialPassword, 'utf8') > 72
+    ) {
+      throw new Error(
+        'Set INITIAL_ADMIN_PASSWORD (12–72 UTF-8 bytes) before running the initial admin seeder.'
+      );
+    }
 
-    const passwordHash = await bcrypt.hash(
-        'SouthWest@2026!',
-        12
-    );
+    const now = new Date();
+    const passwordHash = await bcrypt.hash(initialPassword, 12);
 
     await queryInterface.bulkInsert('users', [
       {

@@ -229,33 +229,35 @@ test('Admin auth: accepts a valid token and active session', async () => {
 
 // ADMIN INACTIVITY
 
-test('Admin auth: recent activity keeps an old session active', async () => {
+test('Admin auth: server-observed activity refreshes session activity', async () => {
     const now = Date.now();
     const session = {
         id: 1,
-        updated_at: new Date(now - 16 * 60 * 1000),
+        updated_at: new Date(now - 60 * 1000),
         async update(values) {
             Object.assign(this, values);
         }
     };
 
     const { middleware } = createAdminMiddleware({ session });
-    const req = createRequest('Bearer valid-token', now - 60 * 1000);
     const res = createResponse();
     let nextCalled = false;
 
-    await middleware(req, res, () => {
-        nextCalled = true;
-    });
+    await middleware(
+        createRequest('Bearer valid-token', now + 5 * 60 * 1000),
+        res,
+        () => { nextCalled = true; }
+    );
 
     assert.equal(nextCalled, true);
-    assert.equal(new Date(session.updated_at).getTime(), now - 60 * 1000);
+    assert.ok(new Date(session.updated_at).getTime() >= now);
+    assert.ok(new Date(session.updated_at).getTime() <= Date.now());
 });
 
-test('Admin auth: expires a session at exactly 15 minutes of inactivity', async () => {
+test('Admin auth: client timestamps cannot revive an inactive session', async () => {
     const session = {
         id: 1,
-        updated_at: new Date(Date.now() - 15 * 60 * 1000),
+        updated_at: new Date(Date.now() - 16 * 60 * 1000),
         async update(values) {
             Object.assign(this, values);
         }
@@ -265,7 +267,7 @@ test('Admin auth: expires a session at exactly 15 minutes of inactivity', async 
     const res = createResponse();
 
     await middleware(
-        createRequest('Bearer valid-token'),
+        createRequest('Bearer valid-token', Date.now()),
         res,
         () => assert.fail('next should not run')
     );
@@ -273,134 +275,6 @@ test('Admin auth: expires a session at exactly 15 minutes of inactivity', async 
     assert.equal(res.statusCode, 401);
     assert.match(res.body.message, /inactivity/i);
     assert.ok(session.revoked_at instanceof Date);
-});
-
-test('Admin auth: ignores activity timestamps too far in the future', async () => {
-    const now = Date.now();
-    const session = {
-        id: 1,
-        updated_at: new Date(now - 60 * 1000),
-        async update(values) {
-            Object.assign(this, values);
-        }
-    };
-
-    const { middleware } = createAdminMiddleware({ session });
-    const futureActivity = now + 5 * 60 * 1000;
-    const res = createResponse();
-    let nextCalled = false;
-
-    await middleware(
-        createRequest('Bearer valid-token', futureActivity),
-        res,
-        () => {
-            nextCalled = true;
-        }
-    );
-
-    assert.equal(nextCalled, true);
-    assert.equal(new Date(session.updated_at).getTime(), now - 60 * 1000);
-});
-
-test('Admin auth: accepts small clock skew and clamps activity to server time', async () => {
-    const now = Date.now();
-    const session = {
-        id: 1,
-        updated_at: new Date(now - 60 * 1000),
-        async update(values) {
-            Object.assign(this, values);
-        }
-    };
-
-    const { middleware } = createAdminMiddleware({ session });
-    const res = createResponse();
-    let nextCalled = false;
-
-    await middleware(
-        createRequest('Bearer valid-token', now + 10 * 1000),
-        res,
-        () => {
-            nextCalled = true;
-        }
-    );
-
-    assert.equal(nextCalled, true);
-
-    const savedActivity = new Date(session.updated_at).getTime();
-    assert.ok(savedActivity >= now);
-    assert.ok(savedActivity <= Date.now());
-});
-
-test('Admin auth: ignores activity timestamps beyond the clock-skew tolerance', async () => {
-    const now = Date.now();
-    const previousActivity = now - 60 * 1000;
-    const session = {
-        id: 1,
-        updated_at: new Date(previousActivity),
-        async update(values) {
-            Object.assign(this, values);
-        }
-    };
-
-    const { middleware } = createAdminMiddleware({ session });
-    const res = createResponse();
-
-    await middleware(
-        createRequest('Bearer valid-token', now + 60 * 1000),
-        res,
-        () => {}
-    );
-
-    assert.equal(new Date(session.updated_at).getTime(), previousActivity);
-});
-
-test('Admin auth: ignores malformed activity timestamps', async () => {
-    const previousActivity = Date.now() - 60 * 1000;
-    const session = {
-        id: 1,
-        updated_at: new Date(previousActivity),
-        async update(values) {
-            Object.assign(this, values);
-        }
-    };
-
-    const { middleware } = createAdminMiddleware({ session });
-    const res = createResponse();
-
-    await middleware(
-        createRequest('Bearer valid-token', 'not-a-timestamp'),
-        res,
-        () => {}
-    );
-
-    assert.equal(new Date(session.updated_at).getTime(), previousActivity);
-});
-
-test('Admin auth: delayed activity cannot overwrite newer stored activity', async () => {
-    const now = Date.now();
-    const newerActivity = now - 30 * 1000;
-    const session = {
-        id: 1,
-        updated_at: new Date(newerActivity),
-        async update(values) {
-            Object.assign(this, values);
-        }
-    };
-
-    const { middleware } = createAdminMiddleware({ session });
-    const res = createResponse();
-    let nextCalled = false;
-
-    await middleware(
-        createRequest('Bearer valid-token', now - 2 * 60 * 1000),
-        res,
-        () => {
-            nextCalled = true;
-        }
-    );
-
-    assert.equal(nextCalled, true);
-    assert.equal(new Date(session.updated_at).getTime(), newerActivity);
 });
 
 test('Admin auth: revokes an inactive session in the database', async () => {

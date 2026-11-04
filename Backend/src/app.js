@@ -118,8 +118,7 @@ app.use(cors({
     'Content-Type',
     'Authorization',
     'Idempotency-Key',
-    'X-Guest-Checkout-Token',
-    'X-User-Activity-At'
+    'X-Guest-Checkout-Token'
   ]
 }));
 
@@ -240,20 +239,3 @@ async function startServer() {
 }
 
 startServer();
-
-
-
-
-// curl -X POST http://localhost:5001/api/auth/login \
-//     -H "Content-Type: application/json" \
-//   -d '{
-// "email": "admin@southwest.lk",
-//     "password": "SouthWest@2026!"
-// }'
-
-// curl -i -X POST http://localhost:5001/api/customer-auth/login \
-//     -H "Content-Type: application/json" \
-//   -d '{
-// "identifier": "asyad.test001@example.com",
-//     "password": "SouthWestTest@2026"
-// }'

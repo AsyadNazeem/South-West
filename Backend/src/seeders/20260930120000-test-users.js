@@ -4,22 +4,39 @@ const bcrypt = require('bcryptjs');
 
 module.exports = {
     async up(queryInterface) {
+        if (!['development', 'test'].includes(process.env.NODE_ENV)) {
+            throw new Error(
+                'Test users may only be seeded when NODE_ENV is development or test.'
+            );
+        }
+
+        const testPassword = process.env.TEST_USER_PASSWORD;
+        if (
+            typeof testPassword !== 'string' ||
+            testPassword.length < 12 ||
+            Buffer.byteLength(testPassword, 'utf8') > 72
+        ) {
+            throw new Error(
+                'Set TEST_USER_PASSWORD (12–72 UTF-8 bytes) before running the test-user seeder.'
+            );
+        }
+
         const now = new Date();
 
         const users = [
             {
                 email: 'manager@southwest.lk',
-                password: 'Manager@2026!',
+                password: testPassword,
                 role: 'Manager'
             },
             {
                 email: 'staff@southwest.lk',
-                password: 'Staff@2026!',
+                password: testPassword,
                 role: 'Staff'
             },
             {
                 email: 'sales@southwest.lk',
-                password: 'Sales@2026!',
+                password: testPassword,
                 role: 'Sales'
             }
         ];

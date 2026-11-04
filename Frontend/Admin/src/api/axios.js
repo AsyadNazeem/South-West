@@ -4,8 +4,6 @@ const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL,
 })
 
-const LAST_ACTIVITY_KEY = 'admin_last_activity'
-
 api.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem('token')
@@ -14,11 +12,6 @@ api.interceptors.request.use(
             config.headers = config.headers || {}
             config.headers.Authorization = `Bearer ${token}`
 
-            const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY)
-
-            if (lastActivity) {
-                config.headers['X-User-Activity-At'] = lastActivity
-            }
         }
 
         return config
@@ -38,7 +31,6 @@ api.interceptors.response.use(
         ) {
             localStorage.removeItem('token')
             localStorage.removeItem('user')
-            localStorage.removeItem(LAST_ACTIVITY_KEY)
 
             if (window.location.pathname !== '/login') {
                 window.location.replace('/login')

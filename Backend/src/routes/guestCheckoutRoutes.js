@@ -12,13 +12,19 @@ const {
     updateGuestCartItem,
     removeGuestCartItem
 } = require('../controllers/guestCheckoutController');
+const {
+    createGuestCheckoutSessionLimiter,
+    guestCheckoutQuoteLimiter,
+    guestCheckoutCartLimiter,
+    guestCheckoutSubmitLimiter
+} = require('../middleware/guestCheckoutRateLimit');
 
-router.post('/session', createSession);
-router.post('/quote', quoteGuestCheckout);
-router.post('/', checkoutGuest);
-router.get('/session', getGuestCart);
-router.post('/session/items', addGuestCartItem);
-router.patch('/session/items', updateGuestCartItem);
-router.delete('/session/items', removeGuestCartItem);
+router.post('/session', createGuestCheckoutSessionLimiter, createSession);
+router.post('/quote', guestCheckoutQuoteLimiter, quoteGuestCheckout);
+router.post('/', guestCheckoutSubmitLimiter, checkoutGuest);
+router.get('/session', guestCheckoutCartLimiter, getGuestCart);
+router.post('/session/items', guestCheckoutCartLimiter, addGuestCartItem);
+router.patch('/session/items', guestCheckoutCartLimiter, updateGuestCartItem);
+router.delete('/session/items', guestCheckoutCartLimiter, removeGuestCartItem);
 
 module.exports = router;
