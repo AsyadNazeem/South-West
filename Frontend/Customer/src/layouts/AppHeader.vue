@@ -372,7 +372,7 @@ onUnmounted(() => {
 
         <nav class="top-links" aria-label="Utility navigation">
           <RouterLink to="/" class="shop-link">Shop</RouterLink>
-          <a href="mailto:support@southwest.example" class="help-link">Help &amp; Support</a>
+          <a href="mailto:support@southwest.lk" class="help-link">Help &amp; Support</a>
 
           <span class="top-divider" aria-hidden="true"></span>
 

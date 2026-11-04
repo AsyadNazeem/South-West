@@ -22,7 +22,6 @@ let bannerTimer = null
 let touchStartX = 0
 
 const categories = ref([])
-const categoriesLoaded = ref(false)
 const selectedCategoryId = ref(null)
 
 import { getMediaUrl } from '../utils/mediaUrl'
@@ -112,8 +111,6 @@ async function loadCategories() {
     } catch (error) {
         console.error('Failed to load categories:', error);
         categories.value = [];
-    } finally {
-        categoriesLoaded.value = true;
     }
 }
 
@@ -445,11 +442,9 @@ async function loadProducts(reset = true) {
 }
 
 watch(
-  [searchQuery, selectedCategoryId, selectedBrandId, sortBy, appliedFilters, categoriesLoaded],
-  () => {
-    if (categoriesLoaded.value) loadProducts(true)
-  },
-  { deep: true, immediate: true }
+  [searchQuery, selectedCategoryId, selectedBrandId, sortBy, appliedFilters],
+  () => loadProducts(true),
+  { deep: true }
 )
 
 watch(activeCategory, value => {
@@ -483,6 +478,7 @@ watch(
 )
 onMounted(() => {
   restoreView()
+  loadProducts()
   loadFilterOptions()
   loadCategories()
   loadBanners()
@@ -1021,8 +1017,32 @@ onBeforeUnmount(() => {
 
 .load-more-container {
   display: flex;
-  justify-content: center
+  justify-content: center;
+  padding: 28px 0 40px;
 }
+
+.load-more-button {
+  min-width: 160px;
+  padding: 12px 28px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.load-more-button:hover:not(:disabled) {
+  background: var(--color-primary, #263b63);
+  color: white;
+}
+
+.load-more-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+  
 
 @media (hover: hover) {
   .banner-link:hover .banner-button,

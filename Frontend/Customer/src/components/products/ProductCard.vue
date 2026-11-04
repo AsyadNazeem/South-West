@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import api from '../../services/api'
+import { getMediaUrl } from '../../utils/mediaUrl'
 
 const props = defineProps({
   product: { type: Object, required: true },
@@ -29,9 +30,6 @@ const hasDiscount = computed(() => comparePrice.value > price.value && price.val
 const discountPercent = computed(() =>
     hasDiscount.value ? Math.round((1 - price.value / comparePrice.value) * 100) : 0,
 )
-
-
-import { getMediaUrl } from '../../utils/mediaUrl'
 
 const image = computed(() => {
   const value =
@@ -133,14 +131,6 @@ function handleWishlistSync(event) {
   wishlisted.value = event.detail.wishlisted
 }
 
-onMounted(() => {
-  window.addEventListener('customer-wishlist-updated', handleWishlistSync)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('customer-wishlist-updated', handleWishlistSync)
-})
-
 let toastTimer = null
 let cartTimer = null
 
@@ -175,22 +165,22 @@ async function handleWishlist() {
   wishlistBusy.value = true
 
   try {
-if (next) {
-  await wishlistApi.add()
-} else {
-  await wishlistApi.remove()
-}
+    if (next) {
+      await wishlistApi.add()
+    } else {
+      await wishlistApi.remove()
+    }
 
-window.dispatchEvent(
-  new CustomEvent('customer-wishlist-updated', {
-    detail: {
-      itemId: props.product.id,
-      wishlisted: next,
-    },
-  })
-)
+    window.dispatchEvent(
+      new CustomEvent('customer-wishlist-updated', {
+        detail: {
+          itemId: props.product.id,
+          wishlisted: next,
+        },
+      })
+    )
 
-showToast(next ? 'Saved to wishlist' : 'Removed from wishlist')
+    showToast(next ? 'Saved to wishlist' : 'Removed from wishlist')
   } catch (err) {
     wishlisted.value = !next
     showToast(err.response?.data?.message || 'Could not update wishlist')
@@ -282,19 +272,16 @@ async function handleAddToCart() {
   }
 }
 
+onMounted(() => {
+  window.addEventListener('customer-wishlist-updated', handleWishlistSync)
+  loadWishlistStatus()
+})
+
 onBeforeUnmount(() => {
   clearTimeout(toastTimer)
   clearTimeout(cartTimer)
 
-  window.removeEventListener(
-    'customer-wishlist-updated',
-    handleWishlistSync
-  )
-})
-
-onMounted(() => {
-  window.addEventListener('customer-wishlist-updated', handleWishlistSync)
-  loadWishlistStatus()
+  window.removeEventListener('customer-wishlist-updated', handleWishlistSync)
 })
 </script>
 
@@ -338,39 +325,39 @@ onMounted(() => {
 
       <!-- Two circle buttons, bottom right of the image -->
       <div class="product-actions">
-      <button
-  type="button"
-  class="product-action-btn wishlist-btn"
-  :class="{ active: wishlisted }"
-  :aria-pressed="wishlisted"
-  :disabled="wishlistBusy"
-  :aria-label="wishlisted ? 'Remove from wishlist' : 'Add to wishlist'"
-  :title="wishlisted ? 'Remove from wishlist' : 'Add to wishlist'"
-  @click.stop.prevent="handleWishlist"
->
-  <svg
-    viewBox="0 0 24 24"
-    :fill="wishlisted ? 'currentColor' : 'none'"
-    aria-hidden="true"
-  >
-    <path
-      d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2Z"
-      stroke="currentColor"
-      stroke-width="1.8"
-      stroke-linejoin="round"
-    />
-  </svg>
-</button>
+        <button
+          type="button"
+          class="product-action-btn wishlist-btn"
+          :class="{ active: wishlisted }"
+          :aria-pressed="wishlisted"
+          :disabled="wishlistBusy"
+          :aria-label="wishlisted ? 'Remove from wishlist' : 'Add to wishlist'"
+          :title="wishlisted ? 'Remove from wishlist' : 'Add to wishlist'"
+          @click.stop.prevent="handleWishlist"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            :fill="wishlisted ? 'currentColor' : 'none'"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2Z"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
 
-<button
-  type="button"
-  class="product-action-btn cart-btn"
-  :class="{ added: cartState === 'added' }"
-  :disabled="!inStock || cartState === 'loading'"
-  :aria-label="cartState === 'added' ? 'Added to cart' : 'Add to cart'"
-  :title="inStock ? 'Add to cart' : 'Out of stock'"
-@click.stop.prevent="handleAddToCart"
->
+        <button
+          type="button"
+          class="product-action-btn cart-btn"
+          :class="{ added: cartState === 'added' }"
+          :disabled="!inStock || cartState === 'loading'"
+          :aria-label="cartState === 'added' ? 'Added to cart' : 'Add to cart'"
+          :title="inStock ? 'Add to cart' : 'Out of stock'"
+          @click.stop.prevent="handleAddToCart"
+        >
           <span v-if="cartState === 'loading'" class="spinner" aria-hidden="true"></span>
 
           <svg v-else-if="cartState === 'added'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -427,21 +414,24 @@ onMounted(() => {
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-md);
+  border-radius: 14px;
   background: var(--color-surface);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 /* Hover effects only on devices that can hover, so touch screens do not get a stuck hover state */
 @media (hover: hover) {
   .product-card:hover {
     border-color: var(--color-border);
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 9%);
     transform: translateY(-2px);
   }
 
   .product-card:hover .image-link img {
-    transform: scale(1.05);
+    transform: scale(1.04);
   }
 
   .card-link:hover .name {
@@ -450,10 +440,13 @@ onMounted(() => {
 }
 
 /* ---------- Image ---------- */
+/* The photo fills the tile; only a thin inset keeps it off the card edge. */
 .image-wrap {
   position: relative;
   aspect-ratio: 1 / 1;
+  margin: 6px 6px 0;
   overflow: hidden;
+  border-radius: 10px;
   background: var(--color-surface-muted);
 }
 
@@ -463,12 +456,12 @@ onMounted(() => {
   z-index: 0;
   display: grid;
   place-items: center;
-  padding: var(--space-4);
+  padding: 0;
 }
 
 .image-link img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   /* White product photos blend into the tile background */
   mix-blend-mode: multiply;
@@ -490,7 +483,6 @@ onMounted(() => {
 }
 
 /* ---------- Uploaded campaign frame overlays ---------- */
-
 .campaign-frame {
   position: absolute;
   inset: 0;
@@ -512,7 +504,7 @@ onMounted(() => {
   position: absolute;
   top: var(--space-2);
   z-index: 2;
-  padding: 2px var(--space-2);
+  padding: 3px 9px;
   border-radius: var(--radius-pill);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
@@ -555,9 +547,13 @@ onMounted(() => {
   border-radius: 50%;
   background: var(--color-surface);
   color: var(--color-primary);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 14%);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .product-action-btn svg {
@@ -625,7 +621,7 @@ onMounted(() => {
   left: 50%;
   z-index: 3;
   max-width: calc(100% - 16px);
-  padding: 4px 12px;
+  padding: 5px 12px;
   overflow: hidden;
   border-radius: var(--radius-pill);
   background: var(--color-black);
@@ -692,9 +688,9 @@ onMounted(() => {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 2px;
   min-width: 0;
-  padding: var(--space-3) var(--space-4) var(--space-4);
+  padding: 10px 12px 12px;
 }
 
 .brand {
@@ -702,9 +698,9 @@ onMounted(() => {
   overflow: hidden;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
-  letter-spacing: 0.06em;
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -728,7 +724,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 0;
+  margin: 2px 0 0;
   font-size: var(--font-size-xs);
 }
 
@@ -746,15 +742,16 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-2);
+  gap: 2px var(--space-2);
   margin-top: auto;
-  padding-top: var(--space-2);
+  padding-top: 6px;
 }
 
 .price {
   color: var(--color-primary);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-bold);
+  line-height: 1.2;
 }
 
 .old-price {
@@ -770,13 +767,15 @@ onMounted(() => {
 /* ---------- List view ---------- */
 .product-card.is-list {
   flex-direction: row;
+  align-items: stretch;
 }
 
 .product-card.is-list .image-wrap {
-  width: 160px;
+  width: 150px;
   flex-shrink: 0;
+  margin: 6px 0 6px 6px;
   aspect-ratio: auto;
-  min-height: 160px;
+  min-height: 150px;
 }
 
 .product-card.is-list .body {
@@ -795,12 +794,8 @@ onMounted(() => {
 /* ---------- Phones ---------- */
 @media (max-width: 560px) {
   .product-card.is-list .image-wrap {
-    width: 110px;
-    min-height: 110px;
-  }
-
-  .product-card.is-list .image-link {
-    padding: var(--space-3);
+    width: 104px;
+    min-height: 104px;
   }
 
   .product-card.is-list .body {
@@ -824,8 +819,13 @@ onMounted(() => {
 }
 
 @media (max-width: 420px) {
-  .image-link {
-    padding: var(--space-3);
+  .product-card {
+    border-radius: 12px;
+  }
+
+  .image-wrap {
+    margin: 4px 4px 0;
+    border-radius: 9px;
   }
 
   /* Two cards per row: smaller tags so discount and out-of-stock never overlap */
@@ -835,7 +835,7 @@ onMounted(() => {
   }
 
   .body {
-    padding: var(--space-2) var(--space-3) var(--space-3);
+    padding: 8px 10px 10px;
   }
 
   .name {
@@ -851,8 +851,8 @@ onMounted(() => {
 /* ---------- Fold cover screens (≈280–340px) ---------- */
 @media (max-width: 340px) {
   .product-card.is-list .image-wrap {
-    width: 96px;
-    min-height: 96px;
+    width: 92px;
+    min-height: 92px;
   }
 
   .product-card.is-list .body {
