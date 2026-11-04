@@ -520,7 +520,7 @@ exports.updateOrderStatus = async (req, res) => {
             id: order.id,
             order_number: order.order_number,
             customerName: customerName(customer),
-            email: customer?.email || null,
+            email: customer?.email || order.customer_email || null,
             status: nextStatus,
             previousStatus,
             reason,

@@ -1,6 +1,10 @@
 'use strict';
 
 const crypto = require('crypto');
+const {
+    sendOrderConfirmationEmail,
+    sendAdminNewOrderEmail
+} = require('../services/emailService');
 const { Op } = require('sequelize');
 
 const {
@@ -1791,6 +1795,46 @@ async function checkoutGuest(req, res) {
 
         await transaction.commit();
         transaction = null;
+
+        try {
+            const emailDetails = {
+                orderNumber,
+                customerName: address.recipient_name,
+                customerEmail: email,
+                phone: address.phone,
+                address,
+                items: preparedItems.map(entry => ({
+                    name: entry.item.item_name || entry.item.name || 'Product',
+                    quantity: entry.quantity,
+                    unitPrice: entry.unitPrice,
+                    lineTotal: entry.lineTotal
+                })),
+                subtotal,
+                discountAmount,
+                shippingAmount,
+                totalAmount,
+                paymentMethod,
+                paymentStatus: 'Unpaid'
+            };
+
+            const results = await Promise.allSettled([
+                sendOrderConfirmationEmail(emailDetails),
+                sendAdminNewOrderEmail(emailDetails)
+            ]);
+
+            results.forEach((result, index) => {
+                if (result.status === 'rejected') {
+                    console.error(
+                        index === 0
+                            ? 'Guest order confirmation email failed:'
+                            : 'Admin order notification failed:',
+                        result.reason
+                    );
+                }
+            });
+        } catch (emailError) {
+            console.error('Guest order email processing failed:', emailError);
+        }
 
         return res.status(201).json({
             message: 'Guest order created successfully.',

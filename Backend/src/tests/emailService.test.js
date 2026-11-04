@@ -18,6 +18,7 @@ const ENV_KEYS = [
     'SMTP_PASS',
     'SMTP_FROM',
     'CUSTOMER_APP_URL',
+    'ORDER_NOTIFICATION_EMAIL',
 ];
 
 function loadEmailService(values = {}) {
@@ -187,7 +188,7 @@ test('password invitation retains the customer setup URL and token', async (t) =
     const context = loadEmailService({
         EMAIL_PROVIDER: 'mailpit',
         CUSTOMER_APP_URL: 'http://localhost:5174',
-        EMAIL_FROM: 'South West <noreply@southwest.local>',
+        EMAIL_FROM: 'South West <noreply@southwest.lk>',
     });
     t.after(context.restoreEnv);
 
@@ -199,7 +200,7 @@ test('password invitation retains the customer setup URL and token', async (t) =
 
     const message = context.sentMessages[0];
 
-    assert.equal(message.from, 'South West <noreply@southwest.local>');
+    assert.equal(message.from, 'South West <noreply@southwest.lk>');
     assert.equal(message.to, 'customer@example.com');
     assert.match(message.text, /WEB-000123/);
     assert.match(
@@ -270,5 +271,100 @@ test('tracking and order status emails reject missing customer email', async (t)
             statusLabel: 'Delivered',
         }),
         /Customer email is missing/
+    );
+});
+
+test('order confirmation uses orders sender and includes order details', async (t) => {
+    const context = loadEmailService({
+        EMAIL_PROVIDER: 'mailpit'
+    });
+    t.after(context.restoreEnv);
+
+    await context.service.sendOrderConfirmationEmail({
+        orderNumber: 'SWO-TEST-001',
+        customerName: 'Test Customer',
+        customerEmail: 'customer@example.com',
+        phone: '0771234567',
+        address: {
+            recipient_name: 'Test Customer',
+            address_line_1: 'Test Street',
+            city: 'Colombo',
+            country: 'Sri Lanka'
+        },
+        items: [{
+            name: 'Test Laptop',
+            quantity: 2,
+            unitPrice: 50000,
+            lineTotal: 100000
+        }],
+        subtotal: 100000,
+        discountAmount: 5000,
+        shippingAmount: 500,
+        totalAmount: 95500,
+        paymentMethod: 'cash',
+        paymentStatus: 'Unpaid'
+    });
+
+    const message = context.sentMessages[0];
+
+    assert.equal(message.from, 'South West <orders@southwest.lk>');
+    assert.equal(message.to, 'customer@example.com');
+    assert.match(message.subject, /SWO-TEST-001/);
+    assert.match(message.text, /Test Laptop/);
+    assert.match(message.text, /95500\.00/);
+});
+
+test('admin notification uses admin sender and configured Gmail recipient', async (t) => {
+    const context = loadEmailService({
+        EMAIL_PROVIDER: 'mailpit',
+        ORDER_NOTIFICATION_EMAIL: 'admin@gmail.com'
+    });
+    t.after(context.restoreEnv);
+
+    await context.service.sendAdminNewOrderEmail({
+        orderNumber: 'SWO-TEST-002',
+        customerName: 'Test Customer',
+        customerEmail: 'customer@example.com',
+        phone: '0771234567',
+        address: {
+            recipient_name: 'Test Customer',
+            address_line_1: 'Test Street',
+            city: 'Colombo',
+            country: 'Sri Lanka'
+        },
+        items: [{
+            name: 'Test SSD',
+            quantity: 1,
+            unitPrice: 15000,
+            lineTotal: 15000
+        }],
+        subtotal: 15000,
+        discountAmount: 0,
+        shippingAmount: 500,
+        totalAmount: 15500,
+        paymentMethod: 'cash',
+        paymentStatus: 'Unpaid'
+    });
+
+    const message = context.sentMessages[0];
+
+    assert.equal(message.from, 'South West <admin@southwest.lk>');
+    assert.deepEqual(message.to, ['admin@gmail.com']);
+    assert.match(message.subject, /SWO-TEST-002/);
+    assert.match(message.text, /Test SSD/);
+    assert.match(message.text, /customer@example.com/);
+});
+
+test('admin notification rejects missing notification recipient', async (t) => {
+    const context = loadEmailService({
+        EMAIL_PROVIDER: 'mailpit'
+    });
+    t.after(context.restoreEnv);
+
+    await assert.rejects(
+        context.service.sendAdminNewOrderEmail({
+            orderNumber: 'SWO-TEST-003'
+        }),
+        /ORDER_NOTIFICATION_EMAIL is not configured/
     );
 });

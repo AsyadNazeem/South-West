@@ -324,6 +324,15 @@ function createHarness(options = {}) {
                 }
             },
 
+            '../services/emailService': {
+                async sendOrderConfirmationEmail() {
+                    calls.customerEmails = (calls.customerEmails || 0) + 1;
+                },
+                async sendAdminNewOrderEmail() {
+                    calls.adminEmails = (calls.adminEmails || 0) + 1;
+                }
+            },
+
             '../services/discountCampaignService': {
                 async getActiveCampaigns() {
                     return [];

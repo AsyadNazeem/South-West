@@ -600,7 +600,7 @@ exports.updateDelivery = async (req, res) => {
                             order.customer?.first_name,
                             order.customer?.last_name
                         ].filter(Boolean).join(' '),
-                        customer_email: order.customer?.email || null
+                        customer_email: order.customer?.email || order.customer_email || null
                     };
 
                     if (completedOrderSnapshot.customer_email) {
@@ -630,12 +630,13 @@ exports.updateDelivery = async (req, res) => {
 
             const customer = order?.customer;
 
-            if (customer?.email) {
+            if (customer?.email || order?.customer_email) {
                 emailPayload = {
-                    email: customer.email,
-                    customerName: [customer.first_name, customer.last_name]
-                        .filter(Boolean)
-                        .join(' '),
+                    email: customer?.email || order.customer_email,
+                    customerName: [
+                        customer?.first_name,
+                        customer?.last_name
+                    ].filter(Boolean).join(' ') || delivery.recipient_name || 'Customer',
                     orderNumber: order.order_number,
                     trackingNumber: delivery.tracking_number,
                     courierName: delivery.courier_name,

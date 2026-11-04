@@ -5,6 +5,10 @@ const { Op } = require('sequelize');
 const db = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
 const {
+    sendOrderConfirmationEmail,
+    sendAdminNewOrderEmail
+} = require('../services/emailService');
+const {
     sequelize,
     CheckoutIdempotency,
         CustomerCheckoutSession,
@@ -1730,6 +1734,54 @@ await OrderPromotion.create({
 }
 
         await transaction.commit();
+
+        try {
+            const customer = db.Customer?.findByPk
+                ? await db.Customer.findByPk(customerId)
+                : null;
+
+            const emailDetails = {
+                orderNumber,
+                customerName: customer
+                    ? `${customer.first_name} ${customer.last_name}`.trim()
+                    : address.recipient_name,
+                customerEmail: customer?.email,
+                phone: address.phone,
+                address,
+                items: preparedItems.map(entry => ({
+                    name: entry.item.item_name || entry.item.name || 'Product',
+                    quantity: entry.quantity,
+                    unitPrice: entry.unitPrice,
+                    lineTotal: entry.lineTotal
+                })),
+                subtotal,
+                discountAmount,
+                shippingAmount,
+                totalAmount,
+                paymentMethod: payment_method,
+                paymentStatus: 'Unpaid'
+            };
+
+            const results = await Promise.allSettled([
+                emailDetails.customerEmail
+                    ? sendOrderConfirmationEmail(emailDetails)
+                    : Promise.resolve(),
+                sendAdminNewOrderEmail(emailDetails)
+            ]);
+
+            results.forEach((result, index) => {
+                if (result.status === 'rejected') {
+                    console.error(
+                        index === 0
+                            ? 'Customer order email failed:'
+                            : 'Admin order notification failed:',
+                        result.reason
+                    );
+                }
+            });
+        } catch (emailError) {
+            console.error('Order email processing failed:', emailError);
+        }
 
         return res.status(201).json({
             message: 'Order created successfully.',
