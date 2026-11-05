@@ -1,53 +1,24 @@
 
 <script setup>
-import { onMounted, ref } from 'vue'
-import api from '../../services/api'
-
 const emit = defineEmits(['select-category'])
+const props = defineProps({
+  categories: {
+    type: Array,
+    default: () => []
+  }
+})
 
-const categories = ref([])
-const loading = ref(false)
-
-import { getMediaUrl } from '../../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 
 function getImageUrl(path) {
   return getMediaUrl(path)
 }
 
-async function loadCategories() {
-  loading.value = true
-
-  try {
-    const response = await api.get('/store/categories')
-    const payload = response.data
-
-    const list = Array.isArray(payload)
-      ? payload
-      : Array.isArray(payload?.data)
-        ? payload.data
-        : Array.isArray(payload?.categories)
-          ? payload.categories
-          : Array.isArray(payload?.data?.categories)
-            ? payload.data.categories
-            : []
-
-    categories.value = list.filter(
-      category => category.is_active !== false
-    )
-  } catch (error) {
-    console.error('Failed to load categories:', error)
-    categories.value = []
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(loadCategories)
 </script>
 
 <template>
   <section
-    v-if="categories.length"
+    v-if="props.categories.length"
     class="category-section"
     aria-labelledby="homepage-categories-title"
   >
@@ -57,7 +28,7 @@ onMounted(loadCategories)
 
     <div class="category-grid">
       <button
-        v-for="category in categories"
+        v-for="category in props.categories"
         :key="category.id"
         type="button"
         class="category-card"

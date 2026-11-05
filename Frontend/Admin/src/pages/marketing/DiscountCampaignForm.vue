@@ -7,17 +7,17 @@ import {
     getDiscountCampaign,
     createDiscountCampaign,
     updateDiscountCampaign,
-} from '../../api/discountCampaignApi'
+} from '@/api/discountCampaignApi'
 
-import { getCampaignFrames } from '../../api/campaignFrameApi'
+import { getCampaignFrames } from '@/api/campaignFrameApi'
 
-import api from '../../api/axios'
-import itemApi from '../../api/itemApi'
+import api from '@/api/axios'
+import itemApi from '@/api/itemApi'
 
 const route = useRoute()
 const router = useRouter()
 
-import { getMediaUrl } from '../../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 
 function getFrameImageUrl(frame) {
     const value = frame?.image_url || frame?.image_path || ''

@@ -11,6 +11,7 @@ const {
 
 const {
     getItems,
+    getItemFilterOptions,
     getItemById,
     createItem,
     updateItem
@@ -32,6 +33,13 @@ router.get(
     authenticate,
     requirePermission('products.view'),
     getItems
+);
+
+router.get(
+    '/filter-options',
+    authenticate,
+    requirePermission('products.view'),
+    getItemFilterOptions
 );
 
 // GET all variants for an item

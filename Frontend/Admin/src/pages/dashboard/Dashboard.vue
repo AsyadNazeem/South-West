@@ -200,7 +200,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
-import api from "../../api/axios"
+import api from "@/api/axios"
 
 const stats = ref({
   totalCustomers: 0,

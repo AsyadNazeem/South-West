@@ -301,7 +301,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import api from '../../api/axios'
+import api from '@/api/axios'
 
 const logs = ref([])
 const loading = ref(false)

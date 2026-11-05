@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import api from '../services/api'
-import ProductGrid from '../components/products/ProductGrid.vue'
-import ProductSort from '../components/products/ProductSort.vue'
+import api from '@/services/api'
+import ProductGrid from '@/components/products/ProductGrid.vue'
+import ProductSort from '@/components/products/ProductSort.vue'
 
 const route = useRoute()
 const products = ref([])

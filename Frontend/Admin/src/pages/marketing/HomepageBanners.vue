@@ -1,6 +1,6 @@
 
 <script setup>
-import { getMediaUrl } from '../../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -20,9 +20,9 @@ import {
     getHomepageBanners,
     updateHomepageBannerStatus,
     deleteHomepageBanner,
-} from '../../api/homepageBannerApi'
+} from '@/api/homepageBannerApi'
 
-import { hasPermission } from '../../auth/authorization'
+import { hasPermission } from '@/auth/authorization'
 
 const router = useRouter()
 

@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '../services/api'
-import CheckoutAddressForm from '../components/CheckoutAddressForm.vue'
+import api from '@/services/api'
+import CheckoutAddressForm from '@/components/CheckoutAddressForm.vue'
 
 const route = useRoute()
 const router = useRouter()

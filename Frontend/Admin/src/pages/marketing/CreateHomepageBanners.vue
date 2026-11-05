@@ -1,6 +1,6 @@
 
 <script setup>
-import { getMediaUrl } from '../../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
@@ -21,9 +21,9 @@ import {
     getHomepageBanner,
     createHomepageBanner,
     updateHomepageBanner,
-} from '../../api/homepageBannerApi'
+} from '@/api/homepageBannerApi'
 
-import { hasPermission } from '../../auth/authorization'
+import { hasPermission } from '@/auth/authorization'
 
 const route = useRoute()
 const router = useRouter()

@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
-import api from "../../api/axios"
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue"
+import api from "@/api/axios"
 
 const items = ref([])
 const loading = ref(true)
@@ -8,54 +8,113 @@ const errorMessage = ref("")
 const search = ref("")
 const statusFilter = ref("all")
 const conditionFilter = ref("all")
+const categoryFilter = ref("")
+const brandFilter = ref("")
+const categories = ref([])
+const brands = ref([])
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 0 })
 
-const filteredItems = computed(() => {
-  const term = search.value.toLowerCase().trim()
-
-  return items.value.filter((item) => {
-    const matchesSearch =
-        !term ||
-        `${item.item_code || ""}`.toLowerCase().includes(term) ||
-        `${item.item_name || ""}`.toLowerCase().includes(term) ||
-        `${item.category?.name || ""}`.toLowerCase().includes(term) ||
-        `${item.brand?.name || ""}`.toLowerCase().includes(term)
-
-    const matchesStatus =
-        statusFilter.value === "all" ||
-        (statusFilter.value === "active" && item.is_active) ||
-        (statusFilter.value === "inactive" && !item.is_active)
-
-    const matchesCondition =
-        conditionFilter.value === "all" ||
-        `${item.condition || ""}`.toLowerCase() ===
-        conditionFilter.value
-
-    return (
-        matchesSearch &&
-        matchesStatus &&
-        matchesCondition
-    )
-  })
-})
+let currentController = null
+let latestRequestId = 0
+let searchDebounceTimer = null
+let suppressPageWatcher = false
 
 const loadItems = async () => {
+  currentController?.abort()
+  const controller = new AbortController()
+  currentController = controller
+  const requestId = ++latestRequestId
+
   try {
     loading.value = true
     errorMessage.value = ""
 
-    const response = await api.get("/items")
+    const response = await api.get("/items", {
+      params: {
+        paginate: 1,
+        page: page.value,
+        pageSize: pageSize.value,
+        search: search.value.trim(),
+        categoryId: categoryFilter.value || undefined,
+        brandId: brandFilter.value || undefined,
+        condition: conditionFilter.value,
+        status: statusFilter.value,
+        sortBy: "id",
+        sortOrder: "DESC",
+      },
+      signal: controller.signal,
+    })
+
+    if (requestId !== latestRequestId) return
+
+    const responsePage = response.data.pagination
+    const totalPages = Number(responsePage?.totalPages) || 0
+    const lastAvailablePage = Math.max(1, totalPages)
+    if (page.value > lastAvailablePage) {
+      page.value = lastAvailablePage
+      return
+    }
 
     items.value = response.data.data || []
+    pagination.value = responsePage || { total: items.value.length, totalPages: 1 }
 
   } catch (error) {
+    if (error.code === "ERR_CANCELED" || requestId !== latestRequestId) return
     console.error("Item loading error:", error)
 
     errorMessage.value =
         error.response?.data?.message ||
         "Failed to load items."
   } finally {
-    loading.value = false
+    if (requestId === latestRequestId) loading.value = false
   }
+}
+
+const loadFilterOptions = async () => {
+  try {
+    const response = await api.get("/items/filter-options")
+    categories.value = response.data?.data?.categories || []
+    brands.value = response.data?.data?.brands || []
+  } catch (error) {
+    console.error("Product filter options loading error:", error)
+  }
+}
+
+function resetPageAndLoad() {
+  clearTimeout(searchDebounceTimer)
+  if (page.value !== 1) {
+    suppressPageWatcher = true
+    page.value = 1
+  }
+  loadItems()
+}
+
+watch(search, () => {
+  clearTimeout(searchDebounceTimer)
+  latestRequestId += 1
+  currentController?.abort()
+  if (page.value !== 1) {
+    suppressPageWatcher = true
+    page.value = 1
+  }
+  searchDebounceTimer = setTimeout(loadItems, 300)
+})
+
+watch([categoryFilter, brandFilter, conditionFilter, statusFilter, pageSize], resetPageAndLoad)
+watch(page, () => {
+  if (suppressPageWatcher) {
+    suppressPageWatcher = false
+    return
+  }
+  loadItems()
+})
+
+const totalPages = computed(() => Math.max(1, Number(pagination.value.totalPages) || 1))
+
+function changePageSize(event) {
+  pageSize.value = Number(event.target.value)
 }
 
 const toggleStatus = async (item) => {
@@ -105,6 +164,12 @@ const deleteItem = async (id) => {
 }
 
 onMounted(loadItems)
+onMounted(loadFilterOptions)
+
+onBeforeUnmount(() => {
+  clearTimeout(searchDebounceTimer)
+  currentController?.abort()
+})
 </script>
 
 <template>
@@ -152,6 +217,20 @@ onMounted(loadItems)
 
       </div>
 
+      <select v-model="categoryFilter" aria-label="Filter by category">
+        <option value="">All Categories</option>
+        <option v-for="category in categories" :key="category.id" :value="String(category.id)">
+          {{ category.name }}
+        </option>
+      </select>
+
+      <select v-model="brandFilter" aria-label="Filter by brand">
+        <option value="">All Brands</option>
+        <option v-for="brand in brands" :key="brand.id" :value="String(brand.id)">
+          {{ brand.name }}
+        </option>
+      </select>
+
       <!-- Condition -->
       <select v-model="conditionFilter">
 
@@ -190,6 +269,15 @@ onMounted(loadItems)
 
       </select>
 
+      <label class="page-size-control">
+        Rows per page
+        <select :value="pageSize" @change="changePageSize">
+          <option :value="25">25</option>
+          <option :value="50">50</option>
+          <option :value="100">100</option>
+        </select>
+      </label>
+
     </div>
 
     <!-- Table -->
@@ -205,7 +293,7 @@ onMounted(loadItems)
 
       <!-- Empty -->
       <div
-          v-else-if="!filteredItems.length"
+          v-else-if="!items.length"
           class="empty-state"
       >
         No items found.
@@ -238,12 +326,12 @@ onMounted(loadItems)
           <tbody>
 
           <tr
-              v-for="(item, index) in filteredItems"
+              v-for="(item, index) in items"
               :key="item.id"
           >
 
             <td>
-              {{ index + 1 }}
+              {{ ((page - 1) * pageSize) + index + 1 }}
             </td>
 
             <!-- Item Code -->
@@ -352,6 +440,20 @@ onMounted(loadItems)
 
         </table>
 
+      </div>
+
+      <div class="pagination-bar" aria-label="Product list pagination">
+        <span>
+          Showing {{ pagination.total ? ((page - 1) * pageSize) + 1 : 0 }}–{{ Math.min(page * pageSize, pagination.total) }}
+          of {{ pagination.total || 0 }}
+        </span>
+        <div class="pagination-actions">
+          <button type="button" :disabled="page <= 1 || loading" @click="page = 1">First</button>
+          <button type="button" :disabled="page <= 1 || loading" @click="page -= 1">Previous</button>
+          <span>Page {{ page }} of {{ totalPages }}</span>
+          <button type="button" :disabled="page >= totalPages || loading" @click="page += 1">Next</button>
+          <button type="button" :disabled="page >= totalPages || loading" @click="page = totalPages">Last</button>
+        </div>
       </div>
 
     </div>
@@ -527,6 +629,38 @@ onMounted(loadItems)
   overflow-x: auto;
 }
 
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  color: var(--color-text-secondary);
+  border-top: 1px solid var(--color-border-light);
+  font-size: var(--font-size-sm);
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.pagination-actions button {
+  min-height: 34px;
+  padding: 0 var(--spacing-md);
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.pagination-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -670,9 +804,14 @@ tbody tr:last-child td {
 
 @media (max-width: 700px) {
   .page-header,
-  .filter-card {
+  .filter-card,
+  .pagination-bar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .pagination-actions {
+    flex-wrap: wrap;
   }
 
   .page-header {

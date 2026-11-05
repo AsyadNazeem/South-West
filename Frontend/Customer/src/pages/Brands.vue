@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import api from '../services/api'
-import { getMediaUrl } from '../utils/mediaUrl'
+import api from '@/services/api'
+import { getMediaUrl } from '@/utils/mediaUrl'
 
 const brands = ref([])
 const loading = ref(true)
@@ -58,7 +58,13 @@ onMounted(loadBrands)
           :to="{ path: '/shop', query: { brand: String(brand.id) } }"
         >
           <div class="brand-image">
-            <img v-if="imageUrl(brand)" :src="imageUrl(brand)" :alt="brand.name" />
+            <img
+              v-if="imageUrl(brand)"
+              :src="imageUrl(brand)"
+              :alt="brand.name"
+              loading="lazy"
+              decoding="async"
+            />
             <span v-else>{{ brand.name?.charAt(0) }}</span>
           </div>
           <h2>{{ brand.name }}</h2>

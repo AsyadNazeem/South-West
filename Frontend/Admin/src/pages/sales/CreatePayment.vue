@@ -2,8 +2,8 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import paymentApi from '../../api/paymentApi'
-import orderApi from '../../api/orderApi'
+import paymentApi from '@/api/paymentApi'
+import orderApi from '@/api/orderApi'
 
 const router = useRouter()
 

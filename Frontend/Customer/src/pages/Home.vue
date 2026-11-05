@@ -1,14 +1,14 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '../services/api'
-import CategoryNav from '../layouts/CategoryNav.vue'
-import ProductFilters from '../components/products/ProductFilters.vue'
-import ProductGrid from '../components/products/ProductGrid.vue'
-import ProductSort from '../components/products/ProductSort.vue'
-import HomeCategory from '../components/home/HomeCategory.vue'
-import HomeBrand from '../components/home/HomeBrand.vue'
-import HomeDiscount from '../components/home/HomeDiscount.vue'
+import api from '@/services/api'
+import CategoryNav from '@/layouts/CategoryNav.vue'
+import ProductFilters from '@/components/products/ProductFilters.vue'
+import ProductGrid from '@/components/products/ProductGrid.vue'
+import ProductSort from '@/components/products/ProductSort.vue'
+import HomeCategory from '@/components/home/HomeCategory.vue'
+import HomeBrand from '@/components/home/HomeBrand.vue'
+import HomeDiscount from '@/components/home/HomeDiscount.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,8 +23,11 @@ let touchStartX = 0
 
 const categories = ref([])
 const selectedCategoryId = ref(null)
+const homepageCategories = computed(() =>
+    categories.value.filter(category => category.parent_id == null)
+)
 
-import { getMediaUrl } from '../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 
 // Short promises shown under the banner. Edit the text to match your store.
 const BENEFITS = [
@@ -59,6 +62,16 @@ const selectedBrandId = computed(() => {
 
   const id = Number(value)
   return Number.isInteger(id) && id > 0 ? id : null
+})
+
+const selectedBrand = computed(() => {
+  if (selectedBrandId.value === null) return null
+
+  const brand = availableBrands.value.find(
+    item => Number(getFilterId(item)) === selectedBrandId.value
+  )
+
+  return brand?.name ?? brand?.brand_name ?? null
 })
 
 function selectCategory(category) {
@@ -533,6 +546,7 @@ onBeforeUnmount(() => {
                     :src="getBannerImageUrl(activeBanner.image_url)"
                     :alt="activeBanner.title || 'Homepage promotion'"
                     class="banner-image"
+                    fetchpriority="high"
                   />
                 </picture>
 
@@ -713,7 +727,10 @@ onBeforeUnmount(() => {
           </ul>
         </section>
 
-        <HomeCategory @select-category="selectCategory" />
+        <HomeCategory
+          :categories="homepageCategories"
+          @select-category="selectCategory"
+        />
 
 <HomeBrand :products="products" />
 

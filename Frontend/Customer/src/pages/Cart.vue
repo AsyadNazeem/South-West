@@ -1,8 +1,8 @@
 <script setup>
-import { getMediaUrl } from '../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../services/api'
+import api from '@/services/api'
 
 const router = useRouter()
 

@@ -1,78 +1,77 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import Login from '../pages/auth/Login.vue'
-import AccessDenied from '../pages/auth/AccessDenied.vue'
-import Dashboard from '../pages/dashboard/Dashboard.vue'
-import Reports from '../pages/reports/Reports.vue'
-import AdminLayout from '../components/layout/AdminLayout.vue'
-import Customer from '../pages/customers/CustomerList.vue'
-import Address from '../pages/customers/CustomerAddresses.vue'
-import Reviews from '../pages/customers/CustomerReviews.vue'
-import CustomerCreate from '../pages/customers/CustomerCreate.vue'
-import CustomerAddressCreate from '../pages/customers/CustomerAddressCreate.vue'
-import CustomerView from '../pages/customers/CustomerView.vue'
-import Items from '../pages/products/ItemList.vue'
-import ItemCreate from '../pages/products/ItemCreate.vue'
-import ItemVariants from "../pages/products/ItemVariants.vue"
-import ItemVariantsCreate from "../pages/products/CreateItemVariants.vue"
-import ItemView from '../pages/products/ItemView.vue'
-import ProductCategoryCreate from '../pages/products/ProductCategoryCreate.vue'
-import ProductCategory from '../pages/products/ProductCategory.vue'
-import CategoryView from '../pages/products/CategoryView.vue'
-import ProductBrand from '../pages/products/ProductBrand.vue'
-import BrandCreate from '../pages/products/BrandCreate.vue'
-import ProductUnit from '../pages/products/ProductUnit.vue'
-import CreateUnit from '../pages/products/CreateUnit.vue'
-import CreatePrice from '../pages/products/CreatePrice.vue'
-import ProductPrice from '../pages/products/ProductPrice.vue'
-import ProductSpecification from '../pages/products/ProductSpecification.vue'
-import CreateSpecification from '../pages/products/CreateSpecification.vue'
-import ProductImage from '../pages/products/ProductImage.vue'
-import CreateImage from '../pages/products/CreateImage.vue'
-import ItemType from '../pages/products/ItemType.vue'
-import CreateItemType from '../pages/products/CreateItemType.vue'
-import CreateWarranty from '../pages/products/CreateWarranty.vue'
-import Warranty from '../pages/products/Warranty.vue'
-import Users from '../pages/administration/Users.vue'
-import UsersCreate from '../pages/administration/UsersCreate.vue'
-import UserRoles from '../pages/administration/UserRoles.vue'
-import UserPermission from '../pages/administration/UserPermission.vue'
-import CreateRoles from '../pages/administration/CreateRoles.vue'
-import UserSession from '../pages/administration/UserSession.vue'
-import InventoryLocation from '../pages/inventory/InventoryLocation.vue'
-import CreateInventoryLocation from '../pages/inventory/CreateInventoryLocation.vue'
-import InventoryStock from '../pages/inventory/InventoryStock.vue'
-import CreateInventoryStock from '../pages/inventory/CreateInventoryStock.vue'
-import InventoryStockMovement from '../pages/inventory/InventoryStockMovement.vue'
-import CreateInventoryStockMovement from '../pages/inventory/CreateInventoryStockMovement.vue'
-import GoodReceipts from '../pages/purchasing/GoodReceipts.vue'
-import CreateGoodReceipts from '../pages/purchasing/CreateGoodReceipts.vue'
-import PurchaseOrder from '../pages/purchasing/PurchaseOrder.vue'
-import CreatePurchaseOrder from '../pages/purchasing/CreatePurchaseOrder.vue'
-import Suppliers from '../pages/purchasing/Suppliers.vue'
-import CreateSuppliers from '../pages/purchasing/CreateSuppliers.vue'
-import Orders from '../pages/sales/Orders.vue'
-import OrderDetails from '../pages/sales/OrderDetails.vue'
-import Payment from '../pages/sales/Payment.vue'
-import Invoice from '../pages/sales/Invoice.vue'
-import Deliveries from '../pages/sales/Deliveries.vue'
-import DeliveryDetails from '../pages/sales/DeliveryDetails.vue'
-import DeliveryCharges from '../pages/sales/DeliveryCharges.vue'
-import CreateDeliveryCharges from '../pages/sales/CreateDeliveryCharges.vue'
-import Promotions from '../pages/marketing/Promotions.vue'
-import CreatePromotions from '../pages/marketing/CreatePromotions.vue'
-import PromotionCategories from '../pages/marketing/PromotionCategories.vue'
-import CreatePromotionCategories from '../pages/marketing/CreatePromotionCategories.vue'
-import PromotionItems from '../pages/marketing/PromotionItems.vue'
-import CreatePromotionItems from '../pages/marketing/CreatePromotionItems.vue'
-import HomepageBanners from '../pages/marketing/HomepageBanners.vue'
-import DiscountCampaigns from '../pages/marketing/DiscountCampaigns.vue'
-import CreateHomePage from '../pages/marketing/CreateHomepageBanners.vue'
-import CreateDiscountCampaigns from '../pages/marketing/DiscountCampaignForm.vue'
-import CampaignFrames from '../pages/marketing/CampaignFrames.vue'
-import WebsiteThemes from '../pages/marketing/WebsiteThemes.vue'
-import AuditLog from '../pages/administration/AuditLog.vue'
-
+const Login = () => import('@/pages/auth/Login.vue')
+const AccessDenied = () => import('@/pages/auth/AccessDenied.vue')
+const Dashboard = () => import('@/pages/dashboard/Dashboard.vue')
+const Reports = () => import('@/pages/reports/Reports.vue')
+import AdminLayout from '@/components/layout/AdminLayout.vue'
+const Customer = () => import('@/pages/customers/CustomerList.vue')
+const Address = () => import('@/pages/customers/CustomerAddresses.vue')
+const Reviews = () => import('@/pages/customers/CustomerReviews.vue')
+const CustomerCreate = () => import('@/pages/customers/CustomerCreate.vue')
+const CustomerAddressCreate = () => import('@/pages/customers/CustomerAddressCreate.vue')
+const CustomerView = () => import('@/pages/customers/CustomerView.vue')
+const Items = () => import('@/pages/products/ItemList.vue')
+const ItemCreate = () => import('@/pages/products/ItemCreate.vue')
+const ItemVariants = () => import('@/pages/products/ItemVariants.vue')
+const ItemVariantsCreate = () => import('@/pages/products/CreateItemVariants.vue')
+const ItemView = () => import('@/pages/products/ItemView.vue')
+const ProductCategoryCreate = () => import('@/pages/products/ProductCategoryCreate.vue')
+const ProductCategory = () => import('@/pages/products/ProductCategory.vue')
+const CategoryView = () => import('@/pages/products/CategoryView.vue')
+const ProductBrand = () => import('@/pages/products/ProductBrand.vue')
+const BrandCreate = () => import('@/pages/products/BrandCreate.vue')
+const ProductUnit = () => import('@/pages/products/ProductUnit.vue')
+const CreateUnit = () => import('@/pages/products/CreateUnit.vue')
+const CreatePrice = () => import('@/pages/products/CreatePrice.vue')
+const ProductPrice = () => import('@/pages/products/ProductPrice.vue')
+const ProductSpecification = () => import('@/pages/products/ProductSpecification.vue')
+const CreateSpecification = () => import('@/pages/products/CreateSpecification.vue')
+const ProductImage = () => import('@/pages/products/ProductImage.vue')
+const CreateImage = () => import('@/pages/products/CreateImage.vue')
+const ItemType = () => import('@/pages/products/ItemType.vue')
+const CreateItemType = () => import('@/pages/products/CreateItemType.vue')
+const CreateWarranty = () => import('@/pages/products/CreateWarranty.vue')
+const Warranty = () => import('@/pages/products/Warranty.vue')
+const Users = () => import('@/pages/administration/Users.vue')
+const UsersCreate = () => import('@/pages/administration/UsersCreate.vue')
+const UserRoles = () => import('@/pages/administration/UserRoles.vue')
+const UserPermission = () => import('@/pages/administration/UserPermission.vue')
+const CreateRoles = () => import('@/pages/administration/CreateRoles.vue')
+const UserSession = () => import('@/pages/administration/UserSession.vue')
+const InventoryLocation = () => import('@/pages/inventory/InventoryLocation.vue')
+const CreateInventoryLocation = () => import('@/pages/inventory/CreateInventoryLocation.vue')
+const InventoryStock = () => import('@/pages/inventory/InventoryStock.vue')
+const CreateInventoryStock = () => import('@/pages/inventory/CreateInventoryStock.vue')
+const InventoryStockMovement = () => import('@/pages/inventory/InventoryStockMovement.vue')
+const CreateInventoryStockMovement = () => import('@/pages/inventory/CreateInventoryStockMovement.vue')
+const GoodReceipts = () => import('@/pages/purchasing/GoodReceipts.vue')
+const CreateGoodReceipts = () => import('@/pages/purchasing/CreateGoodReceipts.vue')
+const PurchaseOrder = () => import('@/pages/purchasing/PurchaseOrder.vue')
+const CreatePurchaseOrder = () => import('@/pages/purchasing/CreatePurchaseOrder.vue')
+const Suppliers = () => import('@/pages/purchasing/Suppliers.vue')
+const CreateSuppliers = () => import('@/pages/purchasing/CreateSuppliers.vue')
+const Orders = () => import('@/pages/sales/Orders.vue')
+const OrderDetails = () => import('@/pages/sales/OrderDetails.vue')
+const Payment = () => import('@/pages/sales/Payment.vue')
+const Invoice = () => import('@/pages/sales/Invoice.vue')
+const Deliveries = () => import('@/pages/sales/Deliveries.vue')
+const DeliveryDetails = () => import('@/pages/sales/DeliveryDetails.vue')
+const DeliveryCharges = () => import('@/pages/sales/DeliveryCharges.vue')
+const CreateDeliveryCharges = () => import('@/pages/sales/CreateDeliveryCharges.vue')
+const Promotions = () => import('@/pages/marketing/Promotions.vue')
+const CreatePromotions = () => import('@/pages/marketing/CreatePromotions.vue')
+const PromotionCategories = () => import('@/pages/marketing/PromotionCategories.vue')
+const CreatePromotionCategories = () => import('@/pages/marketing/CreatePromotionCategories.vue')
+const PromotionItems = () => import('@/pages/marketing/PromotionItems.vue')
+const CreatePromotionItems = () => import('@/pages/marketing/CreatePromotionItems.vue')
+const HomepageBanners = () => import('@/pages/marketing/HomepageBanners.vue')
+const DiscountCampaigns = () => import('@/pages/marketing/DiscountCampaigns.vue')
+const CreateHomePage = () => import('@/pages/marketing/CreateHomepageBanners.vue')
+const CreateDiscountCampaigns = () => import('@/pages/marketing/DiscountCampaignForm.vue')
+const CampaignFrames = () => import('@/pages/marketing/CampaignFrames.vue')
+const WebsiteThemes = () => import('@/pages/marketing/WebsiteThemes.vue')
+const AuditLog = () => import('@/pages/administration/AuditLog.vue')
 import {
     clearAuthentication,
     ensureAuthorization,
@@ -80,7 +79,7 @@ import {
     hasAllPermissions,
     hasAnyPermission,
     hasPermission
-} from '../auth/authorization'
+} from '@/auth/authorization'
 
 const routes = [
     {

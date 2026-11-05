@@ -2,8 +2,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import AccountSidebar from '../components/account/AccountSidebar.vue'
-import api from '../services/api'
+import AccountSidebar from '@/components/account/AccountSidebar.vue'
+import api from '@/services/api'
 
 const router = useRouter()
 const customer = ref(null)

@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { useWebsiteTheme } from '../composables/useWebsiteTheme'
+import { useWebsiteTheme } from '@/composables/useWebsiteTheme'
 
 const { themeSlug, decorations, effects } = useWebsiteTheme()
 

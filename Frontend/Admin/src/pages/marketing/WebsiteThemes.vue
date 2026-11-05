@@ -6,7 +6,7 @@ import {
   updateWebsiteTheme,
   updateWebsiteThemeStatus,
   deleteWebsiteTheme
-} from '../../api/websiteThemeApi'
+} from '@/api/websiteThemeApi'
 
 const themes = ref([])
 const loading = ref(false)

@@ -1,9 +1,9 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import api from "../../api/axios"
-import SearchableSelect from "../../components/common/SearchableSelect.vue"
-import customerAddressApi from "../../api/deliveryAddressApi"
+import api from "@/api/axios"
+import SearchableSelect from "@/components/common/SearchableSelect.vue"
+import customerAddressApi from "@/api/deliveryAddressApi"
 
 const route = useRoute()
 const router = useRouter()

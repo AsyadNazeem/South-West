@@ -3,11 +3,11 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.css'
-import api from '../../api/axios'
+import api from '@/api/axios'
 import {
   hasPermission as authorization,
   ensureAuthorization
-} from '../../auth/authorization.js'
+} from '@/auth/authorization.js'
 
 // Base path of inventory stock movement pages
 const MOVEMENT_BASE = '/admin/inventory/movements'

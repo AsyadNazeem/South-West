@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import api from '../services/api'
-import { getMediaUrl } from '../utils/mediaUrl'
+import api from '@/services/api'
+import { getMediaUrl } from '@/utils/mediaUrl'
 
 const categories = ref([])
 const loading = ref(true)
@@ -54,7 +54,13 @@ onMounted(loadCategories)
         <article v-for="category in categories" :key="category.id" class="directory-card">
           <RouterLink :to="{ path: '/shop', query: { category: String(category.id) } }">
             <div class="directory-image">
-              <img v-if="imageUrl(category)" :src="imageUrl(category)" :alt="category.name" />
+              <img
+                v-if="imageUrl(category)"
+                :src="imageUrl(category)"
+                :alt="category.name"
+                loading="lazy"
+                decoding="async"
+              />
               <span v-else class="directory-placeholder">{{ category.name?.charAt(0) }}</span>
             </div>
             <div class="directory-card-body">

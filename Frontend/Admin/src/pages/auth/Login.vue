@@ -1,8 +1,8 @@
 <script setup>
 import {ref} from 'vue'
 import {useRouter} from 'vue-router'
-import {login as loginRequest} from '../../api/authApi'
-import {hasPermission, setAuthenticatedSession} from '../../auth/authorization'
+import {login as loginRequest} from '@/api/authApi'
+import {hasPermission, setAuthenticatedSession} from '@/auth/authorization'
 
 const router = useRouter()
 

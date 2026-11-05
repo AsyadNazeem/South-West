@@ -1,11 +1,11 @@
 <script setup>
-import { getMediaUrl } from '../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '../services/api'
+import api from '@/services/api'
 import DOMPurify from 'dompurify'
-import { formatMeasure, formatAttributeLabel } from '../utils/measure.js'
-import VariantSelector from '../components/VariantSelector.vue'
+import { formatMeasure, formatAttributeLabel } from '@/utils/measure.js'
+import VariantSelector from '@/components/VariantSelector.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1127,19 +1127,26 @@ async function loadProduct() {
   quantity.value = 1
 
   try {
-    const response = await api.get('/store/products')
-    const list = getProductList(response.data)
-
-    if (!list) {
-      throw new Error('Unexpected product response from the server.')
-    }
-
 const productSlug = String(route.params.productSlug || '')
 const publicIdMatch = productSlug.match(
   /-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
 )
 
 const publicId = publicIdMatch?.[1]
+
+    if (!publicId) {
+      error.value = 'This product could not be found or is no longer available.'
+      return
+    }
+
+    const response = await api.get('/store/products', {
+      params: { publicId },
+    })
+    const list = getProductList(response.data)
+
+    if (!list) {
+      throw new Error('Unexpected product response from the server.')
+    }
 
 const found = publicId
   ? list.find(
@@ -1182,8 +1189,6 @@ product.value = {
 
 chooseDefaultVariant(product.value)
 
-await loadWishlistStatus()
-
 reviews.value = []
 averageReviewRating.value = null
 approvedReviewCount.value = 0
@@ -1191,7 +1196,10 @@ reviewSubmitted.value = false
 reviewMessage.value = ''
 reviewSubmitError.value = ''
 
-await loadProductReviews()
+await Promise.all([
+  loadWishlistStatus(),
+  loadProductReviews(),
+])
   } catch (err) {
     console.error('Load product error:', err)
 
@@ -1468,7 +1476,12 @@ onMounted(loadProduct)
               :aria-label="`View image ${index + 1}`"
               @click="selectImage(index)"
             >
-              <img :src="image" :alt="`${productName} ${index + 1}`" />
+              <img
+                :src="image"
+                :alt="`${productName} ${index + 1}`"
+                loading="lazy"
+                decoding="async"
+              />
             </button>
           </div>
         </div>

@@ -11,7 +11,7 @@ import {
   useRouter
 } from 'vue-router'
 
-import api from '../../api/axios'
+import api from '@/api/axios'
 
 const route = useRoute()
 const router = useRouter()

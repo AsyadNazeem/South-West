@@ -186,7 +186,7 @@ import { useRoute } from 'vue-router'
 
 import {
   hasPermission
-} from '../../auth/authorization.js'
+} from '@/auth/authorization.js'
 
 
 /*

@@ -1,8 +1,8 @@
 <script setup>
-import { getMediaUrl } from '../../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../../services/api'
+import api from '@/services/api'
 
 const router = useRouter()
 const wishlist = ref([])

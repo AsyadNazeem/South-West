@@ -10,6 +10,8 @@ const {
     createPasswordSetupInvitation,
 } = require('../services/customerPasswordSetupService');
 
+const { Op, Sequelize } = require('sequelize');
+
 const {
     sendCustomerPasswordSetupInvitation,
 } = require('../services/emailService');
@@ -334,6 +336,105 @@ async function createCustomer(req, res) {
 
 async function getCustomers(req, res) {
     try {
+        if (req.query.paginate === '1') {
+            const requestedPageSize = Number.parseInt(
+                req.query.pageSize ?? req.query.limit,
+                10
+            );
+            const pageSize = Number.isInteger(requestedPageSize) && requestedPageSize > 0
+                ? Math.min(requestedPageSize, 100)
+                : 25;
+            const requestedPage = Number.parseInt(req.query.page, 10);
+            const page = Number.isInteger(requestedPage) && requestedPage > 0
+                ? requestedPage
+                : 1;
+            const offset = (page - 1) * pageSize;
+            const where = {};
+            const search = String(req.query.search || '').trim();
+            const status = String(req.query.status || 'all');
+            const sortableFields = new Set([
+                'id',
+                'first_name',
+                'last_name',
+                'email',
+                'phone',
+                'created_at',
+                'is_active',
+            ]);
+            const requestedSort = String(req.query.sortBy || 'id');
+            const sortBy = sortableFields.has(requestedSort)
+                ? requestedSort
+                : 'id';
+            const sortOrder = String(req.query.sortOrder || 'DESC').toUpperCase() === 'ASC'
+                ? 'ASC'
+                : 'DESC';
+            const order = sortBy === 'id'
+                ? [['id', sortOrder]]
+                : [[sortBy, sortOrder], ['id', 'DESC']];
+
+            if (status === 'active') where.is_active = true;
+            if (status === 'inactive') where.is_active = false;
+
+            if (search) {
+                const pattern = `%${search}%`;
+                where[Op.or] = [
+                    Sequelize.where(
+                        Sequelize.fn(
+                            'CONCAT',
+                            Sequelize.col('first_name'),
+                            ' ',
+                            Sequelize.col('last_name')
+                        ),
+                        { [Op.like]: pattern }
+                    ),
+                    { email: { [Op.like]: pattern } },
+                    { phone: { [Op.like]: pattern } },
+                ];
+            }
+
+            const result = await Customer.findAndCountAll({
+                where,
+                attributes: [
+                    'id',
+                    'first_name',
+                    'last_name',
+                    'email',
+                    'phone',
+                    'is_active',
+                    'created_at',
+                ],
+                order,
+                limit: pageSize,
+                offset,
+            });
+
+            const data = result.rows.map(customer => {
+                const row = customer.toJSON();
+                return {
+                    id: row.id,
+                    first_name: row.first_name,
+                    last_name: row.last_name,
+                    email: row.email,
+                    mobile: row.phone || '',
+                    orders: 0,
+                    total_spent: 0,
+                    status: row.is_active ? 'active' : 'inactive',
+                    created_at: row.created_at,
+                };
+            });
+
+            return res.status(200).json({
+                message: 'Customers retrieved successfully.',
+                data,
+                pagination: {
+                    total: result.count,
+                    page,
+                    pageSize,
+                    totalPages: Math.ceil(result.count / pageSize),
+                },
+            });
+        }
+
         const customers = await Customer.findAll({
             attributes: {
                 exclude: [

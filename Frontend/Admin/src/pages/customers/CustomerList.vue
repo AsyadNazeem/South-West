@@ -1,14 +1,20 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
-import api from "../../api/axios"
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue"
+import api from "@/api/axios"
 
 const searchQuery = ref("");
 const statusFilter = ref("all");
-
 const loading = ref(false);
 const errorMessage = ref("");
-
 const customers = ref([])
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 0 })
+
+let currentController = null
+let latestRequestId = 0
+let searchDebounceTimer = null
+let suppressPageWatcher = false
 
 const formatDate = (date) => {
   if (!date) return "-"
@@ -20,39 +26,44 @@ const formatDate = (date) => {
   })
 }
 
-const filteredCustomers = computed(() => {
-  return customers.value.filter((customer) => {
-
-    const fullName =
-        `${customer.first_name} ${customer.last_name}`.toLowerCase();
-
-    const search =
-        searchQuery.value.toLowerCase().trim();
-
-    const matchesSearch =
-        !search ||
-        fullName.includes(search) ||
-        (customer.email || "").toLowerCase().includes(search) ||
-        (customer.mobile || "").includes(search);
-
-    const matchesStatus =
-        statusFilter.value === "all" ||
-        customer.status === statusFilter.value;
-
-    return matchesSearch && matchesStatus;
-  });
-});
-
 const loadCustomers = async () => {
+  currentController?.abort()
+  const controller = new AbortController()
+  currentController = controller
+  const requestId = ++latestRequestId
+
   try {
     loading.value = true
     errorMessage.value = ""
 
-    const response = await api.get("/customers")
+    const response = await api.get("/customers", {
+      params: {
+        paginate: 1,
+        page: page.value,
+        pageSize: pageSize.value,
+        search: searchQuery.value.trim(),
+        status: statusFilter.value,
+        sortBy: "id",
+        sortOrder: "DESC",
+      },
+      signal: controller.signal,
+    })
+
+    if (requestId !== latestRequestId) return
+
+    const responsePage = response.data.pagination
+    const totalPages = Number(responsePage?.totalPages) || 0
+    const lastAvailablePage = Math.max(1, totalPages)
+    if (page.value > lastAvailablePage) {
+      page.value = lastAvailablePage
+      return
+    }
 
     customers.value = response.data.data || []
+    pagination.value = responsePage || { total: customers.value.length, totalPages: 1 }
 
   } catch (error) {
+    if (error.code === "ERR_CANCELED" || requestId !== latestRequestId) return
     console.error("Customer loading error:", error)
 
     errorMessage.value =
@@ -60,8 +71,43 @@ const loadCustomers = async () => {
         "Failed to load customers."
 
   } finally {
-    loading.value = false
+    if (requestId === latestRequestId) loading.value = false
   }
+}
+
+function resetPageAndLoad() {
+  clearTimeout(searchDebounceTimer)
+  if (page.value !== 1) {
+    suppressPageWatcher = true
+    page.value = 1
+  }
+  loadCustomers()
+}
+
+watch(searchQuery, () => {
+  clearTimeout(searchDebounceTimer)
+  latestRequestId += 1
+  currentController?.abort()
+  if (page.value !== 1) {
+    suppressPageWatcher = true
+    page.value = 1
+  }
+  searchDebounceTimer = setTimeout(loadCustomers, 300)
+})
+
+watch([statusFilter, pageSize], resetPageAndLoad)
+watch(page, () => {
+  if (suppressPageWatcher) {
+    suppressPageWatcher = false
+    return
+  }
+  loadCustomers()
+})
+
+const totalPages = computed(() => Math.max(1, Number(pagination.value.totalPages) || 1))
+
+function changePageSize(event) {
+  pageSize.value = Number(event.target.value)
 }
 
 const formatCurrency = (value) => {
@@ -92,6 +138,11 @@ const deleteCustomer = async (id) => {
 }
 
 onMounted(loadCustomers)
+
+onBeforeUnmount(() => {
+  clearTimeout(searchDebounceTimer)
+  currentController?.abort()
+})
 </script>
 
 <template>
@@ -164,6 +215,15 @@ onMounted(loadCustomers)
 
         </div>
 
+        <label class="page-size-control">
+          Rows per page
+          <select :value="pageSize" @change="changePageSize">
+            <option :value="25">25</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
+        </label>
+
       </div>
 
 
@@ -178,7 +238,7 @@ onMounted(loadCustomers)
 
       <!-- Empty -->
       <div
-          v-else-if="!filteredCustomers.length"
+          v-else-if="!customers.length"
           class="empty-state"
       >
         No customers found.
@@ -222,12 +282,12 @@ onMounted(loadCustomers)
           <tbody>
 
           <tr
-              v-for="(customer, index) in filteredCustomers"
+              v-for="(customer, index) in customers"
               :key="customer.id"
           >
 
             <td>
-              {{ index + 1 }}
+              {{ ((page - 1) * pageSize) + index + 1 }}
             </td>
 
             <!-- Customer -->
@@ -329,6 +389,20 @@ onMounted(loadCustomers)
 
         </table>
 
+      </div>
+
+      <div class="pagination-bar" aria-label="Customer list pagination">
+        <span>
+          Showing {{ pagination.total ? ((page - 1) * pageSize) + 1 : 0 }}–{{ Math.min(page * pageSize, pagination.total) }}
+          of {{ pagination.total || 0 }}
+        </span>
+        <div class="pagination-actions">
+          <button type="button" :disabled="page <= 1 || loading" @click="page = 1">First</button>
+          <button type="button" :disabled="page <= 1 || loading" @click="page -= 1">Previous</button>
+          <span>Page {{ page }} of {{ totalPages }}</span>
+          <button type="button" :disabled="page >= totalPages || loading" @click="page += 1">Next</button>
+          <button type="button" :disabled="page >= totalPages || loading" @click="page = totalPages">Last</button>
+        </div>
       </div>
 
     </div>
@@ -474,6 +548,25 @@ onMounted(loadCustomers)
   cursor: pointer;
 }
 
+.page-size-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.page-size-control select {
+  height: 40px;
+  padding: 0 var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
 .search-box input:focus,
 .filter-box select:focus {
   border-color: var(--color-primary);
@@ -486,6 +579,40 @@ onMounted(loadCustomers)
 
 .table-container {
   overflow-x: auto;
+}
+
+.pagination-bar,
+.pagination-actions {
+  display: flex;
+  align-items: center;
+}
+
+.pagination-bar {
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  border-top: 1px solid var(--color-border-light);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.pagination-actions {
+  gap: var(--spacing-sm);
+}
+
+.pagination-actions button {
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pagination-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 table {
@@ -630,6 +757,19 @@ tbody tr:last-child td {
 
   .filter-box select {
     width: 100%;
+  }
+
+  .page-size-control {
+    justify-content: space-between;
+  }
+
+  .pagination-bar,
+  .pagination-actions {
+    flex-wrap: wrap;
+  }
+
+  .pagination-bar {
+    align-items: flex-start;
   }
 }
 </style>

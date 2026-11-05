@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import api from '../../api/axios'
+import api from '@/api/axios'
 
 // Base path of the roles pages in your router
 const ROLE_BASE = '/admin/administration/roles'

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import api from '../../services/api'
-import SearchableSelect from '../../components/SearchableSelect.vue'
+import api from '@/services/api'
+import SearchableSelect from '@/components/SearchableSelect.vue'
 
 const MAX_ADDRESSES = 3
 

@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import api from '../../api/axios'
+import api from '@/api/axios'
 
-import { getMediaUrl } from '../../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 
 const fileUrl = (url) => getMediaUrl(url)
 

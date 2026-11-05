@@ -11,11 +11,11 @@ import {
   updateGoodsReceiptItem,
   deleteGoodsReceiptItem,
   receiveGoodsReceipt
-} from '../../api/goodsReceiptApi.js'
-import { getInventoryLocations } from '../../api/inventoryLocationApi.js'
-import itemApi from '../../api/itemApi.js'
-import api from '../../api/axios.js'
-import { hasPermission } from '../../auth/authorization.js'
+} from '@/api/goodsReceiptApi.js'
+import { getInventoryLocations } from '@/api/inventoryLocationApi.js'
+import itemApi from '@/api/itemApi.js'
+import api from '@/api/axios.js'
+import { hasPermission } from '@/auth/authorization.js'
 
 const route = useRoute()
 const router = useRouter()

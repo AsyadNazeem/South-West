@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import {
     getCurrentUser,
     logout as logoutRequest
-} from '../api/authApi'
+} from '@/api/authApi'
 
 const TOKEN_KEY = 'token'
 const USER_KEY = 'user'

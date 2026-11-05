@@ -5,7 +5,7 @@ import {
   hasAllPermissions,
   hasPermission,
   logout as logoutSession
-} from '../../auth/authorization'
+} from '@/auth/authorization'
 
 import {
   LayoutDashboard,

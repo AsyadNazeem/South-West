@@ -1,6 +1,15 @@
 import api from './axios'
 
 const orderApi = {
+    getOrderSummaries: async (params = {}, signal) => {
+        const response = await api.get('/orders/summary', {
+            params,
+            signal
+        })
+
+        return response.data
+    },
+
     getOrders: async (params = {}) => {
         const response = await api.get('/orders', {
             params

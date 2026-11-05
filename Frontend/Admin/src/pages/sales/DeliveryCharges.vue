@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import deliveryAreaApi from '../../api/deliveryAreaApi'
-import deliveryDistrictApi from '../../api/deliveryDistrictApi'
-import { hasPermission } from '../../auth/authorization'
+import deliveryAreaApi from '@/api/deliveryAreaApi'
+import deliveryDistrictApi from '@/api/deliveryDistrictApi'
+import { hasPermission } from '@/auth/authorization'
 
 const router = useRouter()
 

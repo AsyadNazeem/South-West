@@ -3,7 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.css'
-import api from '../../api/axios'
+import api from '@/api/axios'
 
 const router = useRouter()
 const route = useRoute()

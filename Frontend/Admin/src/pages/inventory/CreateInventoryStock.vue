@@ -8,7 +8,7 @@ import Multiselect from 'vue-multiselect'
 
 import 'vue-multiselect/dist/vue-multiselect.css'
 
-import api from '../../api/axios'
+import api from '@/api/axios'
 
 import {
 
@@ -16,7 +16,7 @@ import {
 
   ensureAuthorization
 
-} from '../../auth/authorization.js'
+} from '@/auth/authorization.js'
 
 const router = useRouter()
 

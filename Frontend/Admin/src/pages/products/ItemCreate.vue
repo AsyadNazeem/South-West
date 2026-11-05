@@ -912,8 +912,8 @@
 <script setup>
 import {computed, onMounted, ref} from "vue"
 import {useRoute, useRouter} from "vue-router"
-import api from "../../api/axios"
-import RichTextEditor from "../../components/common/RichTextEditor.vue"
+import api from "@/api/axios"
+import RichTextEditor from "@/components/common/RichTextEditor.vue"
 
 const router = useRouter()
 const route = useRoute()

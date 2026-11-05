@@ -1,7 +1,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from "vue"
-import api from "../../api/axios"
+import api from "@/api/axios"
 
 const reviews = ref([])
 const loading = ref(true)

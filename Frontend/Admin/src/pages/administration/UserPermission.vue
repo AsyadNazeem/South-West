@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import api from '../../api/axios'
-import { refreshAuthorization } from '../../auth/authorization'
+import api from '@/api/axios'
+import { refreshAuthorization } from '@/auth/authorization'
 
 // ==========================================
 // State

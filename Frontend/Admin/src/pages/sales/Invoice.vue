@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 
-import invoiceApi from '../../api/invoiceApi'
-import { hasPermission } from '../../auth/authorization.js'
+import invoiceApi from '@/api/invoiceApi'
+import { hasPermission } from '@/auth/authorization.js'
 
 // ==========================================
 // Routes

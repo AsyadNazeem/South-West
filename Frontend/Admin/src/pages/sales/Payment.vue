@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 
-import paymentApi from '../../api/paymentApi'
-import { hasPermission } from '../../auth/authorization.js'
+import paymentApi from '@/api/paymentApi'
+import { hasPermission } from '@/auth/authorization.js'
 
 
 // ==========================================

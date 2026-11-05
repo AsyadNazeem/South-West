@@ -2,8 +2,8 @@
 import {computed, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 
-import deliveryApi from '../../api/deliveryApi'
-import {hasPermission} from '../../auth/authorization.js'
+import deliveryApi from '@/api/deliveryApi'
+import {hasPermission} from '@/auth/authorization.js'
 
 const router = useRouter()
 

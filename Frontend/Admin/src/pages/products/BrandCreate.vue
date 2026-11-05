@@ -1,8 +1,8 @@
 <script setup>
-import { getMediaUrl } from '../../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 import { ref, computed, onMounted, onBeforeUnmount } from "vue"
 import { useRouter, useRoute } from "vue-router"
-import api from "../../api/axios"
+import api from "@/api/axios"
 
 const router = useRouter()
 const route = useRoute()

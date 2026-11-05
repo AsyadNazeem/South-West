@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
-import api from "../../api/axios"
+import api from "@/api/axios"
 
 const specifications = ref([])
 const loading = ref(true)

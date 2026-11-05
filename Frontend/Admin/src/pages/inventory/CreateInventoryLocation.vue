@@ -1,11 +1,11 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import api from '../../api/axios'
+import api from '@/api/axios'
 import {
   hasPermission as authorization,
   ensureAuthorization
-} from '../../auth/authorization.js'
+} from '@/auth/authorization.js'
 
 const router = useRouter()
 const route = useRoute()

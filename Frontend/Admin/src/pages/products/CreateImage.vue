@@ -3,7 +3,7 @@ import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.css'
-import api from '../../api/axios'
+import api from '@/api/axios'
 import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
 
@@ -40,7 +40,7 @@ const cropQueue = ref([])
 
 const cropperInstance = ref(null)
 
-import { getMediaUrl } from '../../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 
 const fileUrl = (url) => getMediaUrl(url)
 

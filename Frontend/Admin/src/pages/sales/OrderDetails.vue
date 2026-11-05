@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import orderApi from '../../api/orderApi'
+import orderApi from '@/api/orderApi'
 
 const route = useRoute()
 const router = useRouter()

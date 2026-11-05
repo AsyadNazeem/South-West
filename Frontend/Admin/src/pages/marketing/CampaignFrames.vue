@@ -6,7 +6,7 @@ import {
     updateCampaignFrame,
     updateCampaignFrameStatus,
     deleteCampaignFrame,
-} from '../../api/campaignFrameApi'
+} from '@/api/campaignFrameApi'
 
 const frames = ref([])
 const loading = ref(false)
@@ -37,7 +37,7 @@ function responseArray(response) {
     return Array.isArray(result) ? result : []
 }
 
-import { getMediaUrl } from '../../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 
 function imageUrl(frame) {
     const value = frame.image_url || frame.image_path || ''

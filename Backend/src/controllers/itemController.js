@@ -1,3 +1,5 @@
+const { Op, Sequelize } = require('sequelize');
+
 const {
     sequelize,
     Item,
@@ -15,6 +17,113 @@ const { randomUUID } = require('crypto');
 
 const getItems = async (req, res) => {
     try {
+        if (req.query.paginate === '1') {
+            const requestedPageSize = Number.parseInt(
+                req.query.pageSize ?? req.query.limit,
+                10
+            );
+            const pageSize = Number.isInteger(requestedPageSize) && requestedPageSize > 0
+                ? Math.min(requestedPageSize, 100)
+                : 25;
+            const requestedPage = Number.parseInt(req.query.page, 10);
+            const page = Number.isInteger(requestedPage) && requestedPage > 0
+                ? requestedPage
+                : 1;
+            const offset = (page - 1) * pageSize;
+            const where = {};
+            const search = String(req.query.search || '').trim();
+            const status = String(req.query.status || 'all');
+            const condition = String(req.query.condition || 'all');
+            const categoryId = String(req.query.categoryId || '').trim();
+            const brandId = String(req.query.brandId || '').trim();
+            const sortableFields = new Set([
+                'id',
+                'item_code',
+                'item_name',
+                'condition',
+                'is_active',
+            ]);
+            const requestedSort = String(req.query.sortBy || 'id');
+            const sortBy = sortableFields.has(requestedSort)
+                ? requestedSort
+                : 'id';
+            const sortOrder = String(req.query.sortOrder || 'DESC').toUpperCase() === 'ASC'
+                ? 'ASC'
+                : 'DESC';
+            const order = sortBy === 'id'
+                ? [['id', sortOrder]]
+                : [[sortBy, sortOrder], ['id', 'DESC']];
+
+            if (status === 'active') where.is_active = true;
+            if (status === 'inactive') where.is_active = false;
+            if (['new', 'used', 'refurbished'].includes(condition)) {
+                where.condition = condition;
+            }
+            if (/^[1-9]\d*$/.test(categoryId)) {
+                where.category_id = categoryId;
+            }
+            if (/^[1-9]\d*$/.test(brandId)) {
+                where.brand_id = brandId;
+            }
+
+            if (search) {
+                const pattern = `%${search}%`;
+                where[Op.or] = [
+                    { item_code: { [Op.like]: pattern } },
+                    { item_name: { [Op.like]: pattern } },
+                    Sequelize.where(Sequelize.col('category.name'), {
+                        [Op.like]: pattern,
+                    }),
+                    Sequelize.where(Sequelize.col('brand.name'), {
+                        [Op.like]: pattern,
+                    }),
+                ];
+            }
+
+            const result = await Item.findAndCountAll({
+                where,
+                attributes: [
+                    'id',
+                    'item_code',
+                    'item_name',
+                    'condition',
+                    'is_serialized',
+                    'is_active',
+                ],
+                include: [
+                    {
+                        model: Brand,
+                        as: 'brand',
+                        attributes: ['id', 'name'],
+                    },
+                    {
+                        model: Category,
+                        as: 'category',
+                        attributes: ['id', 'name'],
+                    },
+                ],
+                order,
+                limit: pageSize,
+                offset,
+                distinct: true,
+                col: 'id',
+                subQuery: false,
+            });
+
+            const totalPages = Math.ceil(result.count / pageSize);
+
+            return res.status(200).json({
+                message: 'Item retrieved successfully',
+                data: result.rows,
+                pagination: {
+                    total: result.count,
+                    page,
+                    pageSize,
+                    totalPages,
+                },
+            });
+        }
+
         const items = await Item.findAll({
             include: [
                 {
@@ -50,6 +159,32 @@ const getItems = async (req, res) => {
 
         return res.status(500).json({
             message: 'Failed to retrieve Item'
+        });
+    }
+};
+
+const getItemFilterOptions = async (req, res) => {
+    try {
+        const [categories, brands] = await Promise.all([
+            Category.findAll({
+                attributes: ['id', 'name'],
+                order: [['name', 'ASC']],
+                raw: true,
+            }),
+            Brand.findAll({
+                attributes: ['id', 'name'],
+                order: [['name', 'ASC']],
+                raw: true,
+            }),
+        ]);
+
+        return res.status(200).json({
+            data: { categories, brands },
+        });
+    } catch (error) {
+        console.error('Product filter options loading error:', error);
+        return res.status(500).json({
+            message: 'Failed to retrieve product filter options',
         });
     }
 };
@@ -430,6 +565,7 @@ const updateItem = async (req, res) => {
 
 module.exports = {
     getItems,
+    getItemFilterOptions,
     getItemById,
     createItem,
     updateItem

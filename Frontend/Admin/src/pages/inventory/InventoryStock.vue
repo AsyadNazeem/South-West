@@ -1,10 +1,10 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import api from '../../api/axios'
+import api from '@/api/axios'
 import {
   hasPermission as authorization,
   ensureAuthorization
-} from '../../auth/authorization.js'
+} from '@/auth/authorization.js'
 
 // Base path of the inventory stock pages in your router
 const STOCK_BASE = '/admin/inventory/stock'

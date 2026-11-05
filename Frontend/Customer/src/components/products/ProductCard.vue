@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import api from '../../services/api'
-import { getMediaUrl } from '../../utils/mediaUrl'
+import api from '@/services/api'
+import { getMediaUrl } from '@/utils/mediaUrl'
 
 const props = defineProps({
   product: { type: Object, required: true },

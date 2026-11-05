@@ -274,8 +274,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import supplierApi from '../../api/supplierApi.js'
-import { hasPermission } from '../../auth/authorization.js'
+import supplierApi from '@/api/supplierApi.js'
+import { hasPermission } from '@/auth/authorization.js'
 
 const router = useRouter()
 

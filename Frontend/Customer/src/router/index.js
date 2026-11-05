@@ -1,36 +1,30 @@
 
 import { createRouter, createWebHistory } from 'vue-router'
 
-import Login from '../pages/auth/Login.vue'
-import Register from '../pages/auth/Register.vue'
-import SetPassword from '../pages/auth/SetPassword.vue'
-import VerifyEmail from '../pages/auth/VerifyEmail.vue'
-import Home from '../pages/Home.vue'
-import InformationPage from '../pages/InformationPage.vue'
-import StoreListing from '../pages/StoreListing.vue'
-import Categories from '../pages/Categories.vue'
-import Brands from '../pages/Brands.vue'
-
-
-
-import AccountLayout from '../layouts/AccountLayout.vue'
-import AccountOverview from '../pages/account/AccountOverview.vue'
-import PersonalInformation from '../pages/account/PersonalInformation.vue'
-import AddressBook from '../pages/account/AddressBook.vue'
-import ChangePassword from '../pages/account/ChangePassword.vue'
-import MyOrders from '../pages/account/MyOrders.vue'
-import Notifications from '../pages/account/Notifications.vue'
-import Wishlist from '../pages/account/Wishlist.vue'
-import MyReviews from '../pages/account/MyReviews.vue'
-import ReturnsCancellations from '../pages/account/ReturnsCancellations.vue'
-import ProductDetails from '../pages/ProductDetails.vue'
-import Cart from '../pages/Cart.vue'
-import Checkout from '../pages/Checkout.vue'
-import GuestCheckoutAddress from '../pages/GuestCheckoutAddress.vue'
-
-import GoogleCallback from '../pages/auth/GoogleCallback.vue'
-
-
+const Login = () => import('@/pages/auth/Login.vue')
+const Register = () => import('@/pages/auth/Register.vue')
+const SetPassword = () => import('@/pages/auth/SetPassword.vue')
+const VerifyEmail = () => import('@/pages/auth/VerifyEmail.vue')
+const Home = () => import('@/pages/Home.vue')
+const InformationPage = () => import('@/pages/InformationPage.vue')
+const StoreListing = () => import('@/pages/StoreListing.vue')
+const Categories = () => import('@/pages/Categories.vue')
+const Brands = () => import('@/pages/Brands.vue')
+import AccountLayout from '@/layouts/AccountLayout.vue'
+const AccountOverview = () => import('@/pages/account/AccountOverview.vue')
+const PersonalInformation = () => import('@/pages/account/PersonalInformation.vue')
+const AddressBook = () => import('@/pages/account/AddressBook.vue')
+const ChangePassword = () => import('@/pages/account/ChangePassword.vue')
+const MyOrders = () => import('@/pages/account/MyOrders.vue')
+const Notifications = () => import('@/pages/account/Notifications.vue')
+const Wishlist = () => import('@/pages/account/Wishlist.vue')
+const MyReviews = () => import('@/pages/account/MyReviews.vue')
+const ReturnsCancellations = () => import('@/pages/account/ReturnsCancellations.vue')
+const ProductDetails = () => import('@/pages/ProductDetails.vue')
+const Cart = () => import('@/pages/Cart.vue')
+const Checkout = () => import('@/pages/Checkout.vue')
+const GuestCheckoutAddress = () => import('@/pages/GuestCheckoutAddress.vue')
+const GoogleCallback = () => import('@/pages/auth/GoogleCallback.vue')
 const routes = [
     {
         path: '/shop',

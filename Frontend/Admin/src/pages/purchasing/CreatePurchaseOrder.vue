@@ -6,10 +6,10 @@ import {
   getPurchaseOrderById,
   createPurchaseOrder,
   updatePurchaseOrder
-} from '../../api/purchaseOrderApi.js'
-import supplierApi from '../../api/supplierApi.js'
-import itemApi from '../../api/itemApi.js'
-import { hasPermission } from '../../auth/authorization.js'
+} from '@/api/purchaseOrderApi.js'
+import supplierApi from '@/api/supplierApi.js'
+import itemApi from '@/api/itemApi.js'
+import { hasPermission } from '@/auth/authorization.js'
 
 const route = useRoute()
 const router = useRouter()

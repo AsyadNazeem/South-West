@@ -8,6 +8,13 @@ const authMiddleware = require('../middleware/authMiddleware');
 const { requirePermission } = require('../middleware/requirePermission');
 
 router.get(
+    '/summary',
+    authMiddleware,
+    requirePermission('orders.view'),
+    orderController.getOrderSummaries
+);
+
+router.get(
     '/',
     authMiddleware,
     requirePermission('orders.view'),

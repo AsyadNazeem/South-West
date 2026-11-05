@@ -8,9 +8,9 @@ import {
   submitPurchaseOrder,
   approvePurchaseOrder,
   cancelPurchaseOrder
-} from '../../api/purchaseOrderApi.js'
+} from '@/api/purchaseOrderApi.js'
 
-import { hasPermission } from '../../auth/authorization.js'
+import { hasPermission } from '@/auth/authorization.js'
 
 const router = useRouter()
 

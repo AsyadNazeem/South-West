@@ -6,7 +6,7 @@ import {
     getDiscountCampaigns,
     updateDiscountCampaignStatus,
     deleteDiscountCampaign
-} from '../../api/discountCampaignApi'
+} from '@/api/discountCampaignApi'
 
 const router = useRouter()
 

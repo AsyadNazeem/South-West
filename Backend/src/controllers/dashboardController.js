@@ -11,45 +11,68 @@ const { Op, Sequelize } = require('sequelize');
 
 const getDashboard = async (req, res) => {
     try {
-        // -----------------------------
-        // Statistics
-        // -----------------------------
-        const totalCustomers = await Customer.count();
-        const totalProducts = await Item.count();
-        const totalOrders = await Order.count();
-
-        const salesResult = await Order.sum('total_amount', {
-            where: {
-                status: {
-                    [Op.notIn]: ['cancelled', 'returned']
+        // These dashboard reads are independent; running them together avoids
+        // serializing six database round trips on every dashboard load.
+        const [
+            totalCustomers,
+            totalProducts,
+            totalOrders,
+            salesResult,
+            recentOrders,
+            lowStock,
+        ] = await Promise.all([
+            Customer.count(),
+            Item.count(),
+            Order.count(),
+            Order.sum('total_amount', {
+                where: {
+                    status: {
+                        [Op.notIn]: ['cancelled', 'returned']
+                    }
                 }
-            }
-        });
+            }),
+            Order.findAll({
+                limit: 5,
+                order: [['order_date', 'DESC']],
+                attributes: [
+                    'id',
+                    'order_number',
+                    'order_date',
+                    'total_amount',
+                    'status'
+                ],
+                include: [
+                    {
+                        model: Customer,
+                        as: 'customer',
+                        attributes: ['id', 'first_name', 'last_name']
+                    }
+                ]
+            }),
+            InventoryStock.findAll({
+                where: {
+                    is_active: true,
+                    quantity_on_hand: {
+                        [Op.lte]: Sequelize.col('InventoryStock.reorder_level')
+                    }
+                },
+                limit: 10,
+                order: [['quantity_on_hand', 'ASC']],
+                include: [
+                    {
+                        model: Item,
+                        as: 'item',
+                        attributes: ['id', 'item_code', 'item_name']
+                    }
+                ]
+            }),
+        ]);
 
         const totalSales = Number(salesResult || 0);
 
         // -----------------------------
         // Recent Orders
         // -----------------------------
-        const recentOrders = await Order.findAll({
-            limit: 5,
-            order: [['order_date', 'DESC']],
-            attributes: [
-                'id',
-                'order_number',
-                'order_date',
-                'total_amount',
-                'status'
-            ],
-            include: [
-                {
-                    model: Customer,
-                    as: 'customer',
-                    attributes: ['id', 'first_name', 'last_name']
-                }
-            ]
-        });
-
         const recentOrdersData = recentOrders.map((o) => ({
             order: o.order_number ? `#${o.order_number}` : `#${o.id}`,
 
@@ -73,24 +96,6 @@ const getDashboard = async (req, res) => {
         // -----------------------------
         // Low Stock
         // -----------------------------
-        const lowStock = await InventoryStock.findAll({
-            where: {
-                is_active: true,
-                quantity_on_hand: {
-                    [Op.lte]: Sequelize.col('InventoryStock.reorder_level')
-                }
-            },
-            limit: 10,
-            order: [['quantity_on_hand', 'ASC']],
-            include: [
-                {
-                    model: Item,
-                    as: 'item',
-                    attributes: ['id', 'item_code', 'item_name']
-                }
-            ]
-        });
-
         const lowStockData = lowStock.map((stock) => ({
             code: stock.item?.item_code || '',
             name: stock.item?.item_name || '',

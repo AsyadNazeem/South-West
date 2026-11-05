@@ -16,7 +16,7 @@ import {
   reportDefinitions,
   fetchReport,
   exportReport
-} from '../../api/reportApi'
+} from '@/api/reportApi'
 
 const categories = [
   { id: 'sales', label: 'Sales', icon: BarChart3, description: 'How much you sold' },

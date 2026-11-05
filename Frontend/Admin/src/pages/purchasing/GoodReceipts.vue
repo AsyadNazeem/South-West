@@ -1,10 +1,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import api from '../../api/axios.js'
+import api from '@/api/axios.js'
 import {
   hasPermission,
   ensureAuthorization
-} from '../../auth/authorization.js'
+} from '@/auth/authorization.js'
 
 // Base paths of the goods receipt pages (change here if your routes differ)
 const GOODS_RECEIPT_BASE = '/admin/purchasing/goods-receipts'

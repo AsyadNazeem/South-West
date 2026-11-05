@@ -1,8 +1,8 @@
 <script setup>
 import {computed, onMounted, onUnmounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
-import api from '../services/api.js'
-import SeasonalDecorations from '../components/SeasonalDecorations.vue'
+import api from '@/services/api.js'
+import SeasonalDecorations from '@/components/SeasonalDecorations.vue'
 
 const router = useRouter()
 const searchText = ref('')

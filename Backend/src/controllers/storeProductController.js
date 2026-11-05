@@ -165,6 +165,9 @@ async function getStoreProducts(req, res) {
         const items = await Item.findAll({
             where: {
                 is_active: true,
+                ...(typeof req.query.publicId === 'string' && req.query.publicId.trim()
+                    ? { public_id: req.query.publicId.trim() }
+                    : {}),
                 ...(selectedIds
                     ? { id: { [Op.in]: selectedIds } }
                     : {}),
@@ -328,7 +331,7 @@ async function getStoreProducts(req, res) {
             ]
             : [{ variant_id: null }];
 
-        const prices = await ItemPrice.findAll({
+        const pricesPromise = ItemPrice.findAll({
             where: {
                 ...priceWhere,
                 [Op.or]: priceConditions,
@@ -348,25 +351,6 @@ async function getStoreProducts(req, res) {
             ],
         });
 
-        const priceByVariant = new Map();
-        const priceByItem = new Map();
-
-        for (const price of prices) {
-            if (price.variant_id !== null) {
-                const key = String(price.variant_id);
-
-                if (!priceByVariant.has(key)) {
-                    priceByVariant.set(key, price);
-                }
-            } else {
-                const key = String(price.item_id);
-
-                if (!priceByItem.has(key)) {
-                    priceByItem.set(key, price);
-                }
-            }
-        }
-
         const stockWhere = {
             item_id: { [Op.in]: ids },
             is_active: true,
@@ -379,7 +363,7 @@ async function getStoreProducts(req, res) {
             ]
             : [{ variant_id: null }];
 
-        const stocks = await InventoryStock.findAll({
+        const stocksPromise = InventoryStock.findAll({
             where: {
                 ...stockWhere,
                 [Op.or]: stockConditions,
@@ -403,6 +387,41 @@ async function getStoreProducts(req, res) {
                 },
             ],
         });
+
+        const reviewsPromise = ProductReview.findAll({
+            where: {
+                item_id: { [Op.in]: ids },
+                status: 'approved',
+            },
+            attributes: ['item_id', 'rating'],
+        });
+
+        // All three queries use the already-loaded item/variant ids and are
+        // independent, so run them together instead of serializing DB latency.
+        const [prices, stocks, reviews] = await Promise.all([
+            pricesPromise,
+            stocksPromise,
+            reviewsPromise,
+        ]);
+
+        const priceByVariant = new Map();
+        const priceByItem = new Map();
+
+        for (const price of prices) {
+            if (price.variant_id !== null) {
+                const key = String(price.variant_id);
+
+                if (!priceByVariant.has(key)) {
+                    priceByVariant.set(key, price);
+                }
+            } else {
+                const key = String(price.item_id);
+
+                if (!priceByItem.has(key)) {
+                    priceByItem.set(key, price);
+                }
+            }
+        }
 
         const stockByVariant = new Map();
         const stockByItem = new Map();
@@ -474,14 +493,6 @@ async function getStoreProducts(req, res) {
         }
 
         // Only approved reviews contribute to customer ratings.
-        const reviews = await ProductReview.findAll({
-            where: {
-                item_id: { [Op.in]: ids },
-                status: 'approved',
-            },
-            attributes: ['item_id', 'rating'],
-        });
-
         const ratingByItem = new Map();
 
         for (const review of reviews) {
@@ -638,11 +649,7 @@ available_quantity: availableQuantity,
             ...(paginationEnabled ? { pagination } : {}),
         });
     } catch (error) {
-        console.error('Get store products failed:', {
-            name: error.name,
-            code: error.original?.code || error.parent?.code,
-        });
-
+       console.error('Get store products failed:', error)
         return res.status(500).json({
             success: false,
             message: 'Unable to retrieve store products',

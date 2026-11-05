@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import orderApi from '../../api/orderApi'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import orderApi from '@/api/orderApi'
 
 // Base path of the order pages (change here if your routes differ)
 const ORDER_BASE = '/admin/sales/orders'
@@ -35,6 +35,16 @@ const error = ref('')
 const search = ref('')
 const statusFilter = ref('')
 const paymentFilter = ref('')
+const sortBy = ref('id')
+const sortOrder = ref('DESC')
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 0 })
+
+let currentController = null
+let latestRequestId = 0
+let searchDebounceTimer = null
+let suppressPageWatcher = false
 
 const savingOrderId = ref(null)
 const statusDrafts = ref({})
@@ -151,6 +161,7 @@ const confirmOrderStatus = async () => {
         : `Order ${order.order_number} status updated successfully.`
 
     resetStatusDialog()
+    await loadOrders()
   } catch (err) {
     statusError.value =
       err?.response?.data?.message ||
@@ -165,54 +176,93 @@ const confirmOrderStatus = async () => {
 // ==========================================
 
 const loadOrders = async () => {
-  loading.value = true
-  error.value = ''
+  currentController?.abort()
+  const controller = new AbortController()
+  currentController = controller
+  const requestId = ++latestRequestId
 
   try {
-    const response = await orderApi.getOrders()
+    loading.value = true
+    error.value = ''
+
+    const response = await orderApi.getOrderSummaries({
+      page: page.value,
+      pageSize: pageSize.value,
+      search: search.value.trim(),
+      status: statusFilter.value,
+      paymentStatus: paymentFilter.value,
+      sortBy: sortBy.value,
+      sortOrder: sortOrder.value,
+    }, controller.signal)
+
+    if (requestId !== latestRequestId) return
+
+    const responsePage = response.pagination
+    const totalPages = Number(responsePage?.totalPages) || 0
+    const lastAvailablePage = Math.max(1, totalPages)
+    if (page.value > lastAvailablePage) {
+      page.value = lastAvailablePage
+      return
+    }
 
     orders.value = response.data || []
+    pagination.value = responsePage || { total: orders.value.length, totalPages: 1 }
   } catch (err) {
+    if (err.code === 'ERR_CANCELED' || requestId !== latestRequestId) return
     console.error('Failed to load orders:', err)
 
     error.value =
         err.response?.data?.message ||
         'Failed to load orders.'
   } finally {
-    loading.value = false
+    if (requestId === latestRequestId) loading.value = false
   }
 }
 
+function resetPageAndLoad() {
+  clearTimeout(searchDebounceTimer)
+  if (page.value !== 1) {
+    suppressPageWatcher = true
+    page.value = 1
+  }
+  loadOrders()
+}
+
+watch(search, () => {
+  clearTimeout(searchDebounceTimer)
+  latestRequestId += 1
+  currentController?.abort()
+  if (page.value !== 1) {
+    suppressPageWatcher = true
+    page.value = 1
+  }
+  searchDebounceTimer = setTimeout(loadOrders, 300)
+})
+
+watch([statusFilter, paymentFilter, pageSize, sortBy, sortOrder], resetPageAndLoad)
+watch(page, () => {
+  if (suppressPageWatcher) {
+    suppressPageWatcher = false
+    return
+  }
+  loadOrders()
+})
+
+const totalPages = computed(() => Math.max(1, Number(pagination.value.totalPages) || 1))
+
+function changePageSize(event) {
+  pageSize.value = Number(event.target.value)
+}
+
 onMounted(loadOrders)
+onBeforeUnmount(() => {
+  clearTimeout(searchDebounceTimer)
+  currentController?.abort()
+})
 
 // ==========================================
 // Search & Filters
 // ==========================================
-
-const filteredOrders = computed(() => {
-  const keyword = search.value.trim().toLowerCase()
-
-  return orders.value.filter(order => {
-    const matchesSearch =
-        !keyword ||
-        [
-          order.order_number,
-          order.customer?.name
-        ].some(value =>
-            String(value || '').toLowerCase().includes(keyword)
-        )
-
-    const matchesStatus =
-        !statusFilter.value ||
-        order.status === statusFilter.value
-
-    const matchesPayment =
-        !paymentFilter.value ||
-        order.payment_status === paymentFilter.value
-
-    return matchesSearch && matchesStatus && matchesPayment
-  })
-})
 
 const resetFilters = () => {
   search.value = ''
@@ -335,6 +385,29 @@ const formatType = (type) => {
         </option>
       </select>
 
+      <select v-model="sortBy" aria-label="Sort orders by">
+        <option value="id">Default order</option>
+        <option value="order_number">Order number</option>
+        <option value="order_date">Order date</option>
+        <option value="total_amount">Total amount</option>
+        <option value="status">Order status</option>
+        <option value="payment_status">Payment status</option>
+      </select>
+
+      <select v-model="sortOrder" aria-label="Sort direction">
+        <option value="DESC">Descending</option>
+        <option value="ASC">Ascending</option>
+      </select>
+
+      <label class="page-size-control">
+        Rows
+        <select :value="pageSize" @change="changePageSize" aria-label="Rows per page">
+          <option :value="25">25</option>
+          <option :value="50">50</option>
+          <option :value="100">100</option>
+        </select>
+      </label>
+
       <button
           type="button"
           class="action-button refresh"
@@ -361,7 +434,7 @@ const formatType = (type) => {
 
       <!-- Empty -->
       <div
-          v-else-if="filteredOrders.length === 0"
+          v-else-if="orders.length === 0"
           class="empty-state"
       >
         <strong>No orders found</strong>
@@ -395,12 +468,12 @@ const formatType = (type) => {
           <tbody>
 
           <tr
-              v-for="(order, index) in filteredOrders"
+              v-for="(order, index) in orders"
               :key="order.id"
               :class="{ 'row-cancelled': order.status === 'cancelled' }"
           >
 
-            <td>{{ index + 1 }}</td>
+            <td>{{ ((page - 1) * pageSize) + index + 1 }}</td>
 
             <!-- Order Number -->
             <td>
@@ -488,6 +561,20 @@ const formatType = (type) => {
 
       </div>
 
+    </div>
+
+    <div class="pagination-bar" aria-label="Order list pagination">
+      <span>
+        Showing {{ pagination.total ? ((page - 1) * pageSize) + 1 : 0 }}–{{ Math.min(page * pageSize, pagination.total) }}
+        of {{ pagination.total || 0 }}
+      </span>
+      <div class="pagination-actions">
+        <button type="button" :disabled="page <= 1 || loading" @click="page = 1">First</button>
+        <button type="button" :disabled="page <= 1 || loading" @click="page -= 1">Previous</button>
+        <span>Page {{ page }} of {{ totalPages }}</span>
+        <button type="button" :disabled="page >= totalPages || loading" @click="page += 1">Next</button>
+        <button type="button" :disabled="page >= totalPages || loading" @click="page = totalPages">Last</button>
+      </div>
     </div>
 
     <!-- Status update dialog -->
@@ -747,6 +834,19 @@ const formatType = (type) => {
   cursor: pointer;
 }
 
+.page-size-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.page-size-control select {
+  min-width: 76px;
+}
+
 .search-box input:focus,
 .filter-card select:focus {
   border-color: var(--color-primary);
@@ -767,6 +867,43 @@ const formatType = (type) => {
 
 .table-container {
   overflow-x: auto;
+}
+
+.pagination-bar,
+.pagination-actions {
+  display: flex;
+  align-items: center;
+}
+
+.pagination-bar {
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.pagination-actions {
+  gap: var(--spacing-sm);
+}
+
+.pagination-actions button {
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pagination-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 table {
@@ -938,6 +1075,19 @@ tbody tr.row-cancelled td:not(:last-child) {
 
   .filter-card select {
     width: 100%;
+  }
+
+  .page-size-control {
+    justify-content: space-between;
+  }
+
+  .pagination-bar,
+  .pagination-actions {
+    flex-wrap: wrap;
+  }
+
+  .pagination-bar {
+    align-items: flex-start;
   }
 
   .error-state {

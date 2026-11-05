@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
-import api from '../../services/api.js'
+import api from '@/services/api.js'
 
 const router = useRouter()
 

@@ -198,7 +198,12 @@ app.use('/api/customer-orders', customerOrderRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/item-payment-prices', itemPaymentPriceRoutes);
 
-app.use('/uploads', express.static(UPLOAD_ROOT));
+// Upload paths are generated with UUID filenames and replaced uploads get a
+// new path, so browsers can safely reuse these immutable files between visits.
+app.use('/uploads', express.static(UPLOAD_ROOT, {
+    maxAge: '1y',
+    immutable: true,
+}));
 app.use('/api/item-videos', require('./routes/itemVideoRoutes'));
 
 app.use('/api/customer/addresses', customerSelfAddressRoutes);

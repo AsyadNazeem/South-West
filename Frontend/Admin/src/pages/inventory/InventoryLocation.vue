@@ -1,10 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import api from '../../api/axios'
+import api from '@/api/axios'
 import {
   hasPermission as authorization,
   ensureAuthorization
-} from '../../auth/authorization.js'
+} from '@/auth/authorization.js'
 
 // Base path of the inventory location pages in your router
 const LOCATION_BASE = '/admin/inventory/locations'

@@ -3,7 +3,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../../services/api'
+import api from '@/services/api'
 
 const props = defineProps({
   products: {
@@ -17,7 +17,7 @@ const brands = ref([])
 const loading = ref(false)
 const showAll = ref(false)
 
-import { getMediaUrl } from '../../utils/mediaUrl'
+import { getMediaUrl } from '@/utils/mediaUrl'
 
 // Get brand IDs that have at least one available product.
 const productBrandIds = computed(() => {
