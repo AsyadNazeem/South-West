@@ -1368,6 +1368,11 @@ onUnmounted(() => {
    ========================================================= */
 
 @media (max-width: 520px) {
+  .brand {
+    width: 155px;
+    height: 42px;
+  }
+
   .welcome {
     display: none;
   }
