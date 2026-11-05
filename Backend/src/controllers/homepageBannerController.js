@@ -9,7 +9,7 @@ const { HomepageBanner, sequelize } = require('../models');
 const {
     UPLOAD_ROOT,
     buildFileUrl,
-    removeStoredFile,
+    removeStoredImage,
 } = require('../utils/fileStorage');
 const { recordAuditLog } = require('../services/auditLogService');
 
@@ -151,7 +151,10 @@ async function cleanupStoredFile(filePath) {
     if (!filePath) return;
 
     try {
-        await removeStoredFile(filePath);
+        const result = await removeStoredImage(filePath);
+        if (result.status === 'failed') {
+            console.error('Banner image cleanup requires follow-up.');
+        }
     } catch (error) {
         console.error('Failed to remove stored banner image:', error);
     }
@@ -339,6 +342,8 @@ async function cleanupBannerUploads(req) {
 }
 
 const createBanner = async (req, res) => {
+    let transactionCommitted = false;
+
     try {
         const { desktop, mobile } = getBannerUploads(req);
 
@@ -421,12 +426,16 @@ const createBanner = async (req, res) => {
             return created;
         });
 
+        transactionCommitted = true;
+
         return res.status(201).json({
             message: 'Homepage banner created successfully',
             data: adminBannerResponse(banner),
         });
     } catch (error) {
-        await cleanupBannerUploads(req);
+        if (!transactionCommitted) {
+            await cleanupBannerUploads(req);
+        }
 
         return handleError(
             res,

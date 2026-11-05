@@ -2,7 +2,7 @@
 
 const { Brand, sequelize } = require('../models');
 const { QueryTypes } = require('sequelize');
-const { removeStoredFile } = require('../utils/fileStorage');
+const { removeStoredImage } = require('../utils/fileStorage');
 
 const MAX_BRAND_ID = '18446744073709551615';
 const MAX_DESCRIPTION_BYTES = 65535;
@@ -169,7 +169,10 @@ async function cleanupStoredFile(filePath) {
     if (!filePath) return;
 
     try {
-        await removeStoredFile(filePath);
+        const result = await removeStoredImage(filePath);
+        if (result.status === 'failed') {
+            console.error('Brand image cleanup requires follow-up.');
+        }
     } catch (error) {
         console.error('Brand image cleanup failed:', {
             code: error.code,

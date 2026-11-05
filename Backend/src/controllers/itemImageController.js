@@ -1,7 +1,7 @@
 'use strict';
 
 const { ItemImage, Item, sequelize } = require('../models');
-const { removeStoredFile } = require('../utils/fileStorage');
+const { removeStoredImage } = require('../utils/fileStorage');
 const { HttpError, toBool, toInt } = require('../utils/requestHelpers');
 const { recordAuditLog } = require('../services/auditLogService');
 
@@ -192,7 +192,7 @@ const createItemImage = async (req, res) => {
     } catch (error) {
         await rollbackQuietly(transaction);
 
-        const cleanup = await removeStoredFile(file.relativePath);
+        const cleanup = await removeStoredImage(file.relativePath);
 
         if (cleanup.status === 'failed') {
             console.error(
@@ -302,7 +302,7 @@ const updateItemImage = async (req, res) => {
     } catch (error) {
         await rollbackQuietly(transaction);
 
-        const cleanup = await removeStoredFile(file.relativePath);
+        const cleanup = await removeStoredImage(file.relativePath);
 
         if (cleanup.status === 'failed') {
             console.error(
@@ -381,7 +381,7 @@ const deleteItemImage = async (req, res) => {
 
         await transaction.commit();
 
-        const cleanup = await removeStoredFile(file_path);
+        const cleanup = await removeStoredImage(file_path);
 
         if (cleanup.status === 'failed') {
             console.error(

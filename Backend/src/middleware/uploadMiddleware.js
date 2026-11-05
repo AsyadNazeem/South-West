@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile);
 const limitVideoConversion = pLimit(1);
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
 
-const { UPLOAD_ROOT } = require('../utils/fileStorage');
+const { UPLOAD_ROOT, removeStoredImage } = require('../utils/fileStorage');
 
 const detectFileType = async (filePath) => {
     const { fileTypeFromFile } = await import('file-type');
@@ -23,6 +23,72 @@ const detectFileType = async (filePath) => {
 class UploadError extends Error {}
 
 const MB = 1024 * 1024;
+const RESPONSIVE_WIDTHS = Object.freeze({
+    products: [320, 640, 1200],
+    square: [160, 320, 640],
+    banners: [640, 960, 1440, 1800]
+});
+
+async function generateResponsiveWebpVariants(sourcePath, fallbackPath, widths, generatedPaths) {
+    if (!/\.webp$/i.test(fallbackPath)) {
+        throw new Error('Responsive variant fallback path must be WebP');
+    }
+
+    const metadata = await sharp(sourcePath).metadata();
+    const rotated = [5, 6, 7, 8].includes(metadata.orientation);
+    const sourceWidth = rotated ? metadata.height : metadata.width;
+
+    if (!sourceWidth) {
+        throw new Error('Unable to determine uploaded image dimensions');
+    }
+
+    const generated = [];
+
+    try {
+        for (const width of [...new Set(widths)].sort((a, b) => a - b)) {
+            if (!Number.isInteger(width) || width < 1) {
+                throw new Error('Responsive image widths must be positive integers');
+            }
+            if (width >= sourceWidth) continue;
+
+            const variantPath = fallbackPath.replace(/\.webp$/i, `-${width}.webp`);
+            generatedPaths.add(variantPath);
+            generated.push(variantPath);
+
+            await sharp(sourcePath)
+                .rotate()
+                .resize({ width, withoutEnlargement: true })
+                .webp({ quality: 85, effort: 4 })
+                .toFile(variantPath);
+        }
+
+        return generated;
+    } catch (error) {
+        await Promise.all(generated.map((variantPath) =>
+            fs.promises.unlink(variantPath).catch(() => {})
+        ));
+        for (const variantPath of generated) generatedPaths.delete(variantPath);
+        throw error;
+    }
+}
+
+function removeFailedImageUploadOnResponse(res, relativePaths) {
+    if (!relativePaths.length) return;
+
+    res.once('finish', () => {
+        if (res.statusCode < 400) return;
+
+        void Promise.all(relativePaths.map((relativePath) =>
+            removeStoredImage(relativePath)
+        )).then((results) => {
+            if (results.some((result) => result.status === 'failed')) {
+                console.error('Image upload cleanup requires follow-up.');
+            }
+        }).catch((error) => {
+            console.error('Failed to clean up rejected image upload:', error.message);
+        });
+    });
+}
 
 const convertVideoToWebm = async (file, directory, folder) => {
     return limitVideoConversion(async () => {
@@ -91,7 +157,8 @@ const createUploader = ({
                             typeMessage,
                             sizeMessage,
                             convertToWebp = false,
-                            convertToWebm = false
+                            convertToWebm = false,
+                            responsiveWidths = []
                         }) => {
     const directory = path.join(UPLOAD_ROOT, folder);
 
@@ -159,6 +226,7 @@ const createUploader = ({
 
             (async () => {
                 let convertedPath = null;
+                const generatedPaths = new Set();
 
                 try {
                     const detected = await detectFileType(req.file.path);
@@ -179,11 +247,21 @@ const createUploader = ({
                         const filename = `${crypto.randomUUID()}.webp`;
                         const outputPath = path.join(directory, filename);
                         convertedPath = outputPath;
+                        generatedPaths.add(outputPath);
 
                         await sharp(req.file.path)
                             .rotate()
                             .webp({ quality: 85, effort: 4 })
                             .toFile(outputPath);
+
+                        if (responsiveWidths.length) {
+                            await generateResponsiveWebpVariants(
+                                req.file.path,
+                                outputPath,
+                                responsiveWidths,
+                                generatedPaths
+                            );
+                        }
 
                         const outputStats = await fs.promises.stat(outputPath);
 
@@ -201,9 +279,18 @@ const createUploader = ({
 
                     req.file.relativePath = path.posix.join(folder, req.file.filename);
 
+                    removeFailedImageUploadOnResponse(
+                        res,
+                        convertToWebp ? [req.file.relativePath] : []
+                    );
+
                     return next();
                 } catch (validationError) {
-                    for (const cleanupPath of [req.file.path, convertedPath]) {
+                    for (const cleanupPath of new Set([
+                        req.file.path,
+                        convertedPath,
+                        ...generatedPaths
+                    ])) {
                         if (!cleanupPath) continue;
 
                         try {
@@ -354,6 +441,13 @@ const createMultiUploader = ({
                             .webp({ quality: 85, effort: 4 })
                             .toFile(outputPath);
 
+                        await generateResponsiveWebpVariants(
+                            file.path,
+                            outputPath,
+                            RESPONSIVE_WIDTHS.banners,
+                            generatedPaths
+                        );
+
                         await fs.promises.unlink(file.path);
 
                         file.path = outputPath;
@@ -364,6 +458,11 @@ const createMultiUploader = ({
 
                     file.relativePath = path.posix.join(folder, file.filename);
                 }
+
+                removeFailedImageUploadOnResponse(
+                    res,
+                    uploadedFiles.map((file) => file.relativePath).filter(Boolean)
+                );
 
                 return next();
             } catch (validationError) {
@@ -398,7 +497,8 @@ const uploadItemImage = createUploader({
     maxSize: 5 * MB,
     typeMessage: 'Only PNG and JPG images are allowed',
     sizeMessage: 'Image must be smaller than 5MB',
-    convertToWebp: true
+    convertToWebp: true,
+    responsiveWidths: RESPONSIVE_WIDTHS.products
 });
 
 const uploadItemVideo = createUploader({
@@ -453,7 +553,8 @@ const uploadCategoryImage = createUploader({
     maxSize: 5 * MB,
     typeMessage: 'Only PNG and JPG category images are allowed',
     sizeMessage: 'Category image must be smaller than 5MB',
-    convertToWebp: true
+    convertToWebp: true,
+    responsiveWidths: RESPONSIVE_WIDTHS.square
 });
 
 const uploadCampaignFrame = createUploader({
@@ -486,7 +587,8 @@ const uploadBrandImage = createUploader({
     maxSize: 5 * MB,
     typeMessage: 'Only PNG and JPG brand images are allowed',
     sizeMessage: 'Brand image must be smaller than 5MB',
-    convertToWebp: true
+    convertToWebp: true,
+    responsiveWidths: RESPONSIVE_WIDTHS.square
 });
 
 module.exports = {
@@ -496,4 +598,6 @@ module.exports = {
     uploadBannerImage,
     uploadBrandImage,
     uploadCampaignFrame,
+    generateResponsiveWebpVariants,
+    RESPONSIVE_WIDTHS,
 };

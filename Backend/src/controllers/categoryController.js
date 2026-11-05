@@ -6,6 +6,7 @@ const {
     Item,
     PromotionCategory
 } = require('../models');
+const { removeStoredImage } = require('../utils/fileStorage');
 
 const MAX_CATEGORY_ID = '18446744073709551615';
 
@@ -584,6 +585,7 @@ if (isDeactivating) {
             }
         }
 
+const previousImageUrl = category.image_url;
 const updates = {};
 
 if (name !== undefined) {
@@ -616,6 +618,17 @@ if (req.file) {
 }
 
 await category.update(updates);
+
+if (
+    req.file &&
+    previousImageUrl &&
+    previousImageUrl !== category.image_url
+) {
+    const cleanup = await removeStoredImage(previousImageUrl);
+    if (cleanup.status === 'failed') {
+        console.error('Category image cleanup requires follow-up.');
+    }
+}
 
         return res.status(200).json({
             success: true,
@@ -664,7 +677,15 @@ const deleteCategory = async (req, res) => {
             });
         }
 
+        const imageUrl = category.image_url;
         await category.destroy();
+
+        if (imageUrl) {
+            const cleanup = await removeStoredImage(imageUrl);
+            if (cleanup.status === 'failed') {
+                console.error('Category image cleanup requires follow-up.');
+            }
+        }
 
         return res.status(200).json({
             success: true,

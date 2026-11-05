@@ -459,11 +459,17 @@ onUnmounted(() => {
       <div class="header-container main-header-inner">
 
 <RouterLink to="/" class="brand" aria-label="South West home">
-  <img
-    src="/SWLogo.png"
-    alt="South West"
-    class="brand-logo"
-  />
+  <picture>
+    <source srcset="/SWLogo.webp" type="image/webp" />
+    <img
+      src="/SWLogo.png"
+      alt="South West"
+      class="brand-logo"
+      width="2171"
+      height="724"
+      decoding="async"
+    />
+  </picture>
 </RouterLink>
 
         <form

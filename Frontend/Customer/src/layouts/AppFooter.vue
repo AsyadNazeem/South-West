@@ -31,11 +31,18 @@ const companyLinks = [
           <!-- Brand section -->
           <div class="footer-brand">
             <RouterLink to="/" class="brand-link" aria-label="South-West home">
-              <img
-                src="/SWLogoBlack.png"
-                alt="South West"
-                class="brand-logo"
-              />
+              <picture>
+                <source srcset="/SWLogoBlack.webp" type="image/webp" />
+                <img
+                  src="/SWLogoBlack.png"
+                  alt="South West"
+                  class="brand-logo"
+                  width="2172"
+                  height="724"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </picture>
             </RouterLink>
 
             <p class="brand-description">
