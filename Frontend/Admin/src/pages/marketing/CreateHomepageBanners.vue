@@ -53,7 +53,7 @@ const cropperInstance = ref(null)
 const cropSourceUrl = ref('')
 const cropSourceFile = ref(null)
 const cropTarget = ref('desktop')
-const MAX_IMAGE_SIZE = 2 * 1024 * 1024
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 
 const form = reactive({
@@ -164,6 +164,10 @@ const openImagePicker = () => {
     imageInput.value?.click()
 }
 
+const openMobileImagePicker = () => {
+    mobileImageInput.value?.click()
+}
+
 const destroyCropper = () => {
     if (cropperInstance.value) {
         cropperInstance.value.destroy()
@@ -200,7 +204,7 @@ const initializeCropper = async () => {
     destroyCropper()
 
     cropperInstance.value = new Cropper(image, {
-        aspectRatio: 4 / 3,
+        aspectRatio: cropTarget.value === 'desktop' ? 3 / 1 : 4 / 3,
         viewMode: 1,
         autoCropArea: 1,
         responsive: true,
@@ -228,7 +232,7 @@ const startImageCrop = async (file, target) => {
     }
 
     if (file.size > MAX_IMAGE_SIZE) {
-        error.value = 'Each image must not exceed 2 MB.'
+        error.value = 'Each image must not exceed 5 MB.'
         return
     }
 
@@ -263,9 +267,11 @@ const applyImageCrop = async () => {
 
     error.value = ''
 
+    const isDesktop = cropTarget.value === 'desktop'
+
     const canvas = cropperInstance.value.getCroppedCanvas({
-        width: 1200,
-        height: 900,
+        width: isDesktop ? 1800 : 1200,
+        height: isDesktop ? 600 : 900,
         imageSmoothingEnabled: true,
         imageSmoothingQuality: 'high',
         fillColor: '#ffffff',
@@ -288,7 +294,7 @@ const applyImageCrop = async () => {
     }
 
     if (!blob || blob.size > MAX_IMAGE_SIZE) {
-        error.value = 'The cropped image is still larger than 2 MB. Please use a smaller image.'
+        error.value = 'The cropped image is still larger than 5 MB. Please use a smaller image.'
         return
     }
 
@@ -526,7 +532,7 @@ onBeforeUnmount(() => {
                         </div>
                         <div>
                             <h2>Banner image</h2>
-                            <p>Use a high-quality JPG or PNG image, up to 2 MB. Images are cropped to 4:3.</p>
+                            <p>Use a high-quality JPG or PNG image, up to 5 MB. Desktop: 3:1 crop.</p>
                         </div>
                     </div>
 
@@ -555,7 +561,7 @@ onBeforeUnmount(() => {
                                 <Upload :size="24" />
                             </div>
                             <strong>Choose a banner image</strong>
-                            <span>JPG or PNG · Maximum 2 MB</span>
+                            <span>JPG or PNG · Maximum 5 MB</span>
                         </div>
 
                         <div v-if="imagePreview" class="image-overlay">
@@ -602,7 +608,7 @@ onBeforeUnmount(() => {
                             </div>
                             <div>
                                 <h2>Mobile banner image</h2>
-                                <p>Optional. Recommended for a portrait mobile layout.</p>
+                                <p>Optional. Recommended 4:3 landscape layout.</p>
                             </div>
                         </div>
 
@@ -631,7 +637,7 @@ onBeforeUnmount(() => {
                                     <Upload :size="24" />
                                 </div>
                                 <strong>Choose a mobile banner image</strong>
-                                <span>JPG or PNG · Maximum 2 MB</span>
+                                <span>JPG or PNG · Maximum 5 MB</span>
                             </div>
 
                             <div v-if="mobileImagePreview" class="image-overlay">
@@ -900,7 +906,7 @@ onBeforeUnmount(() => {
                 <div class="crop-modal-header">
                     <div>
                         <h2>Crop banner image</h2>
-                        <p>Adjust the image position and zoom. The 4:3 ratio is fixed.</p>
+                        <p>Adjust the image position and zoom. The crop ratio is fixed for each banner type.</p>
                     </div>
                     <button type="button" class="crop-close-button" @click="closeCropModal">
                         <X :size="20" />
@@ -916,7 +922,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div class="crop-modal-footer">
-                    <span>Output: 1200 × 900 px · Maximum 2 MB</span>
+                    <span>Output: {{ cropTarget === 'desktop' ? '1800 × 600' : '1200 × 900' }} px · Maximum 5 MB</span>
                     <div class="crop-modal-actions">
                         <button type="button" class="button button-secondary" @click="closeCropModal">
                             Cancel
@@ -1339,8 +1345,8 @@ onBeforeUnmount(() => {
     position: relative;
     display: flex;
     align-items: flex-end;
-    aspect-ratio: 4 / 5;
-    min-height: 200px;
+    aspect-ratio: 3 / 1;
+    min-height: 0;
     overflow: hidden;
     color: #fff;
     background: #344054;
@@ -1533,9 +1539,7 @@ onBeforeUnmount(() => {
         grid-column: 1 / -1;
     }
 
-    .preview-banner {
-        aspect-ratio: 4 / 3;
-    }
+
 }
 
 @media (max-width: 600px) {

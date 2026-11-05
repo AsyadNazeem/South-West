@@ -326,14 +326,22 @@ const createMultiUploader = ({
                         const actualWidth = rotated ? metadata.height : metadata.width;
                         const actualHeight = rotated ? metadata.width : metadata.height;
 
+                        const isDesktopBanner = file.fieldname === 'image'
+
+                        const hasValidAspectRatio = isDesktopBanner
+                            ? actualWidth === actualHeight * 3
+                            : actualWidth * 3 === actualHeight * 4
+
                         if (
                             !actualWidth ||
                             !actualHeight ||
-                            actualWidth * 3 !== actualHeight * 4
+                            !hasValidAspectRatio
                         ) {
                             throw new UploadError(
-                                'Banner image must have an exact 4:3 aspect ratio.'
-                            );
+                                isDesktopBanner
+                                    ? 'Desktop banner image must have an exact 3:1 aspect ratio.'
+                                    : 'Mobile banner image must have an exact 4:3 aspect ratio.'
+                            )
                         }
 
                         const filename = `${crypto.randomUUID()}.webp`;
@@ -424,9 +432,9 @@ const uploadBannerImage = createMultiUploader({
         'image/jpeg': 'jpg',
         'image/png': 'png',
     },
-    maxSize: 2 * MB,
+    maxSize: 5 * MB,
     typeMessage: 'Only PNG and JPG banner images are allowed',
-    sizeMessage: 'Each banner image must not exceed 2 MB',
+    sizeMessage: 'Each banner image must not exceed 5 MB',
     convertToWebp: true,
 });
 

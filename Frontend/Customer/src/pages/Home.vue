@@ -921,9 +921,7 @@ onBeforeUnmount(() => {
   border-radius: calc(var(--radius-md) * 1.5);
   background: var(--color-black);
   box-shadow: var(--shadow-md);
-  aspect-ratio: 16 / 5;
-  min-height: 240px;
-  max-height: 520px;
+  aspect-ratio: 3 / 1;
 }
 
 /* Slides sit on top of each other so they cross-fade */
@@ -1440,8 +1438,6 @@ onBeforeUnmount(() => {
 @media (max-width: 650px) {
   .homepage-banner {
     aspect-ratio: 4 / 3;
-    min-height: 240px;
-    max-height: 420px;
   }
 
   .banner-content {
