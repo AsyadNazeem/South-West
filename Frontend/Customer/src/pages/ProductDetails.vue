@@ -1,5 +1,8 @@
 <script setup>
-import { getMediaUrl } from '@/utils/mediaUrl'
+import {
+  getResponsiveImageSrcSet,
+  getResponsiveImageUrl,
+} from '@/utils/mediaUrl'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
@@ -976,30 +979,65 @@ const images = computed(() => {
     ? product.value.images
     : []
 
-  const urls = gallery
-    .map(image =>
-      typeof image === 'string'
-        ? image
-        : image?.url || image?.file_path
-    )
-    .filter(Boolean)
+  const normalizeImage = value => {
+    const responsiveImages = Array.isArray(value?.responsive_images)
+      ? value.responsive_images
+      : []
+
+    return {
+      ...(value && typeof value === 'object' ? value : {}),
+      originalUrl: typeof value === 'string'
+        ? value
+        : value?.url || value?.image_url || value?.file_path || '',
+      resolvedUrl: getResponsiveImageUrl(value),
+      responsiveImages,
+      srcset: getResponsiveImageSrcSet(responsiveImages),
+    }
+  }
+
+  const seenUrls = new Set()
+  const galleryImages = gallery
+    .map(normalizeImage)
+    .filter(image => {
+      if (!image.resolvedUrl || seenUrls.has(image.resolvedUrl)) return false
+      seenUrls.add(image.resolvedUrl)
+      return true
+    })
 
   const mainImage = product.value.image || product.value.image_url
+  const mainRecord = mainImage ? normalizeImage(mainImage) : null
 
-  if (mainImage) urls.unshift(mainImage)
+  if (mainRecord?.resolvedUrl) {
+    const matchingIndex = galleryImages.findIndex(
+      image => image.resolvedUrl === mainRecord.resolvedUrl
+    )
+    const matchingImage = matchingIndex >= 0
+      ? galleryImages[matchingIndex]
+      : null
 
-  return [...new Set(urls)].map(resolveImageUrl)
+    const preferredImage = matchingImage
+      ? {
+          ...matchingImage,
+          originalUrl: mainRecord.originalUrl || matchingImage.originalUrl,
+          responsiveImages: mainRecord.responsiveImages.length
+            ? mainRecord.responsiveImages
+            : matchingImage.responsiveImages,
+          srcset: mainRecord.srcset || matchingImage.srcset,
+        }
+      : mainRecord
+
+    return [
+      preferredImage,
+      ...galleryImages.filter(image => image.resolvedUrl !== preferredImage.resolvedUrl),
+    ]
+  }
+
+  return galleryImages
 })
 
 const currentImage = computed(() =>
-  images.value[selectedImage.value] || ''
+  images.value[selectedImage.value] || images.value[0] || null
 )
-
-function resolveImageUrl(value) {
-  if (!value) return ''
-
-  return getMediaUrl(value)
-}
 
 function formatPrice(value) {
   return `Rs. ${Number(value).toLocaleString('en-LK', {
@@ -1455,7 +1493,15 @@ onMounted(loadProduct)
       <section class="product-layout">
         <div class="gallery">
           <div class="main-image">
-            <img v-if="currentImage" :src="currentImage" :alt="productName" />
+            <img
+              v-if="currentImage?.resolvedUrl"
+              :src="currentImage.resolvedUrl"
+              :srcset="currentImage.srcset || undefined"
+              sizes="(max-width: 650px) 100vw, (max-width: 1050px) 40vw, 30vw"
+              :alt="productName"
+              loading="eager"
+              decoding="async"
+            />
             <div v-else class="image-placeholder">
               <span>SW</span>
               <p>Product image unavailable</p>
@@ -1469,7 +1515,7 @@ onMounted(loadProduct)
           <div v-if="images.length > 1" class="thumbnails">
             <button
               v-for="(image, index) in images"
-              :key="`${image}-${index}`"
+              :key="image.resolvedUrl || `${image.originalUrl}-${index}`"
               type="button"
               class="thumbnail"
               :class="{ selected: selectedImage === index }"
@@ -1477,7 +1523,9 @@ onMounted(loadProduct)
               @click="selectImage(index)"
             >
               <img
-                :src="image"
+                :src="image.resolvedUrl"
+                :srcset="image.srcset || undefined"
+                sizes="64px"
                 :alt="`${productName} ${index + 1}`"
                 loading="lazy"
                 decoding="async"

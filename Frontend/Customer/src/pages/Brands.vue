@@ -1,7 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '@/services/api'
-import { getMediaUrl } from '@/utils/mediaUrl'
+import {
+  getResponsiveImageSrcSet,
+  getResponsiveImageUrl,
+} from '@/utils/mediaUrl'
 
 const brands = ref([])
 const loading = ref(true)
@@ -24,8 +27,11 @@ async function loadBrands() {
   }
 }
 
-function imageUrl(brand) {
-  return getMediaUrl(brand.image_url)
+function brandImage(brand) {
+  return {
+    src: getResponsiveImageUrl(brand),
+    srcset: getResponsiveImageSrcSet(brand?.responsive_images),
+  }
 }
 
 onMounted(loadBrands)
@@ -59,8 +65,10 @@ onMounted(loadBrands)
         >
           <div class="brand-image">
             <img
-              v-if="imageUrl(brand)"
-              :src="imageUrl(brand)"
+              v-if="brandImage(brand).src"
+              :src="brandImage(brand).src"
+              :srcset="brandImage(brand).srcset || undefined"
+              sizes="(max-width: 430px) calc(100vw - 28px), (max-width: 650px) calc(50vw - 22px), (max-width: 850px) calc(33vw - 18px), 190px"
               :alt="brand.name"
               loading="lazy"
               decoding="async"

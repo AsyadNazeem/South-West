@@ -1,5 +1,6 @@
 
 const { Category } = require('../models');
+const { getResponsiveImageMetadata } = require('../utils/fileStorage');
 
 async function getStoreCategories(req, res) {
     try {
@@ -17,6 +18,15 @@ async function getStoreCategories(req, res) {
             order: [['name', 'ASC']],
             raw: true,
         });
+
+        const responsiveImageCache = new Map();
+        await Promise.all(allCategories.map(async (category) => {
+            category.responsive_images = await getResponsiveImageMetadata(
+                category.image_url,
+                'categories',
+                responsiveImageCache
+            );
+        }));
 
         // Build a category tree, including every descendant.
         const categoryMap = new Map();

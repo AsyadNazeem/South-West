@@ -3,6 +3,10 @@ import {computed, onMounted, onUnmounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import api from '@/services/api.js'
 import SeasonalDecorations from '@/components/SeasonalDecorations.vue'
+import {
+  getResponsiveImageSrcSet,
+  getResponsiveImageUrl,
+} from '@/utils/mediaUrl'
 
 const router = useRouter()
 const searchText = ref('')
@@ -95,41 +99,41 @@ function getSuggestionImage(product) {
   const primaryImage =
     images.find(image => image.is_primary) || images[0]
 
-  const rawImage =
+  const directImage =
     product.image ||
     product.image_url ||
-    product.thumbnail ||
+    product.thumbnail
+  const fallbackImage =
     primaryImage?.url ||
     primaryImage?.file_path ||
     primaryImage?.file_name ||
     product.file_path ||
     ''
+  const selectedImage = directImage || fallbackImage
+  const matchingGalleryImage = typeof selectedImage === 'string'
+    ? images.find(image => [
+        image?.url,
+        image?.image_url,
+        image?.file_path,
+        image?.file_name,
+      ].some(candidate =>
+        typeof candidate === 'string' &&
+        getResponsiveImageUrl(candidate) === getResponsiveImageUrl(selectedImage)
+      ))
+    : null
+  const imageRecord = matchingGalleryImage || directImage || fallbackImage
 
-  if (!rawImage || typeof rawImage !== 'string') {
-    return ''
-  }
+  const value = imageRecord === matchingGalleryImage && matchingGalleryImage?.file_name &&
+    !matchingGalleryImage.url && !matchingGalleryImage.image_url && !matchingGalleryImage.file_path
+    ? { ...matchingGalleryImage, url: selectedImage }
+    : imageRecord === primaryImage && primaryImage?.file_name &&
+      !primaryImage.url && !primaryImage.image_url && !primaryImage.file_path
+      ? { ...primaryImage, url: fallbackImage }
+    : imageRecord
 
-  // Already an absolute URL
-  if (/^https?:\/\//i.test(rawImage)) {
-    return rawImage
-  }
-
-  // Resolve relative image paths against the backend server.
-  const apiBase =
-    api.defaults.baseURL ||
-    import.meta.env.VITE_API_URL ||
-    ''
-
-  try {
-    const backendOrigin = new URL(apiBase, window.location.origin).origin
-    const imagePath = rawImage.startsWith('/')
-      ? rawImage
-      : `/${rawImage}`
-
-    return new URL(imagePath, backendOrigin).href
-  } catch (error) {
-    console.error('Unable to resolve product image URL:', rawImage, error)
-    return ''
+  return {
+    src: getResponsiveImageUrl(value),
+    srcset: getResponsiveImageSrcSet(value?.responsive_images),
   }
 }
 
@@ -539,8 +543,10 @@ onUnmounted(() => {
                 @mousedown.prevent="selectSuggestion(product)"
             >
               <img
-                  v-if="getSuggestionImage(product)"
-                  :src="getSuggestionImage(product)"
+                  v-if="getSuggestionImage(product).src"
+                  :src="getSuggestionImage(product).src"
+                  :srcset="getSuggestionImage(product).srcset || undefined"
+                  sizes="48px"
                   :alt="product.item_name || product.name || 'Product'"
                   class="search-suggestion-image"
                   @error="(event) => console.error(
@@ -1315,6 +1321,10 @@ onUnmounted(() => {
    ========================================================= */
 
 @media (max-width: 850px) {
+  .brand-logo {
+    width: 50%;
+  }
+
   .site-header {
     position: relative;
     top: 0;

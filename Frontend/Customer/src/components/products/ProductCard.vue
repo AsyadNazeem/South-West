@@ -2,7 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
-import { getMediaUrl } from '@/utils/mediaUrl'
+import {
+  getMediaUrl,
+  getResponsiveImageSrcSet,
+  getResponsiveImageUrl,
+} from '@/utils/mediaUrl'
 
 const props = defineProps({
   product: { type: Object, required: true },
@@ -32,16 +36,28 @@ const discountPercent = computed(() =>
 )
 
 const image = computed(() => {
-  const value =
-      props.product.image ||
-      props.product.image_url ||
-      props.product.thumbnail ||
-      ''
+  const product = props.product
+  const directValue = product.image || product.image_url || product.thumbnail || ''
+  const gallery = Array.isArray(product.images) ? product.images : []
+  const directUrl = getResponsiveImageUrl(directValue)
+  const matchingImage = directUrl
+    ? gallery.find(candidate => getResponsiveImageUrl(candidate) === directUrl)
+    : null
+  const primaryImage = gallery.find(candidate => candidate?.is_primary) || gallery[0]
+  const source = directValue && typeof directValue === 'object'
+    ? { ...(matchingImage || primaryImage || {}), ...directValue }
+    : matchingImage || directValue || primaryImage
 
-  if (!value) return ''
-
-  return getMediaUrl(value)
+  return {
+    src: getResponsiveImageUrl(source) || directUrl,
+    srcset: getResponsiveImageSrcSet(source?.responsive_images),
+  }
 })
+
+const imageSizes = computed(() => props.layout === 'list'
+  ? '(max-width: 340px) 92px, (max-width: 560px) 104px, 150px'
+  : '(max-width: 310px) 100vw, (max-width: 600px) 50vw, (max-width: 860px) 33vw, 20vw'
+)
 
 const campaignVisual = computed(() => {
   const visual = props.product.campaign_visual
@@ -288,12 +304,13 @@ onBeforeUnmount(() => {
 <template>
   <li class="product-card" :class="{ 'is-out': !inStock, 'is-list': layout === 'list' }">
     <div class="image-wrap">
-      <!-- Decorative duplicate of the name link below, so it is skipped by keyboard and screen readers -->
-      <RouterLink :to="link" class="image-link" tabindex="-1" aria-hidden="true">
+      <RouterLink :to="link" class="image-link" :aria-label="`View ${name}`">
         <img
-          v-if="image"
-          :src="image"
-          :alt="name"
+          v-if="image.src"
+          :src="image.src"
+          :srcset="image.srcset || undefined"
+          :sizes="imageSizes"
+          alt=""
           loading="lazy"
           decoding="async"
         />

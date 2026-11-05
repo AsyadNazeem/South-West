@@ -70,6 +70,7 @@ function bannerHarness(initialValues) {
         '../utils/fileStorage': {
             UPLOAD_ROOT: uploadRoot,
             buildFileUrl: (filePath) => filePath ? `/uploads/${filePath}` : null,
+            async getResponsiveImageMetadata() { return []; },
             async removeStoredImage(filePath) {
                 cleanupPaths.push(filePath);
                 return { status: 'referenced' };

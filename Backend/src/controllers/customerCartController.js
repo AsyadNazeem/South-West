@@ -20,6 +20,7 @@ const {
 } = require('../services/discountCampaignService');
 
 const { recordAuditLog } = require('../services/auditLogService');
+const { getResponsiveImageMetadata } = require('../utils/fileStorage');
 
 const CURRENCY = 'LKR';
 const PRICE_TYPE = 'selling';
@@ -246,6 +247,38 @@ async function loadCart(cartId) {
     });
 }
 
+async function serializeCartImages(cart, responsiveImageCache = new Map()) {
+    if (!cart) return cart;
+
+    const value = typeof cart.toJSON === 'function' ? cart.toJSON() : cart;
+    const items = await Promise.all((value.items || []).map(async cartItem => {
+        const item = cartItem.item;
+        if (!item) return cartItem;
+
+        return {
+            ...cartItem,
+            item: {
+                ...item,
+                images: await Promise.all((item.images || []).map(async image => {
+                    const imageValue = typeof image.toJSON === 'function'
+                        ? image.toJSON()
+                        : image;
+                    return {
+                        ...imageValue,
+                        responsive_images: await getResponsiveImageMetadata(
+                            imageValue.file_path,
+                            'products',
+                            responsiveImageCache
+                        ),
+                    };
+                })),
+            },
+        };
+    }));
+
+    return { ...value, items };
+}
+
 async function applyCampaignPricing(cart) {
     if (!cart || !Array.isArray(cart.items)) {
         return cart;
@@ -427,7 +460,7 @@ async function getMyCart(req, res) {
 
         return res.status(200).json({
             message: 'Cart retrieved successfully',
-            data: cart
+            data: await serializeCartImages(cart, new Map())
         });
     } catch (error) {
         console.error('Get customer cart error:', error);
@@ -625,9 +658,10 @@ async function addItem(req, res) {
 
         return res.status(200).json({
             message: 'Item added to cart successfully',
-data: await applyCampaignPricing(
-    await loadCart(result.cartId)
-)
+            data: await serializeCartImages(
+                await applyCampaignPricing(await loadCart(result.cartId)),
+                new Map()
+            )
         });
     } catch (error) {
         console.error('Add customer cart item error:', error);
@@ -788,9 +822,10 @@ async function updateItem(req, res) {
 
         return res.status(200).json({
             message: 'Cart item updated successfully',
-data: await applyCampaignPricing(
-    await loadCart(result.cartId)
-)
+            data: await serializeCartImages(
+                await applyCampaignPricing(await loadCart(result.cartId)),
+                new Map()
+            )
         });
     } catch (error) {
         console.error('Update customer cart item error:', error);

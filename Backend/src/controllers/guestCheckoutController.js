@@ -47,6 +47,7 @@ const {
     campaignTargetsItem,
     calculateDiscount
 } = require('../services/discountCampaignService');
+const { getResponsiveImageMetadata } = require('../utils/fileStorage');
 
 const CURRENCY = 'LKR';
 const PRICE_TYPE = 'selling';
@@ -407,6 +408,25 @@ async function validateCartItems(items, transaction) {
     return result;
 }
 
+async function addResponsiveMetadataToItems(items, responsiveImageCache = new Map()) {
+    return Promise.all(items.map(async item => ({
+        ...item,
+        images: await Promise.all((item.images || []).map(async image => {
+            const value = typeof image.toJSON === 'function'
+                ? image.toJSON()
+                : image;
+            return {
+                ...value,
+                responsive_images: await getResponsiveImageMetadata(
+                    value.file_path,
+                    'products',
+                    responsiveImageCache
+                ),
+            };
+        })),
+    })));
+}
+
 
 const IDEMPOTENCY_KEY_MAX_LENGTH = 100;
 
@@ -523,12 +543,17 @@ async function createSession(req, res) {
             expires_at: expiresAt
         });
 
+        const responseItems = await addResponsiveMetadataToItems(
+            validated,
+            new Map()
+        );
+
         return res.status(201).json({
             message: 'Guest checkout session created.',
             token,
             expires_at: expiresAt.toISOString(),
             data: {
-                items: validated,
+                items: responseItems,
                 currency: CURRENCY
             }
         });
@@ -566,6 +591,8 @@ async function getGuestCart(req, res) {
                 return validateCartItems(session.cart_items, transaction);
             });
         }
+
+        items = await addResponsiveMetadataToItems(items, new Map());
 
         return res.status(200).json({
             message: 'Guest cart retrieved successfully.',
@@ -666,10 +693,15 @@ async function addGuestCartItem(req, res) {
             });
         }
 
+        const responseItems = await addResponsiveMetadataToItems(
+            result.items,
+            new Map()
+        );
+
         return res.status(200).json({
             message: 'Item added to guest cart.',
             data: {
-                items: result.items,
+                items: responseItems,
                 currency: CURRENCY
             }
         });
@@ -738,10 +770,15 @@ async function updateGuestCartItem(req, res) {
             });
         }
 
+        const responseItems = await addResponsiveMetadataToItems(
+            result.items,
+            new Map()
+        );
+
         return res.status(200).json({
             message: 'Guest cart updated.',
             data: {
-                items: result.items,
+                items: responseItems,
                 currency: CURRENCY
             }
         });
@@ -1075,7 +1112,13 @@ async function quoteGuestCheckout(req, res) {
 
         return res.status(200).json({
             message: 'Guest checkout quote calculated successfully.',
-            data: result
+            data: {
+                ...result,
+                items: await addResponsiveMetadataToItems(
+                    result.items,
+                    new Map()
+                ),
+            }
         });
     } catch (error) {
         return res.status(error.statusCode || 500).json({

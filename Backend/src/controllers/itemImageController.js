@@ -1,7 +1,10 @@
 'use strict';
 
 const { ItemImage, Item, sequelize } = require('../models');
-const { removeStoredImage } = require('../utils/fileStorage');
+const {
+    getResponsiveImageMetadata,
+    removeStoredImage,
+} = require('../utils/fileStorage');
 const { HttpError, toBool, toInt } = require('../utils/requestHelpers');
 const { recordAuditLog } = require('../services/auditLogService');
 
@@ -31,6 +34,18 @@ const sendError = (res, error, label, fallbackMessage) => {
     return res.status(500).json({ message: fallbackMessage });
 };
 
+async function serializeItemImage(image, responsiveImageCache) {
+    const value = typeof image.toJSON === 'function' ? image.toJSON() : image;
+    return {
+        ...value,
+        responsive_images: await getResponsiveImageMetadata(
+            value.file_path,
+            'products',
+            responsiveImageCache
+        ),
+    };
+}
+
 
 // GET /api/item-images  (optional ?item_id=)
 const getItemImages = async (req, res) => {
@@ -51,9 +66,12 @@ const getItemImages = async (req, res) => {
             ]
         });
 
+        const responsiveImageCache = new Map();
         return res.status(200).json({
             message: 'Item images retrieved successfully',
-            data: images
+            data: await Promise.all(images.map((image) =>
+                serializeItemImage(image, responsiveImageCache)
+            ))
         });
     } catch (error) {
         return sendError(
@@ -80,7 +98,7 @@ const getItemImageById = async (req, res) => {
 
         return res.status(200).json({
             message: 'Item image retrieved successfully',
-            data: image
+            data: await serializeItemImage(image, new Map())
         });
     } catch (error) {
         return sendError(
@@ -187,7 +205,7 @@ const createItemImage = async (req, res) => {
 
         return res.status(201).json({
             message: 'Item image created successfully',
-            data: image
+            data: await serializeItemImage(image, new Map())
         });
     } catch (error) {
         await rollbackQuietly(transaction);
@@ -297,7 +315,7 @@ const updateItemImage = async (req, res) => {
 
         return res.status(200).json({
             message: 'Item image updated successfully',
-            data: updated
+            data: await serializeItemImage(updated, new Map())
         });
     } catch (error) {
         await rollbackQuietly(transaction);

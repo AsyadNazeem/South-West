@@ -1,5 +1,8 @@
 <script setup>
-import { getMediaUrl } from '@/utils/mediaUrl'
+import {
+  getResponsiveImageSrcSet,
+  getResponsiveImageUrl,
+} from '@/utils/mediaUrl'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
@@ -95,24 +98,40 @@ function getImage(item) {
     ? images.find(image => image.is_primary) || images[0]
     : null
 
-  const value =
-    variant.image ||
-    variant.image_url ||
-    product.image ||
-    product.image_url ||
-    product.thumbnail ||
-    primaryImage?.url ||
-    primaryImage?.file_path ||
-    item.image ||
-    item.image_url ||
-    ''
+  const imageValue = [
+    variant.image,
+    variant.image_url,
+    product.image,
+    product.image_url,
+    product.thumbnail,
+    primaryImage?.url,
+    primaryImage?.file_path,
+    item.image,
+    item.image_url,
+  ].find(Boolean)
+  const matchingGalleryImage = typeof imageValue === 'string'
+    ? (Array.isArray(images) ? images : []).find(image => [
+        image?.url,
+        image?.image_url,
+        image?.file_path,
+      ].some(candidate =>
+        typeof candidate === 'string' &&
+        getResponsiveImageUrl(candidate) === getResponsiveImageUrl(imageValue)
+      ))
+    : null
+  const imageRecord = matchingGalleryImage || imageValue
 
-  return value ? getMediaUrl(value) : ''
+  return {
+    src: imageRecord ? getResponsiveImageUrl(imageRecord) : '',
+    srcset: imageRecord?.responsive_images
+      ? getResponsiveImageSrcSet(imageRecord.responsive_images)
+      : '',
+  }
 }
 
 // Empty once an image has failed, so the fallback tile shows.
 function imageFor(item) {
-  return failedImages[itemKey(item)] ? '' : getImage(item)
+  return failedImages[itemKey(item)] ? { src: '', srcset: '' } : getImage(item)
 }
 
 function getQuantity(item) {
@@ -514,8 +533,10 @@ onMounted(loadCart)
                     @click="openProduct(item)"
                 >
                   <img
-                      v-if="imageFor(item)"
-                      :src="imageFor(item)"
+                      v-if="imageFor(item).src"
+                      :src="imageFor(item).src"
+                      :srcset="imageFor(item).srcset || undefined"
+                      sizes="(max-width: 340px) 94vw, (max-width: 560px) 88px, 112px"
                       :alt="getName(item)"
                       loading="lazy"
                       decoding="async"

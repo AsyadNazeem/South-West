@@ -1,7 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '@/services/api'
-import { getMediaUrl } from '@/utils/mediaUrl'
+import {
+  getResponsiveImageSrcSet,
+  getResponsiveImageUrl,
+} from '@/utils/mediaUrl'
 
 const categories = ref([])
 const loading = ref(true)
@@ -24,8 +27,11 @@ async function loadCategories() {
   }
 }
 
-function imageUrl(category) {
-  return getMediaUrl(category.image_url)
+function categoryImage(category) {
+  return {
+    src: getResponsiveImageUrl(category),
+    srcset: getResponsiveImageSrcSet(category?.responsive_images),
+  }
 }
 
 onMounted(loadCategories)
@@ -55,8 +61,10 @@ onMounted(loadCategories)
           <RouterLink :to="{ path: '/shop', query: { category: String(category.id) } }">
             <div class="directory-image">
               <img
-                v-if="imageUrl(category)"
-                :src="imageUrl(category)"
+                v-if="categoryImage(category).src"
+                :src="categoryImage(category).src"
+                :srcset="categoryImage(category).srcset || undefined"
+                sizes="(max-width: 545px) calc(100vw - 28px), (max-width: 829px) calc(50vw - 22px), (max-width: 1113px) calc(33.33vw - 22px), (max-width: 1404px) calc(25vw - 22px), 245px"
                 :alt="category.name"
                 loading="lazy"
                 decoding="async"

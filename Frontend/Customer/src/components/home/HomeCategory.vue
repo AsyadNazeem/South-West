@@ -8,10 +8,16 @@ const props = defineProps({
   }
 })
 
-import { getMediaUrl } from '@/utils/mediaUrl'
+import {
+  getResponsiveImageSrcSet,
+  getResponsiveImageUrl,
+} from '@/utils/mediaUrl'
 
-function getImageUrl(path) {
-  return getMediaUrl(path)
+function getCategoryImage(category) {
+  return {
+    src: getResponsiveImageUrl(category),
+    srcset: getResponsiveImageSrcSet(category?.responsive_images),
+  }
 }
 
 </script>
@@ -36,8 +42,10 @@ function getImageUrl(path) {
       >
         <div class="category-image-wrap">
           <img
-            v-if="category.image_url"
-            :src="getImageUrl(category.image_url)"
+            v-if="getCategoryImage(category).src"
+            :src="getCategoryImage(category).src"
+            :srcset="getCategoryImage(category).srcset || undefined"
+            sizes="(max-width: 420px) 28vw, 112px"
             :alt="category.name"
             loading="lazy"
           />

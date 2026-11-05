@@ -17,7 +17,10 @@ const brands = ref([])
 const loading = ref(false)
 const showAll = ref(false)
 
-import { getMediaUrl } from '@/utils/mediaUrl'
+import {
+  getResponsiveImageSrcSet,
+  getResponsiveImageUrl,
+} from '@/utils/mediaUrl'
 
 // Get brand IDs that have at least one available product.
 const productBrandIds = computed(() => {
@@ -47,8 +50,16 @@ const visibleBrands = computed(() =>
     : brandsWithProducts.value.slice(0, 10)
 )
 
-function getImageUrl(path) {
-  return getMediaUrl(path)
+function getBrandImage(brand) {
+  const imageRecord = {
+    ...brand,
+    url: brand?.image_url || brand?.logo_url || '',
+  }
+
+  return {
+    src: getResponsiveImageUrl(imageRecord),
+    srcset: getResponsiveImageSrcSet(brand?.responsive_images),
+  }
 }
 
 async function loadBrands() {
@@ -128,8 +139,10 @@ v-if="brandsWithProducts.length > 10"
       >
         <div class="brand-image-wrap">
           <img
-            v-if="brand.image_url || brand.logo_url"
-            :src="getImageUrl(brand.image_url || brand.logo_url)"
+            v-if="getBrandImage(brand).src"
+            :src="getBrandImage(brand).src"
+            :srcset="getBrandImage(brand).srcset || undefined"
+            sizes="(max-width: 420px) 28vw, (max-width: 760px) 18vw, (max-width: 1100px) 15vw, 9vw"
             :alt="brand.name"
             loading="lazy"
             @error="$event.target.style.display = 'none'"

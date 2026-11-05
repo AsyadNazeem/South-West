@@ -1,4 +1,5 @@
 const { Brand } = require('../models');
+const { getResponsiveImageMetadata } = require('../utils/fileStorage');
 
 const getStoreBrands = async (req, res) => {
     try {
@@ -15,9 +16,24 @@ const getStoreBrands = async (req, res) => {
             order: [['name', 'ASC']]
         });
 
+        const responsiveImageCache = new Map();
+        const data = await Promise.all(brands.map(async (brand) => {
+            const value = typeof brand.toJSON === 'function'
+                ? brand.toJSON()
+                : brand;
+            return {
+                ...value,
+                responsive_images: await getResponsiveImageMetadata(
+                    value.image_url,
+                    'brands',
+                    responsiveImageCache
+                ),
+            };
+        }));
+
         return res.status(200).json({
             success: true,
-            data: brands
+            data
         });
     } catch (error) {
         console.error('Failed to load store brands:', error);

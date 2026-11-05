@@ -9,6 +9,7 @@ const { HomepageBanner, sequelize } = require('../models');
 const {
     UPLOAD_ROOT,
     buildFileUrl,
+    getResponsiveImageMetadata,
     removeStoredImage,
 } = require('../utils/fileStorage');
 const { recordAuditLog } = require('../services/auditLogService');
@@ -190,7 +191,7 @@ function auditSnapshot(banner) {
     };
 }
 
-function adminBannerResponse(banner) {
+async function adminBannerResponse(banner, responsiveImageCache = new Map()) {
     const value = typeof banner.toJSON === 'function'
         ? banner.toJSON()
         : banner;
@@ -199,6 +200,16 @@ function adminBannerResponse(banner) {
         ...value,
         image_url: buildFileUrl(value.image_path),
         mobile_image_url: buildFileUrl(value.mobile_image_path),
+        responsive_images: await getResponsiveImageMetadata(
+            value.image_path,
+            'banners',
+            responsiveImageCache
+        ),
+        mobile_responsive_images: await getResponsiveImageMetadata(
+            value.mobile_image_path,
+            'banners',
+            responsiveImageCache
+        ),
     };
 }
 
@@ -270,17 +281,30 @@ const getPublicBanners = async (req, res) => {
             ],
         });
 
-        return res.status(200).json({
-            data: banners.map((banner) => ({
+        const responsiveImageCache = new Map();
+        const data = await Promise.all(banners.map(async (banner) => ({
                 id: banner.id,
                 title: banner.title,
                 subtitle: banner.subtitle,
                 image_url: buildFileUrl(banner.image_path),
                 mobile_image_url: buildFileUrl(banner.mobile_image_path),
+                responsive_images: await getResponsiveImageMetadata(
+                    banner.image_path,
+                    'banners',
+                    responsiveImageCache
+                ),
+                mobile_responsive_images: await getResponsiveImageMetadata(
+                    banner.mobile_image_path,
+                    'banners',
+                    responsiveImageCache
+                ),
                 button_text: banner.button_text,
                 link_url: banner.link_url,
                 sort_order: banner.sort_order,
-            })),
+            })));
+
+        return res.status(200).json({
+            data,
         });
     } catch (error) {
         console.error('Get public homepage banners error:', error);
@@ -300,8 +324,11 @@ const getAdminBanners = async (req, res) => {
             ],
         });
 
+        const responsiveImageCache = new Map();
         return res.status(200).json({
-            data: banners.map(adminBannerResponse),
+            data: await Promise.all(banners.map((banner) =>
+                adminBannerResponse(banner, responsiveImageCache)
+            )),
         });
     } catch (error) {
         return handleError(res, error, 'Get admin homepage banners error');
@@ -317,7 +344,7 @@ const getAdminBannerById = async (req, res) => {
         }
 
         return res.status(200).json({
-            data: adminBannerResponse(banner),
+            data: await adminBannerResponse(banner),
         });
     } catch (error) {
         return handleError(res, error, 'Get admin homepage banner error');
@@ -430,7 +457,7 @@ const createBanner = async (req, res) => {
 
         return res.status(201).json({
             message: 'Homepage banner created successfully',
-            data: adminBannerResponse(banner),
+            data: await adminBannerResponse(banner),
         });
     } catch (error) {
         if (!transactionCommitted) {
@@ -556,7 +583,7 @@ const updateBanner = async (req, res) => {
 
         return res.status(200).json({
             message: 'Homepage banner updated successfully',
-            data: adminBannerResponse(result),
+            data: await adminBannerResponse(result),
         });
     } catch (error) {
         if (!updateSucceeded) {
@@ -611,7 +638,7 @@ const updateBannerStatus = async (req, res) => {
 
         return res.status(200).json({
             message: `Homepage banner ${isActive ? 'activated' : 'deactivated'} successfully`,
-            data: adminBannerResponse(banner),
+            data: await adminBannerResponse(banner),
         });
     } catch (error) {
         return handleError(res, error, 'Update homepage banner status error');

@@ -42,6 +42,7 @@ const { uploadBannerImage } = proxyquire('../middleware/uploadMiddleware', {
     'p-limit': { default: () => (callback) => callback() },
     '../utils/fileStorage': {
         UPLOAD_ROOT: uploadRoot,
+        async getResponsiveImageMetadata() { return []; },
         removeStoredImage: mockedRemoveStoredImage
     }
 });
@@ -148,6 +149,7 @@ function createController({ failBeforeCommit = false } = {}) {
         '../utils/fileStorage': {
             UPLOAD_ROOT: uploadRoot,
             buildFileUrl: (filePath) => filePath ? `/uploads/${filePath}` : null,
+            async getResponsiveImageMetadata() { return []; },
             removeStoredImage: mockedRemoveStoredImage
         },
         '../services/auditLogService': { recordAuditLog: async () => {} }

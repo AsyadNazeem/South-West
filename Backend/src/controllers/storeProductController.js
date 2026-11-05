@@ -41,7 +41,10 @@ const {
     getBestVisualCampaignForItem
 } = require('../services/discountCampaignService');
 
-const { buildFileUrl } = require('../utils/fileStorage');
+const {
+    buildFileUrl,
+    getResponsiveImageMetadata,
+} = require('../utils/fileStorage');
 
 async function getStoreProducts(req, res) {
     try {
@@ -507,8 +510,8 @@ async function getStoreProducts(req, res) {
             ratingByItem.set(key, current);
         }
 
-        const data = items
-            .map(item => {
+        const responsiveImageCache = new Map();
+        const data = (await Promise.all(items.map(async item => {
                 const product = item.toJSON();
                 const key = String(item.id);
 const listing = listingByItem.get(key);
@@ -580,11 +583,18 @@ if (originalPrice !== null) {
                     );
                 });
 
-                const images = (product.images || []).sort(
+                const images = await Promise.all((product.images || []).sort(
                     (a, b) =>
                         Number(b.is_primary) - Number(a.is_primary) ||
                         a.sort_order - b.sort_order
-                );
+                ).map(async image => ({
+                    ...image,
+                    responsive_images: await getResponsiveImageMetadata(
+                        image.file_path,
+                        'products',
+                        responsiveImageCache
+                    ),
+                })));
 
 return {
     id: product.id,
@@ -638,7 +648,7 @@ available_quantity: availableQuantity,
                     images,
                     image: images[0]?.url || null,
                 };
-            })
+            })))
             // Never advertise products without a valid selling price.
             .filter(product => product.price !== null);
 

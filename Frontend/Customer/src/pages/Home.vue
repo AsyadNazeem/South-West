@@ -27,7 +27,10 @@ const homepageCategories = computed(() =>
     categories.value.filter(category => category.parent_id == null)
 )
 
-import { getMediaUrl } from '@/utils/mediaUrl'
+import {
+    getMediaUrl,
+    getResponsiveImageSrcSet,
+} from '@/utils/mediaUrl'
 
 // Short promises shown under the banner. Edit the text to match your store.
 const BENEFITS = [
@@ -134,6 +137,11 @@ function prefersReducedMotion() {
 
 function getBannerImageUrl(path) {
     return getMediaUrl(path)
+}
+
+function getMobileBannerSrcset(banner) {
+    return getResponsiveImageSrcSet(banner.mobile_responsive_images) ||
+        getBannerImageUrl(banner.mobile_image_url)
 }
 
 function bannerLinkAttrs(banner) {
@@ -538,12 +546,15 @@ onBeforeUnmount(() => {
                 <picture>
                   <source
                     v-if="activeBanner.mobile_image_url"
-                    :srcset="getBannerImageUrl(activeBanner.mobile_image_url)"
+                    :srcset="getMobileBannerSrcset(activeBanner)"
+                    sizes="(min-width: 1532px) 1440px, 94vw"
                     media="(max-width: 650px)"
                   />
 
                   <img
                     :src="getBannerImageUrl(activeBanner.image_url)"
+                    :srcset="getResponsiveImageSrcSet(activeBanner.responsive_images) || undefined"
+                    sizes="(min-width: 1532px) 1440px, 94vw"
                     :alt="activeBanner.title || 'Homepage promotion'"
                     class="banner-image"
                     fetchpriority="high"

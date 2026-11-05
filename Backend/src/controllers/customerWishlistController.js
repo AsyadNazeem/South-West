@@ -3,6 +3,7 @@
 
 const { Wishlist, Item, ItemImage } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
+const { getResponsiveImageMetadata } = require('../utils/fileStorage');
 
 const isValidId = (value) =>
     value !== undefined &&
@@ -40,6 +41,35 @@ const auditWishlist = async (req, action, wishlistItem = null) => {
         console.error('Wishlist audit logging failed:', error.message);
     }
 };
+
+async function serializeWishlistItem(wishlistItem, responsiveImageCache) {
+    const value = typeof wishlistItem.toJSON === 'function'
+        ? wishlistItem.toJSON()
+        : wishlistItem;
+    if (!value.item) return value;
+
+    const images = await Promise.all((value.item.images || []).map(async image => {
+        const imageValue = typeof image.toJSON === 'function'
+            ? image.toJSON()
+            : image;
+        return {
+            ...imageValue,
+            responsive_images: await getResponsiveImageMetadata(
+                imageValue.file_path,
+                'products',
+                responsiveImageCache
+            ),
+        };
+    }));
+
+    return {
+        ...value,
+        item: {
+            ...value.item,
+            images,
+        },
+    };
+}
 
 // GET /api/customer-wishlist
 const getMyWishlist = async (req, res) => {
@@ -90,9 +120,13 @@ const getMyWishlist = async (req, res) => {
 
         await auditWishlist(req, 'CUSTOMER_WISHLIST_VIEWED');
 
+        const responsiveImageCache = new Map();
+
         return res.status(200).json({
             message: 'Wishlist retrieved successfully',
-            data: wishlist
+            data: await Promise.all(wishlist.map(item =>
+                serializeWishlistItem(item, responsiveImageCache)
+            ))
         });
     } catch (error) {
         console.error('Get customer wishlist error:', error);

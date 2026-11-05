@@ -3,6 +3,13 @@
 const fs = require('fs');
 const path = require('path');
 
+const RESPONSIVE_IMAGE_WIDTHS = Object.freeze({
+    products: [320, 640, 1200],
+    categories: [160, 320, 640],
+    brands: [160, 320, 640],
+    banners: [640, 960, 1440, 1800],
+});
+
 // <project root>/uploads  (served at /uploads)
 const UPLOAD_ROOT = path.resolve(
     process.env.UPLOAD_ROOT || path.resolve(__dirname, '..', 'uploads')
@@ -20,6 +27,71 @@ const buildFileUrl = (filePath) => {
     if (filePath.startsWith('/')) return `${base}${filePath}`;
 
     return `${base}/uploads/${filePath}`;
+};
+
+// Returns only existing Phase 1 variants. Pass a new Map per request so
+// repeated paths share asynchronous directory reads without stale global data.
+const getResponsiveImageMetadata = async (
+    filePath,
+    mediaType,
+    directoryCache = new Map()
+) => {
+    const widths = RESPONSIVE_IMAGE_WIDTHS[mediaType];
+    if (!widths || typeof filePath !== 'string' || !filePath.trim()) return [];
+
+    let candidate = filePath.trim();
+    if (/^https?:\/\//i.test(candidate)) return [];
+
+    candidate = candidate.replace(/\\/g, '/');
+    if (candidate.startsWith('/uploads/')) {
+        candidate = candidate.slice('/uploads/'.length);
+    } else if (candidate.startsWith('uploads/')) {
+        candidate = candidate.slice('uploads/'.length);
+    } else if (candidate.startsWith('/')) {
+        return [];
+    }
+
+    const normalized = path.posix.normalize(candidate);
+    if (
+        normalized === '.' ||
+        normalized === '..' ||
+        normalized.startsWith('../') ||
+        path.posix.isAbsolute(normalized)
+    ) return [];
+
+    const filenameMatch = path.posix.basename(normalized).match(
+        /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.webp$/i
+    );
+    if (!filenameMatch) return [];
+
+    const relativeDirectory = path.posix.dirname(normalized);
+    const absoluteDirectory = path.resolve(UPLOAD_ROOT, relativeDirectory);
+    if (!absoluteDirectory.startsWith(UPLOAD_ROOT + path.sep)) return [];
+
+    let namesPromise = directoryCache.get(absoluteDirectory);
+    if (!namesPromise) {
+        namesPromise = fs.promises.readdir(absoluteDirectory, { withFileTypes: true })
+            .then(entries => new Set(
+                entries.filter(entry => entry.isFile()).map(entry => entry.name)
+            ))
+            .catch(() => null);
+        directoryCache.set(absoluteDirectory, namesPromise);
+    }
+
+    const names = await namesPromise;
+    const baseName = filenameMatch[0];
+    if (!names || !names.has(baseName)) return [];
+
+    const baseUuid = filenameMatch[1];
+    return widths
+        .filter((width) => names.has(`${baseUuid}-${width}.webp`))
+        .map((width) => ({
+            width,
+            url: buildFileUrl(path.posix.join(
+                relativeDirectory,
+                `${baseUuid}-${width}.webp`
+            )),
+        }));
 };
 
 // Deletes a stored file and returns a status.
@@ -143,6 +215,7 @@ const removeStoredImage = async (filePath) => {
 module.exports = {
     UPLOAD_ROOT,
     buildFileUrl,
+    getResponsiveImageMetadata,
     removeStoredFile,
     removeStoredImage
 };

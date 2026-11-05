@@ -1,5 +1,8 @@
 <script setup>
-import { getMediaUrl } from '@/utils/mediaUrl'
+import {
+  getResponsiveImageSrcSet,
+  getResponsiveImageUrl,
+} from '@/utils/mediaUrl'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
@@ -39,7 +42,7 @@ function getProductUrl(item) {
 
 
 function getProductImage(item) {
-  if (!item) return ''
+  if (!item) return { src: '', srcset: '' }
 
   const images = Array.isArray(item.images)
     ? [...item.images].sort(
@@ -49,20 +52,32 @@ function getProductImage(item) {
       )
     : []
 
-  const imageUrl =
-    images.find(image => image.is_primary)?.url ||
-    images[0]?.url ||
-    images.find(image => image.is_primary)?.file_path ||
-    images[0]?.file_path ||
+  const primaryImage = images.find(image => image?.is_primary) || images[0]
+  const firstImage = images[0]
+  const selectedValue =
+    primaryImage?.url ||
+    firstImage?.url ||
+    primaryImage?.file_path ||
+    firstImage?.file_path ||
+    (typeof primaryImage === 'string' ? primaryImage : '') ||
+    (typeof firstImage === 'string' ? firstImage : '') ||
     item.image_url ||
     item.image ||
     item.main_image ||
     item.thumbnail ||
     ''
+  const imageRecord = selectedValue === primaryImage?.url || selectedValue === primaryImage?.file_path || selectedValue === primaryImage
+    ? primaryImage
+    : selectedValue === firstImage?.url || selectedValue === firstImage?.file_path || selectedValue === firstImage
+      ? firstImage
+      : selectedValue
 
-  if (!imageUrl) return ''
-
-  return getMediaUrl(imageUrl)
+  return {
+    src: selectedValue ? getResponsiveImageUrl(imageRecord) : '',
+    srcset: imageRecord && typeof imageRecord === 'object'
+      ? getResponsiveImageSrcSet(imageRecord.responsive_images)
+      : '',
+  }
 }
 
 // Shown only when the API includes a price for the product.
@@ -317,7 +332,7 @@ onBeforeUnmount(() => {
       >
         <div class="product-media">
           <button
-            v-if="getProductImage(getItem(entry))"
+            v-if="getProductImage(getItem(entry)).src"
             type="button"
             class="product-image-button"
             :disabled="!getProductUrl(getItem(entry))"
@@ -325,7 +340,9 @@ onBeforeUnmount(() => {
             @click="openProduct(getItem(entry))"
           >
             <img
-              :src="getProductImage(getItem(entry))"
+              :src="getProductImage(getItem(entry)).src"
+              :srcset="getProductImage(getItem(entry)).srcset || undefined"
+              sizes="(max-width: 340px) 100vw, (max-width: 560px) 50vw, 25vw"
               :alt="entryName(entry)"
               class="product-image"
               loading="lazy"
