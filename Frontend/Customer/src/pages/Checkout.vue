@@ -131,7 +131,7 @@ const PAYMENT_METHODS = [
     name: 'KOKO',
     description: 'Select to preview the KOKO price.',
     note: '',
-    logo: '/images/payments/koko.svg',
+    logo: '/koko-logo.png',
     available: true,
   },
   {
@@ -141,7 +141,7 @@ const PAYMENT_METHODS = [
     name: 'Mintpay',
     description: 'Select to preview the Mintpay price.',
     note: '',
-    logo: '/images/payments/mintpay.svg',
+    logo: '/mintpay-logo.png',
     available: true,
   },
 ]

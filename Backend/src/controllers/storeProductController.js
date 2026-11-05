@@ -59,7 +59,9 @@ async function getStoreProducts(req, res) {
             : null;
 
         let pagination = null;
-        let selectedIds = null;
+        let selectedIds = Array.isArray(req._storeProductIds)
+            ? req._storeProductIds.map(String)
+            : null;
 
         if (paginationEnabled) {
             const seed = req.query.seed || createSeed();
@@ -668,6 +670,161 @@ available_quantity: availableQuantity,
 }
 
 
+
+async function getRelatedStoreProducts(req, res) {
+    try {
+        const { id } = req.params;
+
+        if (!/^[1-9]\d*$/.test(String(id))) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid product ID',
+            });
+        }
+
+        const currentItem = await Item.findOne({
+            where: {
+                id,
+                is_active: true,
+            },
+            attributes: [
+                'id',
+                'category_id',
+                'brand_id',
+                'item_type_id',
+            ],
+        });
+
+        if (!currentItem) {
+            return res.status(404).json({
+                success: false,
+                message: 'Product not found',
+            });
+        }
+
+        const conditions = [];
+
+        if (currentItem.category_id) {
+            conditions.push({
+                category_id: currentItem.category_id,
+            });
+        }
+
+        if (currentItem.item_type_id) {
+            conditions.push({
+                item_type_id: currentItem.item_type_id,
+            });
+        }
+
+        if (!conditions.length) {
+            return res.status(200).json({
+                success: true,
+                message: 'Related products retrieved successfully',
+                data: [],
+            });
+        }
+
+        const candidates = await Item.findAll({
+            where: {
+                is_active: true,
+                id: { [Op.ne]: currentItem.id },
+                [Op.or]: conditions,
+            },
+            attributes: [
+                'id',
+                'category_id',
+                'brand_id',
+                'item_type_id',
+            ],
+            limit: 60,
+        });
+
+        const getPriority = item => {
+            const sameCategory =
+                currentItem.category_id != null &&
+                String(item.category_id) === String(currentItem.category_id);
+
+            const sameBrand =
+                currentItem.brand_id != null &&
+                String(item.brand_id) === String(currentItem.brand_id);
+
+            const sameType =
+                currentItem.item_type_id != null &&
+                String(item.item_type_id) === String(currentItem.item_type_id);
+
+            if (sameCategory && sameBrand) return 3;
+            if (sameCategory) return 2;
+            if (sameType) return 1;
+
+            return 0;
+        };
+
+        candidates.sort((a, b) =>
+            getPriority(b) - getPriority(a) ||
+            Number(a.id) - Number(b.id)
+        );
+
+        const candidateIds = candidates
+            .filter(item => getPriority(item) > 0)
+            .map(item => String(item.id));
+
+        if (!candidateIds.length) {
+            return res.status(200).json({
+                success: true,
+                message: 'Related products retrieved successfully',
+                data: [],
+            });
+        }
+
+        // Reuse the existing store product formatter for prices,
+        // campaign discounts, images, ratings and stock information.
+        let responseStatus = 200;
+        let responseBody = null;
+
+        const responseProxy = {
+            status(code) {
+                responseStatus = code;
+                return this;
+            },
+            json(body) {
+                responseBody = body;
+                return this;
+            },
+        };
+
+        await getStoreProducts(
+            {
+                ...req,
+                _storeProductIds: candidateIds,
+                query: {},
+            },
+            responseProxy
+        );
+
+        if (responseStatus !== 200 || !responseBody?.success) {
+            return res.status(responseStatus).json(
+                responseBody || {
+                    success: false,
+                    message: 'Unable to retrieve related products',
+                }
+            );
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Related products retrieved successfully',
+            data: (responseBody.data || []).slice(0, 8),
+        });
+    } catch (error) {
+        console.error('Get related store products failed:', error);
+
+        return res.status(500).json({
+            success: false,
+            message: 'Unable to retrieve related products',
+        });
+    }
+}
+
 async function getStoreProductFilters(req, res) {
     try {
         const [brands, warranties, itemColors, specificationColors] =
@@ -1004,6 +1161,7 @@ color: colors[0] || null,
 
 module.exports = {
     getStoreProducts,
+    getRelatedStoreProducts,
     getStoreProductFilters,
     getStoreProductVariants,
 };

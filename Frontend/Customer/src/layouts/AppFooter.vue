@@ -50,6 +50,42 @@ const companyLinks = [
               essentials and great value. Shop with confidence at South-West.
             </p>
 
+            <!-- Store location: icon tile + text, same look as the benefit items below -->
+            <a
+              class="location-note"
+              href="https://www.google.com/maps/search/?api=1&query=4th+Floor%2C+Unity+Plaza%2C+Colombo+04"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Visit our store: 4th Floor, Unity Plaza, Colombo 04 (opens in Google Maps)"
+            >
+              <span class="location-icon">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linejoin="round"
+                  />
+                  <circle cx="12" cy="10" r="2.5" stroke="currentColor" stroke-width="1.6" />
+                </svg>
+              </span>
+
+              <span class="location-text">
+                <strong>Visit Our Store</strong>
+                <span class="location-address">4th Floor, Unity Plaza, Colombo 04</span>
+              </span>
+
+              <svg class="location-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M8 16 16 8M9 8h7v7"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </a>
+
             <div class="trust-note">
               <svg
                 viewBox="0 0 24 24"
@@ -228,6 +264,87 @@ const companyLinks = [
   display: grid;
   grid-template-columns: minmax(200px, 1.6fr) repeat(3, minmax(110px, 1fr));
   gap: 28px;
+}
+
+/* ---------- Store location (matches the benefit items) ---------- */
+.location-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  margin-top: 14px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--footer-border);
+  border-radius: 10px;
+  background: var(--footer-bg);
+  color: var(--footer-text);
+  text-decoration: none;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.location-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid var(--footer-border);
+  border-radius: 8px;
+  color: var(--footer-accent);
+  background: var(--footer-bg);
+}
+
+.location-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.location-text {
+  display: block;
+  min-width: 0;
+}
+
+.location-text strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.location-address {
+  display: block;
+  margin-top: 1px;
+  color: var(--footer-muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+  transition: color 160ms ease;
+}
+
+.location-arrow {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--footer-muted);
+  transition: color 160ms ease, transform 160ms ease;
+}
+
+@media (hover: hover) {
+  .location-note:hover {
+    border-color: var(--footer-accent);
+  }
+
+  .location-note:hover .location-address,
+  .location-note:hover .location-arrow {
+    color: var(--footer-accent);
+  }
+
+  .location-note:hover .location-arrow {
+    transform: translate(1px, -1px);
+  }
+}
+
+.location-note:focus-visible {
+  outline: 2px solid var(--footer-accent);
+  outline-offset: 2px;
 }
 
 /* ---------- Brand ---------- */

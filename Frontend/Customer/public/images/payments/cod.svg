@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80">
+  <rect x="8" y="12" width="144" height="56" rx="10" fill="#f1f5f9"/>
+  <g fill="none" stroke="#334155" stroke-width="3" stroke-linejoin="round">
+    <rect x="53" y="25" width="54" height="30" rx="5"/>
+    <path d="M53 34h54M67 46h12"/>
+  </g>
+  <text x="80" y="63" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" font-weight="700" fill="#334155">CASH</text>
+</svg>

@@ -35,6 +35,8 @@ const discountPercent = computed(() =>
     hasDiscount.value ? Math.round((1 - price.value / comparePrice.value) * 100) : 0,
 )
 
+const savings = computed(() => (hasDiscount.value ? comparePrice.value - price.value : 0))
+
 const image = computed(() => {
   const product = props.product
   const directValue = product.image || product.image_url || product.thumbnail || ''
@@ -81,6 +83,20 @@ const roundedRating = computed(() => Math.round(rating.value))
 const inStock = computed(() =>
     props.product.in_stock !== false && Number(props.product.stock_quantity ?? 1) > 0,
 )
+
+// Small availability chip next to the price ("In stock" / "Only 3 left")
+const stockChip = computed(() => {
+  if (!inStock.value) return null
+
+  const raw = props.product.stock_quantity
+  const quantity = raw === undefined || raw === null || raw === '' ? null : Number(raw)
+
+  if (quantity !== null && quantity > 0 && quantity <= 5) {
+    return { tone: 'low', text: `Only ${quantity} left` }
+  }
+
+  return { tone: 'ok', text: 'In stock' }
+})
 
 const link = computed(() => {
   const slug = props.product.slug
@@ -415,8 +431,21 @@ onBeforeUnmount(() => {
         </p>
 
         <div class="price-row">
-          <span class="price">{{ formatPrice(price) }}</span>
-          <s v-if="hasDiscount" class="old-price">{{ formatPrice(comparePrice) }}</s>
+          <div class="price-block">
+            <span class="price-label">Cash Price</span>
+
+            <div class="price-line">
+              <span class="price">{{ formatPrice(price) }}</span>
+              <s v-if="hasDiscount" class="old-price">{{ formatPrice(comparePrice) }}</s>
+            </div>
+
+            <span v-if="hasDiscount" class="save">Save {{ formatPrice(savings) }}</span>
+          </div>
+
+          <span v-if="stockChip" class="stock-chip" :class="stockChip.tone">
+            <span class="dot" aria-hidden="true"></span>
+            {{ stockChip.text }}
+          </span>
         </div>
       </div>
     </RouterLink>
@@ -705,25 +734,31 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
+  width: 100%;
   min-width: 0;
-  padding: 10px 12px 12px;
+  padding: 12px 12px 12px;
 }
 
+/* Brand as a small pill, so the text area has some structure */
 .brand {
+  align-self: flex-start;
+  max-width: 100%;
   margin: 0;
+  padding: 2px 9px;
   overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-muted);
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
-  line-height: 1.3;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .name {
   display: -webkit-box;
-  min-height: calc(var(--font-size-sm) * 1.35 * 2);
   margin: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -741,7 +776,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 2px 0 0;
+  margin: 0;
   font-size: var(--font-size-xs);
 }
 
@@ -755,25 +790,87 @@ onBeforeUnmount(() => {
   color: var(--color-text-muted);
 }
 
+/* ---------- Price row ---------- */
+/* Pinned to the bottom with a divider, so cards in a row always line up */
 .price-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.price-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.price-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+.price-line {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 2px var(--space-2);
-  margin-top: auto;
-  padding-top: 6px;
+  gap: 0 var(--space-2);
 }
 
 .price {
   color: var(--color-primary);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-bold);
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .old-price {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+}
+
+.save {
+  color: var(--color-success);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.3;
+}
+
+/* Availability chip */
+.stock-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.stock-chip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.stock-chip.ok {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.stock-chip.low {
+  background: #fef3c7;
+  color: #b45309;
 }
 
 /* Out of stock: dim the image only */
@@ -798,10 +895,6 @@ onBeforeUnmount(() => {
 .product-card.is-list .body {
   justify-content: center;
   padding: var(--space-4) var(--space-5);
-}
-
-.product-card.is-list .name {
-  min-height: 0;
 }
 
 .product-card.is-list .price-row {
@@ -852,16 +945,21 @@ onBeforeUnmount(() => {
   }
 
   .body {
-    padding: 8px 10px 10px;
+    gap: 5px;
+    padding: 10px;
   }
 
   .name {
-    min-height: calc(var(--font-size-xs) * 1.35 * 2);
     font-size: var(--font-size-xs);
   }
 
   .price {
     font-size: var(--font-size-sm);
+  }
+
+  /* Narrow cards: keep only the urgent "Only N left" chip, drop the plain "In stock" one */
+  .stock-chip.ok {
+    display: none;
   }
 }
 

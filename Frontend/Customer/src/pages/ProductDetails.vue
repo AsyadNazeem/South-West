@@ -9,6 +9,7 @@ import api from '@/services/api'
 import DOMPurify from 'dompurify'
 import { formatMeasure, formatAttributeLabel } from '@/utils/measure.js'
 import VariantSelector from '@/components/VariantSelector.vue'
+import SimilarProducts from '@/components/products/SimilarProducts.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -852,6 +853,44 @@ const displayedSku = computed(() =>
   'Not specified'
 )
 
+
+// --------------------------------------------------
+// Payment method prices
+// --------------------------------------------------
+
+const paymentPrices = computed(() => {
+  const data =
+    selectedVariant.value?.payment_prices ||
+    selectedVariant.value?.paymentPrices ||
+    product.value?.payment_prices ||
+    {}
+
+  const getPrice = (...keys) => {
+    for (const key of keys) {
+      const value = data[key]
+
+      if (value !== null && value !== undefined && value !== '') {
+        const parsed = Number(value)
+        if (Number.isFinite(parsed) && parsed > 0) return parsed
+      }
+    }
+
+    return null
+  }
+
+  const cash = getPrice('cash', 'cash_price', 'cashPrice')
+  const card = getPrice('card', 'card_price', 'cardPrice')
+  const koko = getPrice('koko', 'koko_price', 'kokoPrice')
+  const mintpay = getPrice('mintpay', 'mintpay_price', 'mintPayPrice')
+
+  return [
+    { id: 'cash', label: 'CASH PRICE', price: cash, badge: 'FLAT 10% OFF', type: 'cash' },
+    { id: 'card', label: 'CARD PAYMENTS', price: card, badge: 'FLAT 10% OFF', type: 'card' },
+    { id: 'koko', label: 'KOKO', price: koko, type: 'koko' },
+    { id: 'mintpay', label: 'MINTPAY', price: mintpay, type: 'mintpay' }
+  ].filter(option => option.price !== null)
+})
+
 // --------------------------------------------------
 // Price and stock
 // --------------------------------------------------
@@ -1197,6 +1236,7 @@ const found = publicId
         'This product could not be found or is no longer available.'
       return
     }
+    
 
     // Load variants. Their colour is already included in this response.
     const variantsResponse = await api.get(
@@ -1608,24 +1648,70 @@ onMounted(loadProduct)
   :show-choices="hasMultipleConfigurations && variantChoices.some(choice => choice.specs.length > 0)"
   :selected-key="selectedVariantChoice?.key || ''"
   :selected-name="selectedVariantChoice?.name || ''"
-  :colors="colorOptions.length ? colorsForSelectedVariant : []"
+  :colors="colorOptions.length > 1 ? colorsForSelectedVariant : []"
   :selected-color="selectedColor"
   :swatch-style="getColorSwatchStyle"
   @select-choice="selectVariantChoice"
   @select-color="selectAvailableColor"
 />
 
-<div class="price-block">
-  <strong>
-    {{ formatPrice(price) }}
-    <span class="price-note">(NOTE: COD Price)</span>
-  </strong>
+<div class="payment-prices">
+  <div class="payment-grid">
+    <div
+      v-for="option in paymentPrices"
+      :key="option.id"
+      class="payment-card"
+    >
+      <div class="payment-heading">
+        <svg v-if="option.type === 'cash'" viewBox="0 0 24 24">
+          <rect x="3" y="6" width="18" height="13" rx="2"
+            fill="none" stroke="currentColor" stroke-width="1.7"/>
+          <circle cx="12" cy="12.5" r="3"
+            fill="none" stroke="currentColor" stroke-width="1.7"/>
+        </svg>
 
-  <s v-if="discount">{{ formatPrice(comparePrice) }}</s>
+        <svg v-else-if="option.type === 'bank'" viewBox="0 0 24 24">
+          <path d="M3 9h18L12 3 3 9Zm2 2v7m5-7v7m4-7v7m5-7v7M3 21h18"
+            fill="none" stroke="currentColor" stroke-width="1.7"/>
+        </svg>
 
-  <span v-if="discount" class="discount-text">
-    Save {{ discount }}%
-  </span>
+        <span v-else-if="option.type === 'card'" class="card-logo">
+          VISA <span class="mastercard-dot"></span>
+        </span>
+
+        <img
+          v-else-if="option.type === 'koko'"
+          src="/koko-logo.png"
+          alt="KOKO"
+        />
+
+        <img
+          v-else-if="option.type === 'mintpay'"
+          src="/mintpay-logo.png"
+          alt="Mintpay"
+        />
+      </div>
+
+      <span class="payment-label">{{ option.label }}</span>
+
+      <span v-if="option.badge" class="payment-discount">
+        {{ option.badge }}
+      </span>
+
+      <strong class="payment-amount">
+        {{ formatPrice(option.price) }}
+      </strong>
+
+      <span v-if="option.id === 'card'" class="payment-subtitle">
+        Card payments
+      </span>
+
+      <span v-if="option.type === 'koko' || option.type === 'mintpay'"
+        class="payment-installment">
+        3 monthly instalments
+      </span>
+    </div>
+  </div>
 </div>
 
           <p class="tax-note">
@@ -1731,6 +1817,25 @@ onMounted(loadProduct)
           <section>
             <h2>Delivery options</h2>
             <p>Delivery availability and charges are confirmed during checkout.</p>
+
+            <div class="pickup-option">
+              <div class="pickup-icon">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M3 10h18M5 10V6l1-3h12l1 3v4M5 10v11h14V10M9 21v-7h6v7"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+
+              <div>
+                <strong>Store Pickup</strong>
+                <p>4th Floor, Unity Plaza, Colombo 04</p>
+              </div>
+            </div>
           </section>
 
           <section>
@@ -1968,6 +2073,11 @@ onMounted(loadProduct)
 </div>
 
       </section>
+
+      <SimilarProducts
+        v-if="product"
+        :product-id="product.id"
+      />
     </template>
   </main>
 </template>
@@ -3459,4 +3569,159 @@ onMounted(loadProduct)
     transition: none;
   }
 }
+
+
+/* Payment method price grid */
+
+.payment-prices {
+  margin: 20px 0 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border-soft, #e5e9f0);
+}
+
+.payment-notice {
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f0f1f4;
+  color: #424b5a;
+  font-size: 12px;
+  text-align: center;
+}
+
+.payment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.payment-card {
+  display: flex;
+  min-width: 0;
+  min-height: 108px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 9px 5px;
+  border: 1px solid #72a9ff;
+  border-radius: 10px;
+  background: #fff;
+  text-align: center;
+}
+
+.payment-heading {
+  display: flex;
+  height: 23px;
+  align-items: center;
+  justify-content: center;
+}
+
+.payment-heading svg {
+  width: 23px;
+  height: 23px;
+}
+
+.payment-card:nth-child(1) .payment-heading {
+  color: #25845d;
+}
+
+.payment-card:nth-child(2) .payment-heading {
+  color: #315a91;
+}
+
+.payment-heading img {
+  width: 65px;
+  height: 25px;
+  object-fit: contain;
+}
+
+.card-logo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #183b76;
+}
+
+.mastercard-dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #eb302e;
+  box-shadow: 5px 0 0 #f5a623;
+}
+
+.payment-label {
+  font-size: 10px;
+  line-height: 1.2;
+  color: #303846;
+}
+
+.payment-discount {
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: #ef493a;
+  color: white;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.payment-amount {
+  color: #273449;
+  font-size: 16px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.payment-installment,
+.payment-subtitle {
+  color: #7d8794;
+  font-size: 9px;
+}
+
+.pickup-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--color-border-soft, #e5e9f0);
+  border-radius: 9px;
+}
+
+.pickup-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #edf3fc;
+  color: var(--color-primary, #1f4a8a);
+}
+
+.pickup-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.pickup-option strong {
+  font-size: 12px;
+}
+
+.pickup-option p {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+@media (max-width: 400px) {
+  .payment-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
 </style>
