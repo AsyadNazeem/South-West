@@ -15,3 +15,8 @@ export const getCurrentUser = async () => {
 export const logout = async () => {
     await api.post('/auth/logout')
 }
+
+export const heartbeat = async () => {
+    const response = await api.post('/auth/heartbeat')
+    return response.data
+}

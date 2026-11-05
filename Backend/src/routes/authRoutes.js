@@ -27,6 +27,16 @@ router.get(
     authController.me
 );
 
+router.post(
+    '/heartbeat',
+    authenticate,
+    (req, res) => {
+        return res.status(200).json({
+            message: 'Session activity recorded'
+        });
+    }
+);
+
 router.get(
     '/admin-dashboard',
     authenticate,
