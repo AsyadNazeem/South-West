@@ -1,6 +1,7 @@
 'use strict';
 
 const { Op } = require('sequelize');
+const Sequelize = require('sequelize');
 const { User, Role, AdminNotification, AdminNotificationPreference } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
 
@@ -12,9 +13,9 @@ function isMissingDismissalColumn(error) {
     return databaseError?.code === 'ER_BAD_FIELD_ERROR' && String(databaseError?.message || '').includes('is_dismissed');
 }
 
-async function isSuperAdmin(req) {
+async function isAdmin(req) {
     const user = await User.findByPk(req.user.id, { include: [{ model: Role, as: 'roles', through: { attributes: [] } }] });
-    return (user?.roles || []).some((role) => String(role.name || '').trim().toLowerCase() === 'super admin');
+    return (user?.roles || []).some((role) => String(role.name || '').trim().toLowerCase() === 'admin');
 }
 
 async function list(req, res) {
@@ -81,7 +82,7 @@ async function dismiss(req, res) {
 }
 
 async function preferences(req, res) {
-    if (!await isSuperAdmin(req)) return res.status(403).json({ message: 'Super admin access required' });
+    if (!await isAdmin(req)) return res.status(403).json({ message: 'Admin access required' });
     try {
         const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
         const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25));
@@ -90,8 +91,11 @@ async function preferences(req, res) {
         if (search) where.email = { [Op.like]: `%${search}%` };
         const result = await User.findAndCountAll({
             attributes: ['id', 'email'], where,
-            include: [{ model: Role, as: 'roles', through: { attributes: [] }, where: { name: { [Op.notIn]: ['customer'] } }, required: true }],
-            order: [['email', 'ASC']], limit: pageSize, offset: (page - 1) * pageSize, distinct: true
+            include: [{ model: Role, as: 'roles', through: { attributes: [] }, where: Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('roles.name')), 'admin'), required: true }],
+            order: [['email', 'ASC']], limit: pageSize, offset: (page - 1) * pageSize, distinct: true,
+            // Avoid Sequelize's pagination subquery, where the included role alias
+            // can be rewritten to the model name and break the LOWER(roles.name) condition.
+            subQuery: false
         });
         const users = result.rows;
         const current = await AdminNotificationPreference.findAll({ where: { user_id: users.map((user) => user.id) } });
@@ -101,13 +105,14 @@ async function preferences(req, res) {
 }
 
 async function updatePreferences(req, res) {
-    if (!await isSuperAdmin(req)) return res.status(403).json({ message: 'Super admin access required' });
+    if (!await isAdmin(req)) return res.status(403).json({ message: 'Admin access required' });
     const body = req.body || {};
     if (!body.user_id || Object.keys(body).some((key) => !['user_id', ...TYPES].includes(key)) || TYPES.some((type) => typeof body[type] !== 'boolean')) {
         return res.status(400).json({ message: 'Provide a user_id and a boolean value for every notification type' });
     }
-    const user = await User.findByPk(body.user_id);
-    if (!user) return res.status(404).json({ message: 'Admin user not found' });
+    const user = await User.findByPk(body.user_id, { include: [{ model: Role, as: 'roles', through: { attributes: [] } }] });
+    const isEligibleTarget = user?.is_active !== false && (user?.roles || []).some((role) => String(role.name || '').trim().toLowerCase() === 'admin');
+    if (!isEligibleTarget) return res.status(404).json({ message: 'Admin user not found' });
     try {
         const [preference] = await AdminNotificationPreference.findOrCreate({ where: { user_id: user.id }, defaults: { user_id: user.id, ...Object.fromEntries(TYPES.map((type) => [type, true])) } });
         await preference.update(Object.fromEntries(TYPES.map((type) => [type, body[type]])));

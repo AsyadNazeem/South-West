@@ -193,16 +193,31 @@ async function load() {
   const requestId = paginationRequestSequence.begin()
   loading.value = true
   error.value = ''
+
   try {
-    const response = await api.get('/notifications/admin/preferences', { params: { page: page.value, pageSize: pageSize.value } })
+    const response = await api.get('/notifications/admin/preferences', {
+      params: {
+        page: page.value,
+        pageSize: pageSize.value
+      }
+    })
+
     if (!paginationRequestSequence.isCurrent(requestId)) return
+
     admins.value = response.data.data || []
-    pagination.value = response.data.pagination || { total: admins.value.length, totalPages: 1 }
+    pagination.value = response.data.pagination || {
+      total: admins.value.length,
+      totalPages: 1
+    }
+  } catch (e) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
+
+    error.value = e.response?.data?.message || 'Unable to load notification settings.'
+  } finally {
+    if (paginationRequestSequence.isCurrent(requestId)) {
+      loading.value = false
+    }
   }
-  catch (e) {
-  if (!paginationRequestSequence.isCurrent(requestId)) return error.value = e.response?.data?.message || 'Unable to load notification settings.' }
-  finally {
-  if (!paginationRequestSequence.isCurrent(requestId)) return loading.value = false }
 }
 const changePage = async value => { page.value = value; await load() }
 const changePageSize = async value => { pageSize.value = value; page.value = 1; await load() }

@@ -13,7 +13,7 @@ function response() {
     };
 }
 
-function loadController({ roles = [], targetUser = null, preferenceRows = [], count = 0, notificationRows = [] } = {}) {
+function loadController({ roles = [], targetUser = null, targetRoles = ['Admin'], targetActive = true, usersCount = 1, preferenceRows = [], count = 0, notificationRows = [] } = {}) {
     const calls = { count: [], list: [], findNotification: [], findUsers: [], findPreferences: [], findOrCreate: [] };
     const notification = {
         id: 44,
@@ -29,12 +29,13 @@ function loadController({ roles = [], targetUser = null, preferenceRows = [], co
         '../models': {
             User: {
                 async findByPk(id, options) {
-                    if (options?.include) return { roles: roles.map(name => ({ name })) };
-                    return targetUser || (String(id) === '8' ? { id: 8, email: 'target@example.com' } : null);
+                    if (String(id) === '7' && options?.include) return { roles: roles.map(name => ({ name })) };
+                    if (String(id) === '8') return targetUser || { id: 8, email: 'target@example.com', is_active: targetActive, roles: targetRoles.map(name => ({ name })) };
+                    return null;
                 },
                 async findAndCountAll(options) {
                     calls.findUsers.push(options);
-                    return { rows: [{ id: 8, email: 'target@example.com' }], count: 1 };
+                    return { rows: [{ id: 8, email: 'target@example.com' }], count: usersCount };
                 }
             },
             Role: {},
@@ -53,8 +54,8 @@ function loadController({ roles = [], targetUser = null, preferenceRows = [], co
     return { controller, calls };
 }
 
-test('only Super Admin can view or update other users notification preferences', async () => {
-    for (const role of ['Admin', 'Manager', 'Staff', 'Sales']) {
+test('only Admin can view or update notification settings', async () => {
+    for (const role of ['Manager', 'Staff', 'Sales']) {
         const { controller, calls } = loadController({ roles: [role] });
         const req = { user: { id: 7 }, query: {}, body: { user_id: 8, new_orders: true, payments: true, deliveries: true, reviews: true, customer_requests: true } };
         const viewRes = response();
@@ -70,10 +71,10 @@ test('only Super Admin can view or update other users notification preferences',
     }
 });
 
-test('Super Admin can view and update notification preferences', async () => {
-    const { controller, calls } = loadController({ roles: ['Super Admin'] });
+test('Admin can retrieve settings and update another Admin preferences', async () => {
+    const { controller, calls } = loadController({ roles: ['Admin'], usersCount: 30 });
     const req = {
-        user: { id: 7 }, query: { page: '1', pageSize: '25' },
+        user: { id: 7 }, query: { page: '2', pageSize: '10' },
         body: { user_id: 8, new_orders: false, payments: true, deliveries: true, reviews: true, customer_requests: true },
         ip: '127.0.0.1', id: 'test', get: () => 'node-test'
     };
@@ -85,8 +86,45 @@ test('Super Admin can view and update notification preferences', async () => {
 
     assert.equal(viewRes.statusCode, 200);
     assert.equal(viewRes.body.data[0].email, 'target@example.com');
+    assert.deepEqual(viewRes.body.pagination, { page: 2, pageSize: 10, total: 30, totalPages: 3 });
     assert.equal(calls.findUsers.length, 1);
+    assert.equal(calls.findUsers[0].where.is_active, true);
+    assert.equal(calls.findUsers[0].include[0].required, true);
+    assert.equal(calls.findUsers[0].include[0].where.logic, 'admin');
+    assert.equal(calls.findUsers[0].limit, 10);
+    assert.equal(calls.findUsers[0].offset, 10);
+    assert.equal(calls.findUsers[0].distinct, true);
+    assert.equal(calls.findUsers[0].subQuery, false);
     assert.equal(updateRes.statusCode, 200);
+    assert.equal(calls.findOrCreate.length, 1);
+});
+
+test('preference targets must be active Admin accounts', async () => {
+    for (const options of [
+        { targetRoles: ['Manager'] },
+        { targetRoles: ['Staff'] },
+        { targetRoles: ['Sales'] },
+        { targetRoles: ['Customer'] },
+        { targetRoles: ['Admin'], targetActive: false }
+    ]) {
+        const { controller, calls } = loadController({ roles: ['Admin'], ...options });
+        const res = response();
+        await controller.updatePreferences({
+            user: { id: 7 }, body: { user_id: 8, new_orders: true, payments: true, deliveries: true, reviews: true, customer_requests: true }
+        }, res);
+        assert.equal(res.statusCode, 404);
+        assert.equal(calls.findOrCreate.length, 0);
+    }
+});
+
+test('Admin role matching is case-insensitive for actor and target', async () => {
+    const { controller, calls } = loadController({ roles: [' aDmIn '], targetRoles: ['ADMIN'] });
+    const res = response();
+    await controller.updatePreferences({
+        user: { id: 7 }, body: { user_id: 8, new_orders: true, payments: true, deliveries: true, reviews: true, customer_requests: true },
+        ip: '127.0.0.1', id: 'case-test', get: () => 'node-test'
+    }, res);
+    assert.equal(res.statusCode, 200);
     assert.equal(calls.findOrCreate.length, 1);
 });
 
