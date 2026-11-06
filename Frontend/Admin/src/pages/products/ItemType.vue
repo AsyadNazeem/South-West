@@ -1,7 +1,10 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import AppPagination from '@/components/common/AppPagination.vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/axios'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const router = useRouter()
 
@@ -11,17 +14,22 @@ const errorMessage = ref('')
 
 const searchQuery = ref('')
 const statusFilter = ref('all')
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const loadItemTypes = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ''
 
-    const response = await api.get('/item-types')
+    const response = await api.get('/item-types', { params: { page: page.value, pageSize: pageSize.value, search: searchQuery.value.trim() || undefined, status: statusFilter.value === 'all' ? undefined : statusFilter.value } })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     itemTypes.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: itemTypes.value.length, totalPages: 1 }
 
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Failed to load item types:', error)
 
     errorMessage.value =
@@ -29,6 +37,7 @@ const loadItemTypes = async () => {
         'Failed to load item types.'
 
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
@@ -62,6 +71,13 @@ const filteredItemTypes = computed(() => {
 const goToCreate = () => {
   router.push('/admin/products/item-types/create')
 }
+const changePage = async (value) => { page.value = value; await loadItemTypes() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadItemTypes() }
+
+watch([searchQuery, statusFilter], () => {
+  page.value = 1
+  loadItemTypes()
+})
 
 const editItemType = (id) => {
   router.push(`/admin/products/item-types/${id}/edit`)
@@ -298,7 +314,7 @@ onMounted(loadItemTypes)
               :key="itemType.id"
           >
             <td>
-              {{ index + 1 }}
+              {{ (page - 1) * pageSize + index + 1 }}
             </td>
 
             <!-- Name -->
@@ -403,6 +419,8 @@ onMounted(loadItemTypes)
           </tbody>
 
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
       </div>
 

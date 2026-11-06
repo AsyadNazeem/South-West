@@ -1,3 +1,4 @@
+const { Op, literal } = require('sequelize');
 const {
   sequelize,
   InventoryStock,
@@ -12,7 +13,24 @@ const { recordAuditLog } = require("../services/auditLogService");
 // GET ALL STOCK
 const getInventoryStocks = async (req, res) => {
   try {
-    const stocks = await InventoryStock.findAll({
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+    const where = {};
+    const search = String(req.query.search || '').trim();
+    if (search) where[Op.or] = [
+      { '$item.item_code$': { [Op.like]: `%${search}%` } },
+      { '$item.item_name$': { [Op.like]: `%${search}%` } },
+      { '$variant.variant_sku$': { [Op.like]: `%${search}%` } },
+      { '$variant.variant_name$': { [Op.like]: `%${search}%` } },
+      { '$location.code$': { [Op.like]: `%${search}%` } },
+      { '$location.name$': { [Op.like]: `%${search}%` } },
+    ];
+    if (req.query.level === 'out') where[Op.and] = [literal('(quantity_on_hand - quantity_reserved) <= 0')];
+    if (req.query.level === 'low') where[Op.and] = [literal('(quantity_on_hand - quantity_reserved) > 0 AND reorder_level > 0 AND (quantity_on_hand - quantity_reserved) <= reorder_level')];
+    if (req.query.level === 'ok') where[Op.and] = [literal('(quantity_on_hand - quantity_reserved) > 0 AND (reorder_level <= 0 OR (quantity_on_hand - quantity_reserved) > reorder_level)')];
+    const result = await InventoryStock.findAndCountAll({
+      where,
       include: [
         {
           model: Item,
@@ -30,12 +48,14 @@ const getInventoryStocks = async (req, res) => {
   attributes: ['id', 'variant_sku', 'variant_name']
 }
       ],
-      order: [["id", "DESC"]],
+      order: [["id", "DESC"]], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined, distinct: true,
     });
+    const stocks = result.rows;
 
     return res.status(200).json({
       message: "Inventory stocks retrieved successfully",
       data: stocks,
+      pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) },
     });
   } catch (error) {
     console.error("Get inventory stocks error:", error);

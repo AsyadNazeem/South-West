@@ -1,8 +1,11 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/api/axios'
+import AppPagination from '@/components/common/AppPagination.vue'
 
 import { getMediaUrl } from '@/utils/mediaUrl'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const fileUrl = (url) => getMediaUrl(url)
 
@@ -18,6 +21,9 @@ const videos = ref([])
 
 const search = ref('')
 const videoFilter = ref('')
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 1 })
 
 const busyKey = ref(null)
 
@@ -26,34 +32,58 @@ const busyKey = ref(null)
 // ==========================================
 
 const loadMedia = async (silent = false) => {
+  const requestId = paginationRequestSequence.begin()
   if (!silent) loading.value = true
 
   errorMessage.value = ''
 
-  const [imageResult, videoResult] = await Promise.allSettled([
-    api.get('/item-images'),
-    api.get('/item-videos')
-  ])
+  const response = await api.get('/items/media', {
+    params: {
+      page: page.value,
+      pageSize: pageSize.value,
+      search: search.value.trim(),
+      video: videoFilter.value || undefined
+    }
+  }).catch(error => {
+    if (!paginationRequestSequence.isCurrent(requestId)) return null
+    errorMessage.value = error.response?.data?.message || 'Failed to load item media.'
+    return null
+  })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
-  if (imageResult.status === 'fulfilled') {
-    images.value = imageResult.value.data.data || []
+  if (response) {
+    const groups = response.data?.data || []
+    images.value = groups.flatMap(group => (group.images || []).map(image => ({
+      ...image,
+      item: { id: group.id, item_code: group.item_code, item_name: group.item_name }
+    })))
+    videos.value = groups.filter(group => group.video).map(group => ({
+      ...group.video,
+      item: { id: group.id, item_code: group.item_code, item_name: group.item_name }
+    }))
+    pagination.value = response.data?.pagination || { total: groups.length, totalPages: 1 }
   } else {
-    console.error('Failed to load item images:', imageResult.reason)
-
-    errorMessage.value =
-        imageResult.reason.response?.data?.message ||
-        'Failed to load item images.'
-  }
-
-  if (videoResult.status === 'fulfilled') {
-    videos.value = videoResult.value.data.data || []
-  } else {
-    console.error('Failed to load item videos:', videoResult.reason)
-
+    images.value = []
     videos.value = []
   }
 
   loading.value = false
+}
+
+watch([search, videoFilter], () => {
+  page.value = 1
+  loadMedia()
+})
+
+function changePage(nextPage) {
+  page.value = nextPage
+  loadMedia()
+}
+
+function changePageSize(nextSize) {
+  pageSize.value = nextSize
+  page.value = 1
+  loadMedia()
 }
 
 onMounted(() => loadMedia())
@@ -92,26 +122,7 @@ const groups = computed(() => {
 })
 
 const filteredGroups = computed(() => {
-  const term = search.value.toLowerCase().trim()
-
-  return groups.value.filter(group => {
-    const matchesSearch =
-        !term ||
-        group.item?.item_name?.toLowerCase().includes(term) ||
-        group.item?.item_code?.toLowerCase().includes(term) ||
-        group.images.some(
-            image =>
-                image.file_name?.toLowerCase().includes(term) ||
-                image.alt_text?.toLowerCase().includes(term)
-        )
-
-    const matchesVideo =
-        !videoFilter.value ||
-        (videoFilter.value === 'with' && group.video) ||
-        (videoFilter.value === 'without' && !group.video)
-
-    return matchesSearch && matchesVideo
-  })
+  return groups.value
 })
 
 // Main image first, then the rest in order
@@ -233,7 +244,7 @@ const toggleGroupActive = async (group) => {
             v-for="(group, index) in filteredGroups"
             :key="group.item_id"
         >
-          <td>{{ index + 1 }}</td>
+            <td>{{ (page - 1) * pageSize + index + 1 }}</td>
 
           <td>
             <div class="item-info">
@@ -331,6 +342,16 @@ const toggleGroupActive = async (group) => {
         </tbody>
       </table>
     </div>
+
+    <AppPagination
+      :page="page"
+      :page-size="pageSize"
+      :total="pagination.total"
+        :total-pages="pagination.totalPages"
+      :loading="loading"
+      @update:page="changePage"
+      @update:page-size="changePageSize"
+    />
 
   </div>
 </template>

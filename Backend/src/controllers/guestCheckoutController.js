@@ -6,6 +6,8 @@ const {
     sendAdminNewOrderEmail
 } = require('../services/emailService');
 const { Op } = require('sequelize');
+const { notifyAdmins } = require('./adminNotificationController');
+const { recordAuditLog } = require('../services/auditLogService');
 
 const {
     calculateDeliveryCharge
@@ -1706,6 +1708,8 @@ async function checkoutGuest(req, res) {
             created_by: null
         }, { transaction });
 
+        await notifyAdmins({ type: 'order', title: 'New customer order', message: `Order ${order.order_number} was placed by a guest customer.`, referenceType: 'order', referenceId: order.id, transaction });
+
         for (const entry of preparedItems) {
             await OrderItem.create({
                 order_id: order.id,
@@ -1835,6 +1839,30 @@ async function checkoutGuest(req, res) {
         await idempotencyRecord.update({
             order_id: order.id
         }, { transaction });
+
+        await recordAuditLog({
+            userId: null,
+            action: 'GUEST_CHECKOUT_COMPLETED',
+            module: 'CHECKOUT',
+            entityType: 'Order',
+            entityId: String(order.id),
+            description: `Guest checkout completed for order ${order.order_number}`,
+            newValues: {
+                order_id: order.id,
+                order_number: order.order_number,
+                order_type: order.order_type,
+                payment_status: order.payment_status,
+                subtotal,
+                discount_amount: discountAmount,
+                shipping_amount: shippingAmount,
+                total_amount: totalAmount,
+                item_count: preparedItems.length
+            },
+            ipAddress: req.ip || null,
+            userAgent: req.get('user-agent') || null,
+            requestId: req.id || req.requestId || null,
+            transaction
+        });
 
         await transaction.commit();
         transaction = null;

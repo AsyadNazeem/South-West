@@ -2,6 +2,22 @@
 
 const { Op } = require('sequelize');
 const { WebsiteTheme, sequelize } = require('../models');
+const { recordAuditLog } = require('../services/auditLogService');
+
+const auditTheme = (req, action, theme, oldValues = null, transaction = undefined) => recordAuditLog({
+    userId: req.user?.id ?? null,
+    action,
+    module: 'website_themes',
+    entityType: 'WebsiteTheme',
+    entityId: theme.id,
+    description: `${action.replaceAll('_', ' ').toLowerCase()} website theme ${theme.name}`,
+    oldValues,
+    newValues: action === 'WEBSITE_THEME_DELETED' ? null : theme.toJSON(),
+    ipAddress: req.ip || null,
+    userAgent: req.get('user-agent') || null,
+    requestId: req.id || null,
+    transaction
+});
 
 const isPositiveId = value =>
     /^\d+$/.test(String(value)) && Number(value) > 0;
@@ -106,18 +122,46 @@ async function ensureNoScheduleConflict(values, excludedId, transaction) {
 
 exports.getAllThemes = async (req, res) => {
     try {
-        const themes = await WebsiteTheme.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined;
+        const where = {};
+        const search = String(req.query.search || '').trim();
+        if (search) where[Op.or] = ['name', 'slug', 'description'].map(field => ({ [field]: { [Op.like]: `%${search}%` } }));
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        const result = await WebsiteTheme.findAndCountAll({
+            where,
             order: [
                 ['is_active', 'DESC'],
                 ['starts_at', 'ASC'],
                 ['name', 'ASC'],
                 ['id', 'DESC'],
             ],
+            limit: paginationEnabled ? pageSize : undefined,
+            offset: paginationEnabled ? (page - 1) * pageSize : undefined,
         });
+        const now = new Date();
+        const [allCount, activeCount, scheduledCount] = await Promise.all([
+            WebsiteTheme.count(),
+            WebsiteTheme.count({
+                where: {
+                    is_active: true,
+                    [Op.and]: [
+                        { [Op.or]: [{ starts_at: null }, { starts_at: { [Op.lte]: now } }] },
+                        { [Op.or]: [{ ends_at: null }, { ends_at: { [Op.gte]: now } }] }
+                    ]
+                }
+            }),
+            WebsiteTheme.count({ where: { is_active: true, starts_at: { [Op.gt]: now } } })
+        ]);
+        const themes = result.rows;
 
         return res.status(200).json({
             message: 'Website themes retrieved successfully',
             data: themes,
+            summary: { total: allCount, active: activeCount, scheduled: scheduledCount },
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) },
         });
     } catch (error) {
         console.error('Get website themes error:', error);
@@ -157,6 +201,7 @@ exports.createTheme = async (req, res) => {
         }
 
         const theme = await WebsiteTheme.create(values, { transaction });
+        await auditTheme(req, 'WEBSITE_THEME_CREATED', theme, null, transaction);
         await transaction.commit();
 
         return res.status(201).json({
@@ -245,7 +290,9 @@ exports.updateTheme = async (req, res) => {
             });
         }
 
+        const oldValues = theme.toJSON();
         await theme.update(values, { transaction });
+        await auditTheme(req, 'WEBSITE_THEME_UPDATED', theme, oldValues, transaction);
         await transaction.commit();
 
         return res.status(200).json({
@@ -310,10 +357,13 @@ exports.updateThemeStatus = async (req, res) => {
             });
         }
 
+        const oldValues = theme.toJSON();
         await theme.update(
             { is_active: req.body.is_active },
             { transaction }
         );
+
+        await auditTheme(req, req.body.is_active ? 'WEBSITE_THEME_ENABLED' : 'WEBSITE_THEME_DISABLED', theme, oldValues, transaction);
 
         await transaction.commit();
 
@@ -342,7 +392,9 @@ exports.deleteTheme = async (req, res) => {
             return res.status(404).json({ message: 'Website theme not found.' });
         }
 
+        const oldValues = theme.toJSON();
         await theme.destroy();
+        await auditTheme(req, 'WEBSITE_THEME_DELETED', theme, oldValues);
 
         return res.status(200).json({
             message: 'Website theme deleted successfully',

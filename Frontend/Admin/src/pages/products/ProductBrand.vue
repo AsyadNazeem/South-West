@@ -1,12 +1,16 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, watch } from "vue"
 import api from "@/api/axios"
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const brands = ref([])
 const loading = ref(true)
 const errorMessage = ref("")
 const search = ref("")
 const statusFilter = ref("all")
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const filteredBrands = computed(() => {
   const term = search.value.toLowerCase().trim()
@@ -28,20 +32,25 @@ const filteredBrands = computed(() => {
 })
 
 const loadBrands = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ""
 
-    const response = await api.get("/brands")
+    const response = await api.get("/brands", { params: { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, status: statusFilter.value === 'all' ? undefined : statusFilter.value } })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     brands.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: brands.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error("Brand loading error:", error)
 
     errorMessage.value =
         error.response?.data?.message ||
         "Failed to load brands."
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
@@ -64,6 +73,10 @@ const deleteBrand = async (id) => {
     )
   }
 }
+const changePage = async (value) => { page.value = value; await loadBrands() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadBrands() }
+
+watch([search, statusFilter], () => { page.value = 1; loadBrands() })
 
 onMounted(loadBrands)
 </script>
@@ -171,7 +184,7 @@ onMounted(loadBrands)
 
             <!-- ID -->
             <td>
-              {{ index + 1 }}
+              {{ (page - 1) * pageSize + index + 1 }}
             </td>
 
             <!-- Name -->
@@ -253,6 +266,8 @@ onMounted(loadBrands)
           </tbody>
 
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
       </div>
 

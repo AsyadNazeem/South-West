@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/axios'
+import AppPagination from '@/components/common/AppPagination.vue'
 
 const router = useRouter()
 
@@ -10,36 +11,45 @@ const loading = ref(true)
 const errorMessage = ref('')
 const search = ref('')
 const statusFilter = ref('all')
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 1 })
+let searchDebounceTimer = null
+let loadRequestId = 0
 
 const filteredUsers = computed(() => {
-  const term = search.value.toLowerCase().trim()
-
   return users.value.filter((user) => {
-    const matchesSearch =
-        !term ||
-        String(user.email || '').toLowerCase().includes(term) ||
-        (user.roles || []).some(role =>
-            String(role.name || '').toLowerCase().includes(term)
-        )
-
     const matchesStatus =
         statusFilter.value === 'all' ||
         (statusFilter.value === 'active' && user.is_active) ||
         (statusFilter.value === 'inactive' && !user.is_active)
 
-    return matchesSearch && matchesStatus
+    return matchesStatus
   })
 })
 
 const loadUsers = async () => {
+  const requestId = ++loadRequestId
+
   try {
     loading.value = true
     errorMessage.value = ''
 
-    const response = await api.get('/users')
+    const response = await api.get('/users', {
+      params: {
+        page: page.value,
+        pageSize: pageSize.value,
+        search: search.value.trim() || undefined,
+        status: statusFilter.value === 'all' ? undefined : statusFilter.value,
+      },
+    })
+
+    if (requestId !== loadRequestId) return
 
     users.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: users.value.length, totalPages: 1 }
   } catch (error) {
+    if (requestId !== loadRequestId) return
     console.error('Users loading error:', error)
 
     errorMessage.value =
@@ -47,9 +57,12 @@ const loadUsers = async () => {
         error.message ||
         'Failed to load users.'
   } finally {
-    loading.value = false
+    if (requestId === loadRequestId) loading.value = false
   }
 }
+
+const changePage = async (next) => { page.value = next; await loadUsers() }
+const changePageSize = async (size) => { pageSize.value = size; page.value = 1; await loadUsers() }
 
 const goToCreate = () => {
   router.push('/admin/administration/users/create')
@@ -101,7 +114,23 @@ const formatDate = (date) => {
   }
 }
 
+watch(search, () => {
+  page.value = 1
+  loadRequestId += 1
+  clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(loadUsers, 250)
+})
+
+watch(statusFilter, () => {
+  page.value = 1
+  loadUsers()
+})
+
 onMounted(loadUsers)
+
+onBeforeUnmount(() => {
+  clearTimeout(searchDebounceTimer)
+})
 </script>
 
 <template>
@@ -356,6 +385,9 @@ onMounted(loadUsers)
           </tbody>
 
         </table>
+
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
       </div>
 

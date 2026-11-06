@@ -1,10 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/api/axios'
+import AppPagination from '@/components/common/AppPagination.vue'
 import {
   hasPermission as authorization,
   ensureAuthorization
 } from '@/auth/authorization.js'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 // Base path of the inventory stock pages in your router
 const STOCK_BASE = '/admin/inventory/stock'
@@ -22,6 +25,7 @@ const deletingId = ref(null)
 const search = ref('')
 const statusFilter = ref('all')
 const levelFilter = ref('all')
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 // Keys of the item groups that are open
 const expanded = ref(new Set())
@@ -187,6 +191,11 @@ watch(search, (term) => {
   }
 })
 
+watch([search, levelFilter], () => {
+  page.value = 1
+  loadStocks()
+})
+
 /*
 |--------------------------------------------------------------------------
 | Load and delete
@@ -194,19 +203,23 @@ watch(search, (term) => {
 */
 
 const loadStocks = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ''
     actionError.value = ''
 
-    const response = await api.get('/inventory-stock')
+const response = await api.get('/inventory-stock', { params: { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, level: levelFilter.value === 'all' ? undefined : levelFilter.value } })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     stocks.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: stocks.value.length, totalPages: 1 }
 
     if (groupedStocks.value.length <= AUTO_EXPAND_LIMIT) {
       expanded.value = new Set(groupedStocks.value.map(group => group.key))
     }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Failed to load inventory stock:', error)
 
     const status = error.response?.status
@@ -217,9 +230,12 @@ const loadStocks = async () => {
             ? 'Inventory stock endpoint not found (404). Check that the backend mounts /api/inventory-stock.'
             : 'Failed to load inventory stock.')
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await loadStocks() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadStocks() }
 
 const deleteStock = async (stock) => {
   if (
@@ -704,6 +720,8 @@ onMounted(async () => {
               </tbody>
 
             </table>
+            <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
           </div>
 

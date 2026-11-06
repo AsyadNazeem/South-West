@@ -1,8 +1,9 @@
 'use strict';
 
 const { Brand, sequelize } = require('../models');
-const { QueryTypes } = require('sequelize');
+const { Op, QueryTypes } = require('sequelize');
 const { removeStoredImage } = require('../utils/fileStorage');
+const { recordAuditLog } = require('../services/auditLogService');
 
 const MAX_BRAND_ID = '18446744073709551615';
 const MAX_DESCRIPTION_BYTES = 65535;
@@ -187,14 +188,29 @@ async function cleanupStoredFile(filePath) {
 
 const getBrands = async (req, res) => {
     try {
-        const brands = await Brand.findAll({
-            order: [['id', 'DESC']],
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = [
+            { name: { [Op.like]: `%${search}%` } },
+            { code: { [Op.like]: `%${search}%` } },
+            { website: { [Op.like]: `%${search}%` } },
+        ];
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        const result = await Brand.findAndCountAll({
+            where,
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined
         });
+        const brands = result.rows;
 
         return res.status(200).json({
             success: true,
             message: 'Brands retrieved successfully',
             data: brands,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) },
         });
     } catch (error) {
         return handleControllerError(res, error, 'Get brands');
@@ -321,7 +337,7 @@ createdBrand = await sequelize.transaction(async transaction => {
         { transaction }
     );
 
-    return Brand.create(
+    const brand = await Brand.create(
         {
             name: normalizedName,
             code: generatedCode,
@@ -335,6 +351,8 @@ createdBrand = await sequelize.transaction(async transaction => {
         },
         { transaction }
     );
+    await recordAuditLog({ userId: req.user?.id ?? null, action: 'BRAND_CREATED', module: 'brands', entityType: 'Brand', entityId: brand.id, description: `Created brand ${brand.name}`, newValues: { name: brand.name, code: brand.code, description: brand.description, website: brand.website, is_active: brand.is_active }, ipAddress: req.ip, userAgent: req.get('user-agent') || null, requestId: req.id || null, transaction });
+    return brand;
 });
 
         return res.status(201).json({
@@ -531,7 +549,9 @@ const updateBrand = async (req, res) => {
             imageWasReplaced = true;
         }
 
+        const oldValues = brand.toJSON();
         await brand.update(updates);
+        await recordAuditLog({ userId: req.user?.id ?? null, action: 'BRAND_UPDATED', module: 'brands', entityType: 'Brand', entityId: brand.id, description: `Updated brand ${brand.name}`, oldValues, newValues: brand.toJSON(), ipAddress: req.ip, userAgent: req.get('user-agent') || null, requestId: req.id || null });
 
         // Only remove the old image after the database update succeeds.
         if (
@@ -586,7 +606,9 @@ const deleteBrand = async (req, res) => {
             });
         }
 
+        const oldValues = brand.toJSON();
         await brand.update({ is_active: false });
+        await recordAuditLog({ userId: req.user?.id ?? null, action: 'BRAND_DEACTIVATED', module: 'brands', entityType: 'Brand', entityId: brand.id, description: `Deactivated brand ${brand.name}`, oldValues, newValues: brand.toJSON(), ipAddress: req.ip, userAgent: req.get('user-agent') || null, requestId: req.id || null });
 
         return res.status(200).json({
             success: true,

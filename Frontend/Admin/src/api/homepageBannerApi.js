@@ -1,8 +1,8 @@
 
 import api from './axios'
 
-export const getHomepageBanners = () =>
-  api.get('/homepage-banners')
+export const getHomepageBanners = (params = {}) =>
+  api.get('/homepage-banners', { params })
 
 export const getHomepageBanner = (id) =>
   api.get(`/homepage-banners/${id}`)

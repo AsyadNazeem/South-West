@@ -11,6 +11,7 @@ const {
 
 const {
     getItems,
+    getAdminItemMedia,
     getItemFilterOptions,
     getItemById,
     createItem,
@@ -18,6 +19,7 @@ const {
 } = require('../controllers/itemController')
 
 const {
+    getAdminItemVariants,
     getItemVariants,
     getItemVariantById,
     createItemVariant,
@@ -40,6 +42,20 @@ router.get(
     authenticate,
     requirePermission('products.view'),
     getItemFilterOptions
+);
+
+router.get(
+    '/media',
+    authenticate,
+    requirePermission('item_images.view'),
+    getAdminItemMedia
+);
+
+router.get(
+    '/variants',
+    authenticate,
+    requirePermission('products.view'),
+    getAdminItemVariants
 );
 
 // GET all variants for an item

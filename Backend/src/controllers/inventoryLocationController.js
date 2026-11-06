@@ -1,4 +1,5 @@
 
+const { Op } = require('sequelize');
 const { InventoryLocation, sequelize } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
 
@@ -95,13 +96,25 @@ if (body.code !== undefined) {
 // GET ALL INVENTORY LOCATIONS
 const getInventoryLocations = async (req, res) => {
     try {
-        const locations = await InventoryLocation.findAll({
-            order: [['id', 'DESC']]
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = ['code', 'name', 'address'].map(field => ({ [field]: { [Op.like]: `%${search}%` } }));
+        if (req.query.type && req.query.type !== 'all') where.location_type = req.query.type;
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        const result = await InventoryLocation.findAndCountAll({
+            where,
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined
         });
+        const locations = result.rows;
 
         return res.status(200).json({
             message: 'Inventory locations retrieved successfully',
-            data: locations
+            data: locations,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error('Get inventory locations error:', error);

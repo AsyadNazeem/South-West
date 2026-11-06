@@ -3,8 +3,8 @@ import api from './axios'
 
 const BASE_URL = '/discount-campaigns'
 
-export const getDiscountCampaigns = () =>
-    api.get(BASE_URL)
+export const getDiscountCampaigns = (params = {}) =>
+    api.get(BASE_URL, { params })
 
 export const getDiscountCampaign = (id) =>
     api.get(`${BASE_URL}/${id}`)

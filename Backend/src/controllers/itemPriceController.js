@@ -1,4 +1,5 @@
 
+const { Op } = require('sequelize');
 const {
     ItemPrice,
     ItemPaymentPrice,
@@ -181,14 +182,30 @@ const getPriceInclude = () => [
 // GET ALL ITEM PRICES
 const getItemPrices = async (req, res) => {
     try {
-        const prices = await ItemPrice.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = [
+            { '$item.item_name$': { [Op.like]: `%${search}%` } },
+            { '$item.item_code$': { [Op.like]: `%${search}%` } },
+            { price_type: { [Op.like]: `%${search}%` } },
+        ];
+        if (req.query.type && req.query.type !== 'all') where.price_type = req.query.type;
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        const result = await ItemPrice.findAndCountAll({
+            where,
             include: getPriceInclude(),
-            order: [['id', 'DESC']]
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined, distinct: true
         });
+        const prices = result.rows;
 
         return res.status(200).json({
             message: 'Item prices retrieved successfully',
-            data: prices
+            data: prices,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error('Get item prices error:', error);

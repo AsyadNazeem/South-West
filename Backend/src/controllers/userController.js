@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const { Op } = require('sequelize');
 const { recordAuditLog } = require('../services/auditLogService');
 const {
     sequelize,
@@ -25,7 +26,43 @@ const isAdminUser = async (userId) => {
 
 const getUsers = async (req, res) => {
     try {
-        const users = await User.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const searchTerm = String(req.query.search || '').trim().slice(0, 100);
+        const searchConditions = [];
+        const where = {};
+
+        if (searchTerm) {
+            // Only search user profile columns that are part of the current model.
+            // The existing admin User model currently exposes email only.
+            const profileFields = [
+                'name',
+                'first_name',
+                'last_name',
+                'email',
+                'phone',
+                'phone_number'
+            ].filter((field) => User.rawAttributes[field]);
+
+            for (const field of profileFields) {
+                searchConditions.push({
+                    [field]: { [Op.like]: `%${searchTerm}%` }
+                });
+            }
+
+            // Keep the role search that the Users page already supported locally.
+            searchConditions.push({
+                '$roles.name$': { [Op.like]: `%${searchTerm}%` }
+            });
+        }
+
+        if (searchConditions.length) where[Op.or] = searchConditions;
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+
+        const result = await User.findAndCountAll({
+            where: Object.keys(where).length ? where : undefined,
             attributes: [
                 'id',
                 'email',
@@ -45,12 +82,17 @@ const getUsers = async (req, res) => {
                     }
                 }
             ],
-            order: [['id', 'ASC']]
+            order: [['id', 'ASC']],
+            limit: paginationEnabled ? pageSize : undefined,
+            offset: paginationEnabled ? (page - 1) * pageSize : undefined,
+            distinct: true
         });
+        const users = result.rows;
 
         return res.status(200).json({
             message: 'Users retrieved successfully',
-            data: users
+            data: users,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error(error);

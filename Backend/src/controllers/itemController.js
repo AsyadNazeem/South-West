@@ -9,7 +9,9 @@ const {
     ItemType,
     Warranty,
     ItemSpecificationValue,
-    ItemSpecification
+    ItemSpecification,
+    ItemImage,
+    ItemVideo
 } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
 const { generateItemCode } = require('../services/itemCodeService');
@@ -160,6 +162,78 @@ const getItems = async (req, res) => {
         return res.status(500).json({
             message: 'Failed to retrieve Item'
         });
+    }
+};
+
+const getAdminItemMedia = async (req, res) => {
+    try {
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25));
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        const filters = [];
+
+        if (search) {
+            const matchingImageItems = await ItemImage.findAll({
+                where: {
+                    [Op.or]: [
+                        { file_name: { [Op.like]: `%${search}%` } },
+                        { alt_text: { [Op.like]: `%${search}%` } }
+                    ]
+                },
+                attributes: ['item_id'],
+                raw: true
+            });
+            filters.push({
+                [Op.or]: [
+                    { item_name: { [Op.like]: `%${search}%` } },
+                    { item_code: { [Op.like]: `%${search}%` } },
+                    { id: { [Op.in]: matchingImageItems.map(image => image.item_id) } }
+                ]
+            });
+        }
+
+        if (req.query.video === 'with') {
+            filters.push({ '$video.id$': { [Op.ne]: null } });
+        } else if (req.query.video === 'without') {
+            filters.push({ '$video.id$': null });
+        }
+
+        if (filters.length) where[Op.and] = filters;
+
+        const result = await Item.findAndCountAll({
+            where,
+            attributes: ['id', 'item_code', 'item_name'],
+            include: [
+                {
+                    model: ItemImage,
+                    as: 'images',
+                    required: false,
+                    separate: true,
+                    order: [['sort_order', 'ASC'], ['id', 'ASC']]
+                },
+                { model: ItemVideo, as: 'video', required: false }
+            ],
+            distinct: true,
+            subQuery: false,
+            order: [['item_name', 'ASC'], ['id', 'ASC']],
+            limit: pageSize,
+            offset: (page - 1) * pageSize
+        });
+
+        return res.status(200).json({
+            message: 'Item media retrieved successfully',
+            data: result.rows,
+            pagination: {
+                page,
+                pageSize,
+                total: result.count,
+                totalPages: Math.ceil(result.count / pageSize)
+            }
+        });
+    } catch (error) {
+        console.error('Get admin item media error:', error);
+        return res.status(500).json({ message: 'Failed to retrieve item media' });
     }
 };
 
@@ -565,6 +639,7 @@ const updateItem = async (req, res) => {
 
 module.exports = {
     getItems,
+    getAdminItemMedia,
     getItemFilterOptions,
     getItemById,
     createItem,

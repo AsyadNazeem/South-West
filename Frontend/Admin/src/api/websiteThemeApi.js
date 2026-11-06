@@ -2,8 +2,8 @@ import api from './axios'
 
 const BASE_URL = '/website-themes'
 
-export const getWebsiteThemes = () =>
-    api.get(BASE_URL)
+export const getWebsiteThemes = (params = {}) =>
+    api.get(BASE_URL, { params })
 
 export const createWebsiteTheme = payload =>
     api.post(BASE_URL, payload)

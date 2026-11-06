@@ -173,6 +173,8 @@
 
       </table>
 
+      <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
     </div>
 
   </div>
@@ -183,10 +185,13 @@
 
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import AppPagination from '@/components/common/AppPagination.vue'
 
 import {
   hasPermission
 } from '@/auth/authorization.js'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 
 /*
@@ -209,6 +214,9 @@ const user = ref(null)
 
 const loading = ref(false)
 const error = ref('')
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 1 })
 
 const revokingId = ref(null)
 const revokingAll = ref(false)
@@ -258,6 +266,7 @@ const getToken = () => {
 */
 
 const fetchSessions = async () => {
+  const requestId = paginationRequestSequence.begin()
 
   loading.value = true
   error.value = ''
@@ -280,8 +289,9 @@ if (!id || !/^[1-9]\d*$/.test(String(id))) {
   )
 }
 
+    const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize.value) })
     const response = await fetch(
-  `${API_URL}/users/${id}/sessions`,
+  `${API_URL}/users/${id}/sessions?${params}`,
   {
     method: 'GET',
     headers: {
@@ -290,7 +300,9 @@ if (!id || !/^[1-9]\d*$/.test(String(id))) {
     }
   }
 )
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     const result = await response.json()
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     if (!response.ok) {
 
@@ -302,8 +314,10 @@ if (!id || !/^[1-9]\d*$/.test(String(id))) {
     }
 
     sessions.value = result.data || []
+    pagination.value = result.pagination || { total: sessions.value.length, totalPages: 1 }
 
   } catch (err) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
 
     console.error(
         'Fetch sessions error:',
@@ -315,6 +329,7 @@ if (!id || !/^[1-9]\d*$/.test(String(id))) {
         'Failed to load user sessions'
 
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
 
     loading.value = false
 
@@ -322,6 +337,8 @@ if (!id || !/^[1-9]\d*$/.test(String(id))) {
 
 }
 
+const changePage = async value => { page.value = value; await fetchSessions() }
+const changePageSize = async value => { pageSize.value = value; page.value = 1; await fetchSessions() }
 
 /*
 |--------------------------------------------------------------------------

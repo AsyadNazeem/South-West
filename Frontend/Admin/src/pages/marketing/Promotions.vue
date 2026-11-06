@@ -1,7 +1,10 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/axios'
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const router = useRouter()
 const promotions = ref([])
@@ -9,6 +12,7 @@ const loading = ref(false)
 const error = ref('')
 const search = ref('')
 const statusFilter = ref('all')
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const filteredPromotions = computed(() => {
   const term = search.value.trim().toLowerCase()
@@ -61,19 +65,31 @@ function statusLabel(status) {
 }
 
 async function loadPromotions() {
+  const requestId = paginationRequestSequence.begin()
   loading.value = true
   error.value = ''
 
   try {
-    const response = await api.get('/promotions')
+    const response = await api.get('/promotions', { params: { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, status: statusFilter.value === 'all' ? undefined : statusFilter.value } })
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     promotions.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: promotions.value.length, totalPages: 1 }
   } catch (err) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     error.value =
       err.response?.data?.message || 'Unable to load promo codes.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await loadPromotions() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadPromotions() }
+
+watch([search, statusFilter], () => {
+  page.value = 1
+  loadPromotions()
+})
 
 async function changeStatus(promotion, status) {
   const previousStatus = promotion.status
@@ -253,6 +269,8 @@ onMounted(loadPromotions)
             </tr>
           </tbody>
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
       </div>
 
       <footer class="table-footer">

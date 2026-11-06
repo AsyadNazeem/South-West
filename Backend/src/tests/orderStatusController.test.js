@@ -153,6 +153,9 @@ const controller = proxyquire(
     '../controllers/orderStatusController',
     {
         '../models': models,
+        '../controllers/adminNotificationController': {
+            async notifyAdmins() {}
+        },
         '../services/auditLogService': auditService,
         '../services/emailService': emailService
     }

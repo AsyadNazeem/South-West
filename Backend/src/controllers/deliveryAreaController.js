@@ -1,4 +1,5 @@
 const {
+    Op,
     DeliveryArea,
     DeliveryDistrict
 } = require("../models")
@@ -49,7 +50,21 @@ const getDeliveryAreas = async (req, res) => {
             where.district_id = district_id
         }
 
-        const areas = await DeliveryArea.findAll({
+        const search = String(req.query.search || '').trim();
+        if (search) {
+            where[Op.or] = [
+                { area_name: { [Op.like]: `%${search}%` } },
+                { '$district.district_name$': { [Op.like]: `%${search}%` } }
+            ];
+        }
+        if (req.query.status === 'true') where.status = 1;
+        if (req.query.status === 'false') where.status = 0;
+
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined;
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 10));
+
+        const query = {
             where,
             include: [
                 {
@@ -72,11 +87,15 @@ const getDeliveryAreas = async (req, res) => {
             order: [
                 ["area_name", "ASC"]
             ]
-        })
+        };
+        const result = paginationEnabled
+            ? await DeliveryArea.findAndCountAll({ ...query, limit: pageSize, offset: (page - 1) * pageSize, distinct: true })
+            : { rows: await DeliveryArea.findAll(query), count: null };
 
         return res.status(200).json({
             success: true,
-            data: areas
+            data: result.rows,
+            ...(paginationEnabled ? { pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) } } : {})
         })
 
     } catch (error) {

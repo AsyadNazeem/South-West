@@ -1,7 +1,8 @@
 
 <script setup>
 import { getMediaUrl } from '@/utils/mediaUrl'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import AppPagination from '@/components/common/AppPagination.vue'
 import { useRouter } from 'vue-router'
 import {
     ImagePlus,
@@ -23,6 +24,8 @@ import {
 } from '@/api/homepageBannerApi'
 
 import { hasPermission } from '@/auth/authorization'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const router = useRouter()
 
@@ -34,6 +37,10 @@ const search = ref('')
 const statusFilter = ref('all')
 const actionId = ref(null)
 const deletingId = ref(null)
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 1 })
+const summary = ref({ total: 0, active: 0, inactive: 0 })
 
 const canCreate = computed(() =>
     hasPermission('homepage_banners.create')
@@ -51,43 +58,53 @@ function getBannerImageUrl(path) {
     return getMediaUrl(path)
 }
 
-const filteredBanners = computed(() => {
-    const term = search.value.trim().toLowerCase()
-
-    return banners.value.filter((banner) => {
-        const matchesSearch = !term || [
-            banner.title,
-            banner.subtitle,
-            banner.button_text,
-        ].some((value) => String(value || '').toLowerCase().includes(term))
-
-        const matchesStatus =
-            statusFilter.value === 'all' ||
-            (statusFilter.value === 'active' && banner.is_active) ||
-            (statusFilter.value === 'inactive' && !banner.is_active)
-
-        return matchesSearch && matchesStatus
-    })
-})
+const filteredBanners = computed(() => banners.value)
 
 const activeCount = computed(() =>
-    banners.value.filter((banner) => banner.is_active).length
+    summary.value.active
 )
 
 const loadBanners = async () => {
+    const requestId = paginationRequestSequence.begin()
     loading.value = true
     error.value = ''
 
     try {
-        const response = await getHomepageBanners()
+        const response = await getHomepageBanners({
+            page: page.value,
+            pageSize: pageSize.value,
+            search: search.value.trim(),
+            status: statusFilter.value === 'all' ? undefined : statusFilter.value
+        })
+        if (!paginationRequestSequence.isCurrent(requestId)) return
         banners.value = response.data?.data || []
+        pagination.value = response.data?.pagination || { total: banners.value.length, totalPages: 1 }
+        summary.value = response.data?.summary || { total: pagination.value.total, active: 0, inactive: pagination.value.total }
     } catch (err) {
+        if (!paginationRequestSequence.isCurrent(requestId)) return
         error.value =
             err.response?.data?.message ||
             'Unable to load homepage banners.'
     } finally {
+        if (!paginationRequestSequence.isCurrent(requestId)) return
         loading.value = false
     }
+}
+
+watch([search, statusFilter], () => {
+    page.value = 1
+    loadBanners()
+})
+
+function changePage(nextPage) {
+    page.value = nextPage
+    loadBanners()
+}
+
+function changePageSize(nextSize) {
+    pageSize.value = nextSize
+    page.value = 1
+    loadBanners()
 }
 
 const createBanner = () => {
@@ -233,7 +250,7 @@ onMounted(loadBanners)
                 </div>
                 <div>
                     <span>Total banners</span>
-                    <strong>{{ banners.length }} <small>/ 10</small></strong>
+                    <strong>{{ summary.total }} <small>/ 10</small></strong>
                 </div>
             </article>
 
@@ -253,7 +270,7 @@ onMounted(loadBanners)
                 </div>
                 <div>
                     <span>Inactive banners</span>
-                    <strong>{{ banners.length - activeCount }}</strong>
+                    <strong>{{ summary.inactive }}</strong>
                 </div>
             </article>
         </div>
@@ -410,9 +427,19 @@ onMounted(loadBanners)
             </article>
         </div>
 
+        <AppPagination
+            :page="page"
+            :page-size="pageSize"
+            :total="pagination.total"
+        :total-pages="pagination.totalPages"
+            :loading="loading"
+            @update:page="changePage"
+            @update:page-size="changePageSize"
+        />
+
         <footer class="page-footer">
             <span>Homepage banner management</span>
-            <span>{{ banners.length }} of 10 banners used</span>
+            <span>{{ summary.total }} of 10 banners used</span>
         </footer>
     </section>
 </template>

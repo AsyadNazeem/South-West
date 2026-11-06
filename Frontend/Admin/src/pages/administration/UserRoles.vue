@@ -1,6 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/api/axios'
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 // Base path of the roles pages in your router
 const ROLE_BASE = '/admin/administration/roles'
@@ -10,6 +13,9 @@ const loading = ref(true)
 const errorMessage = ref('')
 const search = ref('')
 const statusFilter = ref('all')
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 1 })
 
 const filteredRoles = computed(() => {
   const term = search.value.toLowerCase().trim()
@@ -30,23 +36,36 @@ const filteredRoles = computed(() => {
 })
 
 const loadRoles = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ''
 
-    const response = await api.get('/roles')
+    const response = await api.get('/roles', { params: { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined } })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     roles.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: roles.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Roles loading error:', error)
 
     errorMessage.value =
         error.response?.data?.message ||
         'Failed to load roles.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+
+const changePage = async (next) => { page.value = next; await loadRoles() }
+const changePageSize = async (size) => { pageSize.value = size; page.value = 1; await loadRoles() }
+
+watch(search, () => {
+  page.value = 1
+  loadRoles()
+})
 
 const toggleStatus = async (role) => {
   const makeActive = !role.is_active
@@ -326,6 +345,9 @@ onMounted(loadRoles)
           </tbody>
 
         </table>
+
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
       </div>
 

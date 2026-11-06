@@ -3,6 +3,7 @@
 
 const bcrypt = require('bcryptjs');
 const db = require('../models');
+const { recordAuditLog } = require('../services/auditLogService');
 const {
     hashToken,
     TOKEN_EXPIRY_MINUTES,
@@ -127,6 +128,20 @@ async function setCustomerPassword(req, res) {
             }
 
             await customer.save({ transaction });
+
+            await recordAuditLog({
+                userId: null,
+                action: 'CUSTOMER_PASSWORD_SETUP_COMPLETED',
+                module: 'customer_authentication',
+                entityType: 'Customer',
+                entityId: String(customer.id),
+                description: 'Customer completed initial password setup',
+                newValues: { customer_id: customer.id, email_verified: Boolean(customer.email_verified_at) },
+                ipAddress: req.ip || null,
+                userAgent: req.get('user-agent') || null,
+                requestId: req.id || req.requestId || null,
+                transaction
+            });
 
             setupToken.used_at = new Date();
             await setupToken.save({ transaction });

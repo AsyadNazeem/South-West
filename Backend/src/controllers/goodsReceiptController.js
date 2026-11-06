@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const {
     GoodsReceipt,
     GoodsReceiptItem,
@@ -17,7 +18,20 @@ const { recordAuditLog } = require('../services/auditLogService');
 // GET ALL GOODS RECEIPTS
 const getGoodsReceipts = async (req, res) => {
     try {
-        const receipts = await GoodsReceipt.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = [
+            { receipt_number: { [Op.like]: `%${search}%` } },
+            { supplier_delivery_note: { [Op.like]: `%${search}%` } },
+            { '$purchaseOrder.purchase_order_number$': { [Op.like]: `%${search}%` } },
+            { '$location.name$': { [Op.like]: `%${search}%` } },
+        ];
+        if (req.query.status) where.status = req.query.status;
+        const result = await GoodsReceipt.findAndCountAll({
+            where,
             include: [
                 {
                     model: PurchaseOrder,
@@ -42,12 +56,14 @@ const getGoodsReceipts = async (req, res) => {
                     ]
                 }
             ],
-            order: [['id', 'DESC']]
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined, distinct: true
         });
+        const receipts = result.rows;
 
         return res.status(200).json({
             message: 'Goods receipts retrieved successfully',
-            data: receipts
+            data: receipts,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
 
     } catch (error) {

@@ -1,10 +1,13 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/api/axios'
+import AppPagination from '@/components/common/AppPagination.vue'
 import {
   hasPermission as authorization,
   ensureAuthorization
 } from '@/auth/authorization.js'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 // Base path of the inventory location pages in your router
 const LOCATION_BASE = '/admin/inventory/locations'
@@ -18,6 +21,7 @@ const busyId = ref(null)
 const search = ref('')
 const typeFilter = ref('all')
 const statusFilter = ref('all')
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const showActions = computed(() =>
     authorization('inventory.update') ||
@@ -48,23 +52,35 @@ const filteredLocations = computed(() => {
 })
 
 const loadLocations = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ''
 
-    const response = await api.get('/inventory-locations')
+    const response = await api.get('/inventory-locations', { params: { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, type: typeFilter.value === 'all' ? undefined : typeFilter.value, status: statusFilter.value === 'all' ? undefined : statusFilter.value } })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     locations.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: locations.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Failed to load inventory locations:', error)
 
     errorMessage.value =
         error.response?.data?.message ||
         'Failed to load inventory locations.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await loadLocations() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadLocations() }
+
+watch([search, typeFilter, statusFilter], () => {
+  page.value = 1
+  loadLocations()
+})
 
 const toggleStatus = async (location) => {
   const makeActive = !location.is_active
@@ -287,7 +303,7 @@ onMounted(async () => {
                 :key="location.id"
             >
 
-              <td>{{ index + 1 }}</td>
+              <td>{{ (page - 1) * pageSize + index + 1 }}</td>
 
 
               <!-- Code -->
@@ -372,6 +388,8 @@ onMounted(async () => {
             </tbody>
 
           </table>
+          <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
         </div>
 

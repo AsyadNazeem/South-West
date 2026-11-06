@@ -1,5 +1,6 @@
 'use strict';
 
+const { Op } = require('sequelize');
 const {
     Payment,
     Order,
@@ -10,6 +11,7 @@ const {
 } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
 const { sendOrderStatusEmail } = require('../services/emailService');
+const { notifyAdmins } = require('./adminNotificationController');
 
 
 const updatePaymentStatus = async (req, res) => {
@@ -332,7 +334,21 @@ const updatePaymentStatus = async (req, res) => {
 
 const getPayments = async (req, res) => {
     try {
-        const payments = await Payment.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = [
+            { payment_reference: { [Op.like]: `%${search}%` } },
+            { transaction_reference: { [Op.like]: `%${search}%` } },
+            { '$order.order_number$': { [Op.like]: `%${search}%` } },
+            { payment_method: { [Op.like]: `%${search}%` } },
+        ];
+        if (req.query.status) where.payment_status = req.query.status;
+        if (req.query.method) where.payment_method = req.query.method;
+        const result = await Payment.findAndCountAll({
+            where,
             include: [
                 {
                     model: Order,
@@ -346,12 +362,17 @@ const getPayments = async (req, res) => {
                     }
                 }
             ],
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            limit: paginationEnabled ? pageSize : undefined,
+            offset: paginationEnabled ? (page - 1) * pageSize : undefined,
+            distinct: true
         });
+        const payments = result.rows;
 
         res.status(200).json({
             message: 'Payments retrieved successfully',
-            data: payments
+            data: payments,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error('Get payments error:', error);
@@ -517,6 +538,8 @@ if (payment_status !== undefined) {
             notes: notes || null,
             processed_by: req.user.id
         }, { transaction });
+
+        await notifyAdmins({ type: 'payment', title: 'Payment recorded', message: `Payment ${payment.payment_reference} was recorded for order ${order.order_number}.`, referenceType: 'payment', referenceId: payment.id, transaction });
 
         await recordAuditLog({
             userId: req.user.id,

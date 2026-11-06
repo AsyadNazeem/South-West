@@ -1,5 +1,6 @@
 'use strict';
 
+const { Op } = require('sequelize');
 const {
     CampaignFrame,
     DiscountCampaign,
@@ -50,13 +51,29 @@ function serializeFrame(frame, usageCount = 0) {
 // GET /api/campaign-frames
 exports.getAllFrames = async (req, res) => {
     try {
-        const frames = await CampaignFrame.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined;
+        const where = {};
+        const search = String(req.query.search || '').trim();
+        if (search) where.name = { [Op.like]: `%${search}%` };
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        const result = await CampaignFrame.findAndCountAll({
+            where,
             order: [
                 ['is_active', 'DESC'],
                 ['name', 'ASC'],
                 ['id', 'DESC'],
             ],
+            limit: paginationEnabled ? pageSize : undefined,
+            offset: paginationEnabled ? (page - 1) * pageSize : undefined,
         });
+        const [allCount, activeCount] = await Promise.all([
+            CampaignFrame.count(),
+            CampaignFrame.count({ where: { is_active: true } })
+        ]);
+        const frames = result.rows;
 
         const data = await Promise.all(
             frames.map(async (frame) => {
@@ -71,6 +88,8 @@ exports.getAllFrames = async (req, res) => {
         return res.status(200).json({
             message: 'Campaign frames retrieved successfully',
             data,
+            summary: { total: allCount, active: activeCount, inactive: allCount - activeCount },
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) },
         });
     } catch (error) {
         console.error('Get campaign frames error:', error);

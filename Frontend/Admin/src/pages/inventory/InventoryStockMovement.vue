@@ -1,10 +1,13 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/api/axios'
+import AppPagination from '@/components/common/AppPagination.vue'
 import {
   hasPermission as authorization,
   ensureAuthorization
 } from '@/auth/authorization.js'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 // Base path of inventory stock movement pages
 const MOVEMENT_BASE = '/admin/inventory/movements'
@@ -18,6 +21,7 @@ const busyId = ref(null)
 const search = ref('')
 const movementTypeFilter = ref('all')
 const statusFilter = ref('all')
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const movementTypes = [
   { value: 'purchase', label: 'Purchase' },
@@ -76,14 +80,18 @@ const filteredMovements = computed(() => {
 })
 
 const loadMovements = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ''
 
-    const response = await api.get('/inventory-stock-movements')
+    const response = await api.get('/inventory-stock-movements', { params: { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, type: movementTypeFilter.value === 'all' ? undefined : movementTypeFilter.value } })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     movements.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: movements.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error(
         'Failed to load inventory stock movements:',
         error
@@ -97,9 +105,17 @@ const loadMovements = async () => {
             ? 'Inventory stock movements endpoint not found (404). Check that the backend mounts /api/inventory-stock-movements.'
             : 'Failed to load inventory stock movements.')
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await loadMovements() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadMovements() }
+
+watch([search, movementTypeFilter, statusFilter], () => {
+  page.value = 1
+  loadMovements()
+})
 
 const toggleStatus = async (movement) => {
   const makeActive = !isActive(movement)
@@ -435,7 +451,7 @@ onMounted(async () => {
 
               <!-- # -->
               <td>
-                {{ index + 1 }}
+                {{ (page - 1) * pageSize + index + 1 }}
               </td>
 
 
@@ -576,6 +592,8 @@ onMounted(async () => {
             </tbody>
 
           </table>
+          <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
         </div>
 

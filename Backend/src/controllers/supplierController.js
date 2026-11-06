@@ -1,4 +1,5 @@
 
+const { Op } = require('sequelize');
 const { Supplier, sequelize } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
 
@@ -134,13 +135,24 @@ const handleSupplierError = (error, res, operation) => {
 // GET ALL SUPPLIERS
 const getSuppliers = async (req, res) => {
     try {
-        const suppliers = await Supplier.findAll({
-            order: [['id', 'DESC']]
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = ['supplier_code', 'company_name', 'contact_person', 'email', 'phone'].map(field => ({ [field]: { [Op.like]: `%${search}%` } }));
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        const result = await Supplier.findAndCountAll({
+            where,
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined
         });
+        const suppliers = result.rows;
 
         return res.status(200).json({
             message: 'Suppliers retrieved successfully',
-            data: suppliers
+            data: suppliers,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         return handleSupplierError(error, res, 'retrieve');

@@ -7,6 +7,7 @@ const {
     ItemVariant,
     sequelize
 } = require('../models');
+const { recordAuditLog } = require('../services/auditLogService');
 
 const PAYMENT_METHODS = ['cash', 'card', 'koko', 'mintpay'];
 
@@ -148,6 +149,13 @@ const saveItemPaymentPrices = async (req, res) => {
                 }, { transaction });
             }
         }
+
+        const changedPrices = await ItemPaymentPrice.findAll({
+            where: { item_id: Number(item_id), variant_id: variant_id === null ? null : Number(variant_id) },
+            transaction,
+            order: [['payment_method', 'ASC']]
+        });
+        await recordAuditLog({ userId: req.user?.id ?? null, action: 'ITEM_PAYMENT_PRICES_SAVED', module: 'products', entityType: 'Item', entityId: String(item_id), description: `Saved payment prices for item ${item_id}`, newValues: { item_id: Number(item_id), variant_id: variant_id === null ? null : Number(variant_id), prices: changedPrices.map(price => ({ id: price.id, payment_method: price.payment_method, price: price.price, currency: price.currency, is_active: price.is_active })) }, ipAddress: req.ip, userAgent: req.get('user-agent') || null, requestId: req.id || null, transaction });
 
         await transaction.commit();
 

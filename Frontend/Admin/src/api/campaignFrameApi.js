@@ -2,8 +2,8 @@ import api from './axios'
 
 const BASE_URL = '/campaign-frames'
 
-export const getCampaignFrames = () =>
-    api.get(BASE_URL)
+export const getCampaignFrames = (params = {}) =>
+    api.get(BASE_URL, { params })
 
 export const createCampaignFrame = (name, file) => {
     const formData = new FormData()

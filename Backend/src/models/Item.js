@@ -40,6 +40,11 @@ module.exports = (sequelize, DataTypes) => {
                 as: 'images'
             });
 
+            Item.hasOne(models.ItemVideo, {
+                foreignKey: 'item_id',
+                as: 'video'
+            });
+
             Item.hasMany(models.ItemSpecificationValue, {
                 foreignKey: 'item_id',
                 as: 'specificationValues'

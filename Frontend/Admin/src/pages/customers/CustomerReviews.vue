@@ -1,7 +1,10 @@
 
 <script setup>
-import { computed, onMounted, ref } from "vue"
+import { computed, onMounted, ref, watch } from "vue"
 import api from "@/api/axios"
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const reviews = ref([])
 const loading = ref(true)
@@ -11,6 +14,7 @@ const search = ref("")
 const ratingFilter = ref("all")
 const statusFilter = ref("pending")
 const processingId = ref(null)
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const statuses = [
   { label: "Pending", value: "pending" },
@@ -84,24 +88,32 @@ const filteredReviews = computed(() => {
 })
 
 const loadReviews = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ""
 
-    const response = await api.get("/product-reviews")
+    const response = await api.get("/product-reviews", { params: { page: page.value, pageSize: pageSize.value, status: statusFilter.value === 'all' ? undefined : statusFilter.value, rating: ratingFilter.value === 'all' ? undefined : ratingFilter.value, search: search.value || undefined } })
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     const data = response.data?.data
 
     reviews.value = Array.isArray(data) ? data : []
+    pagination.value = response.data?.pagination || { total: reviews.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error("Review loading error:", error)
 
     errorMessage.value =
       error.response?.data?.message ||
       "Failed to load customer reviews."
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await loadReviews() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadReviews() }
+watch([search, ratingFilter, statusFilter], () => { page.value = 1; loadReviews() })
 
 const updateReviewStatus = async (review, newStatus) => {
   if (!review?.id || processingId.value !== null) return
@@ -408,6 +420,8 @@ onMounted(loadReviews)
             </tr>
           </tbody>
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
       </div>
     </div>
   </div>

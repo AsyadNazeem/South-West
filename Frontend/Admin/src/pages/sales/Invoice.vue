@@ -1,8 +1,11 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import invoiceApi from '@/api/invoiceApi'
 import { hasPermission } from '@/auth/authorization.js'
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 // ==========================================
 // Routes
@@ -21,6 +24,7 @@ const errorMessage = ref('')
 
 const search = ref('')
 const statusFilter = ref('')
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const deletingId = ref(null)
 
@@ -34,18 +38,22 @@ const deletingId = ref(null)
 // ==========================================
 
 const loadInvoices = async () => {
+  const requestId = paginationRequestSequence.begin()
   loading.value = true
   errorMessage.value = ''
 
   try {
-    const response = await invoiceApi.getInvoices()
+    const response = await invoiceApi.getInvoices({ page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, status: statusFilter.value || undefined })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     invoices.value =
         response?.data?.data ||
         response?.data ||
         []
+    pagination.value = response?.pagination || { total: invoices.value.length, totalPages: 1 }
 
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Failed to load invoices:', error)
 
     errorMessage.value =
@@ -53,9 +61,12 @@ const loadInvoices = async () => {
         error?.message ||
         'Failed to load invoices.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await loadInvoices() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadInvoices() }
 
 // ==========================================
 // Filtering
@@ -105,6 +116,11 @@ const filteredInvoices = computed(() => {
         matchesStatus
     )
   })
+})
+
+watch([search, statusFilter], () => {
+  page.value = 1
+  loadInvoices()
 })
 
 // ==========================================
@@ -699,6 +715,8 @@ onMounted(() => {
         </tbody>
 
       </table>
+      <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
     </div>
 

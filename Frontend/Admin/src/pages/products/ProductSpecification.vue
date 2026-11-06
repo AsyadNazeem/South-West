@@ -1,6 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, watch } from "vue"
 import api from "@/api/axios"
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const specifications = ref([])
 const loading = ref(true)
@@ -8,6 +11,7 @@ const errorMessage = ref("")
 const search = ref("")
 const typeFilter = ref("all")
 const statusFilter = ref("all")
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const filteredSpecifications = computed(() => {
   const term = search.value.toLowerCase().trim()
@@ -35,23 +39,32 @@ const filteredSpecifications = computed(() => {
 })
 
 const loadSpecifications = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ""
 
-    const response = await api.get("/item-specifications")
+    const response = await api.get("/item-specifications", { params: { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, type: typeFilter.value === 'all' ? undefined : typeFilter.value, status: statusFilter.value === 'all' ? undefined : statusFilter.value } })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     specifications.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: specifications.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error("Specification loading error:", error)
 
     errorMessage.value =
         error.response?.data?.message ||
         "Failed to load item specifications."
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await loadSpecifications() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadSpecifications() }
+
+watch([search, typeFilter, statusFilter], () => { page.value = 1; loadSpecifications() })
 
 const deleteSpecification = async (id) => {
   if (
@@ -222,7 +235,7 @@ onMounted(loadSpecifications)
               v-for="(specification,index) in filteredSpecifications"
               :key="specification.id"
           >
-            <td>{{index+1}}</td>
+            <td>{{ (page - 1) * pageSize + index + 1 }}</td>
             <!-- Name -->
             <td>
               <strong>
@@ -325,6 +338,8 @@ onMounted(loadSpecifications)
           </tbody>
 
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
       </div>
 

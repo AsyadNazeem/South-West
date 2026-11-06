@@ -72,6 +72,9 @@ const CreateDiscountCampaigns = () => import('@/pages/marketing/DiscountCampaign
 const CampaignFrames = () => import('@/pages/marketing/CampaignFrames.vue')
 const WebsiteThemes = () => import('@/pages/marketing/WebsiteThemes.vue')
 const AuditLog = () => import('@/pages/administration/AuditLog.vue')
+const AdminNotifications = () => import('@/pages/administration/AdminNotifications.vue')
+const AdminNotificationsFeed = () => import('@/pages/administration/AdminNotificationsFeed.vue')
+const NotificationHistory = () => import('@/pages/administration/NotificationHistory.vue')
 import {
     clearAuthentication,
     ensureAuthorization,
@@ -99,6 +102,7 @@ const routes = [
             requiresAuth: true
         },
         children: [
+            { path: 'notifications', name: 'admin-notifications', component: AdminNotificationsFeed, meta: { permission: 'notifications.view' } },
             {
                 path: '',
                 redirect: '/admin/dashboard'
@@ -374,6 +378,8 @@ const routes = [
                 component: Users,
                 meta: { permission: 'users.view' }
             },
+            { path: 'administration/notification-settings', name: 'admin-notification-settings', component: AdminNotifications, meta: { permission: 'notifications.view' } },
+            { path: 'administration/notification-history', name: 'admin-notification-history', component: NotificationHistory, meta: { permission: 'notifications.view' } },
             {
                 path: 'administration/users/create',
                 name: 'create-user',

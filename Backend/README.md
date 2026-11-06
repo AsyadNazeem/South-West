@@ -122,3 +122,5 @@ Mailpit can also act as substitute for sendmail. For instructions on how to set 
   For team features, multiple inboxes, and a hosted setup, try
   <a href="https://mailtrap.io/?ref=mailpit">Mailtrap</a>, our friendly companion.
 </p>
+
+one issue im facing in store front when admin add item with brands in the store front it shows the logo of the items currently registered as in the screenshot but one issue it does not show all logos when reload some logos appears and few dont again if we reload then again that want appear and some other appears

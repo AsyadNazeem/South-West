@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import {
@@ -11,6 +11,9 @@ import {
 } from '@/api/purchaseOrderApi.js'
 
 import { hasPermission } from '@/auth/authorization.js'
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const router = useRouter()
 
@@ -23,6 +26,7 @@ const errorMessage = ref('')
 
 const search = ref('')
 const statusFilter = ref('')
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const busyAction = ref(null)
 const busyId = ref(null)
@@ -40,20 +44,25 @@ const canDelete = computed(() =>
 )
 
 const fetchOrders = async () => {
+  const requestId = paginationRequestSequence.begin()
   loading.value = true
   errorMessage.value = ''
 
   try {
-    const response = await getPurchaseOrders()
+    const response = await getPurchaseOrders({ page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, status: statusFilter.value || undefined })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     orders.value = response?.data?.data || []
+    pagination.value = response?.data?.pagination || { total: orders.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Failed to load purchase orders:', error)
 
     errorMessage.value =
         error.response?.data?.message ||
         'Failed to load purchase orders.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
@@ -78,6 +87,13 @@ const filteredOrders = computed(() => {
     return matchesSearch && matchesStatus
   })
 })
+
+watch([search, statusFilter], () => {
+  page.value = 1
+  fetchOrders()
+})
+const changePage = async (value) => { page.value = value; await fetchOrders() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await fetchOrders() }
 
 const goToCreate = () => {
   router.push(CREATE_ROUTE)
@@ -427,6 +443,8 @@ onMounted(fetchOrders)
           </tr>
           </tbody>
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
       </div>
 
     </section>

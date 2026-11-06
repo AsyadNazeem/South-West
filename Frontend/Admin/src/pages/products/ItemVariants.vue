@@ -1,7 +1,10 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/axios'
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const router = useRouter()
 
@@ -14,6 +17,9 @@ const success = ref('')
 const search = ref('')
 const statusFilter = ref('all')
 const defaultFilter = ref('all')
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 1 })
 
 const expandedItemIds = ref(new Set())
 
@@ -91,6 +97,22 @@ function resetFilters() {
   defaultFilter.value = 'all'
 }
 
+watch([search, statusFilter, defaultFilter], () => {
+  page.value = 1
+  loadAllVariants()
+})
+
+function changePage(nextPage) {
+  page.value = nextPage
+  loadAllVariants()
+}
+
+function changePageSize(nextSize) {
+  pageSize.value = nextSize
+  page.value = 1
+  loadAllVariants()
+}
+
 // ==========================================
 // Expand / collapse
 // ==========================================
@@ -129,40 +151,32 @@ function editVariant(variant) {
 // ==========================================
 
 async function loadAllVariants() {
+  const requestId = paginationRequestSequence.begin()
   loading.value = true
   error.value = ''
 
   try {
-    const itemResponse = await api.get('/items')
-    items.value = getData(itemResponse)
-
-    const results = await Promise.all(
-      items.value.map(async item => {
-        const response = await api.get(`/items/${item.id}/variants`)
-
-        return getData(response).map(v => ({
-          ...v,
-          item: {
-            id: item.id,
-            item_code: item.item_code,
-            item_name: item.item_name
-          }
-        }))
-      })
-    )
-
-    variants.value = results
-      .flat()
-      .sort((a, b) =>
-        String(a.variant_sku || '').localeCompare(
-          String(b.variant_sku || '')
-        )
-      )
+    const response = await api.get('/items/variants', {
+      params: {
+        page: page.value,
+        pageSize: pageSize.value,
+        search: search.value.trim(),
+        status: statusFilter.value === 'all' ? undefined : statusFilter.value,
+        default: defaultFilter.value === 'all'
+          ? undefined
+          : defaultFilter.value === 'default' ? 'default' : 'non_default'
+      }
+    })
+    if (!paginationRequestSequence.isCurrent(requestId)) return
+    variants.value = getData(response)
+    pagination.value = response.data?.pagination || { total: variants.value.length, totalPages: 1 }
   } catch (e) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     error.value =
       e.response?.data?.message ||
       'Failed to load registered variants.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
@@ -429,14 +443,14 @@ onMounted(loadAllVariants)
 
             <!-- Variant rows -->
             <tr
-              v-for="(variant, index) in group.variants"
+              v-for="variant in group.variants"
               v-show="expandedItemIds.has(group.id)"
               :key="variant.id"
               class="group-variant-row"
               :class="{ 'row-inactive': !variant.is_active }"
             >
 
-              <td class="col-toggle">{{ index + 1 }}</td>
+              <td class="col-toggle">{{ (page - 1) * pageSize + variants.findIndex(entry => entry.id === variant.id) + 1 }}</td>
 
               <td>
                 <strong>{{ variant.variant_sku }}</strong>
@@ -500,6 +514,16 @@ onMounted(loadAllVariants)
         </table>
 
       </div>
+
+      <AppPagination
+        :page="page"
+        :page-size="pageSize"
+        :total="pagination.total"
+        :total-pages="pagination.totalPages"
+        :loading="loading"
+        @update:page="changePage"
+        @update:page-size="changePageSize"
+      />
 
     </div>
 

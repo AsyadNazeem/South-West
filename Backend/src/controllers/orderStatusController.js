@@ -13,6 +13,7 @@ const {
 } = require('../models');
 
 const { recordAuditLog } = require('../services/auditLogService');
+const { notifyAdmins } = require('./adminNotificationController');
 
 const {
     sendDeliveryTrackingEmail,
@@ -476,6 +477,8 @@ exports.updateOrderStatus = async (req, res) => {
             { status: nextStatus },
             { transaction, fields: ['status'] }
         );
+
+        await notifyAdmins({ type: 'customer_request', title: 'Customer order updated', message: `Order ${order.order_number} changed to ${STATUS_LABELS[nextStatus]}.`, referenceType: 'order', referenceId: order.id, transaction });
 
         // Walk-in orders may not have a linked customer account.
         // Only create an in-app notification for a valid customer.

@@ -1,5 +1,6 @@
 'use strict';
 
+const { Op } = require('sequelize');
 const { Unit, sequelize } = require('../models');
 const { QueryTypes } = require('sequelize');
 const { recordAuditLog } = require('../services/auditLogService');
@@ -56,9 +57,19 @@ const auditUnit = async (
 // GET ALL UNITS
 const getUnits = async (req, res) => {
     try {
-        const units = await Unit.findAll({
-            order: [['id', 'DESC']]
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = ['name', 'code', 'description'].map(field => ({ [field]: { [Op.like]: `%${search}%` } }));
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        const result = await Unit.findAndCountAll({
+            where,
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined
         });
+        const units = result.rows;
 
         await auditUnit(req, {
             action: 'UNIT_LIST_VIEWED',
@@ -67,7 +78,8 @@ const getUnits = async (req, res) => {
 
         return res.status(200).json({
             message: 'Units retrieved successfully',
-            data: units
+            data: units,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error('Get units error:', error);

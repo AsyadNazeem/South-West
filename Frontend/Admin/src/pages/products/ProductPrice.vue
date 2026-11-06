@@ -1,6 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, watch } from "vue"
 import api from "@/api/axios"
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const prices = ref([])
 const loading = ref(true)
@@ -9,6 +12,7 @@ const errorMessage = ref("")
 const search = ref("")
 const typeFilter = ref("all")
 const statusFilter = ref("all")
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 // Filter prices
 const filteredPrices = computed(() => {
@@ -74,23 +78,32 @@ const toggleGroup = (key) => {
 
 // Load prices
 const loadPrices = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ""
 
-    const response = await api.get("/item-prices")
+    const response = await api.get("/item-prices", { params: { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, type: typeFilter.value === 'all' ? undefined : typeFilter.value, status: statusFilter.value === 'all' ? undefined : statusFilter.value } })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     prices.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: prices.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error("Product price loading error:", error)
 
     errorMessage.value =
         error.response?.data?.message ||
         "Failed to load product prices."
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await loadPrices() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadPrices() }
+
+watch([search, typeFilter, statusFilter], () => { page.value = 1; loadPrices() })
 
 // Delete price
 const deletePrice = async (id) => {
@@ -398,6 +411,8 @@ onMounted(loadPrices)
         </tbody>
 
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
       </div>
 

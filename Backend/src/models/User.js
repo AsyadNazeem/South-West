@@ -19,6 +19,9 @@ module.exports = (sequelize, DataTypes) => {
                 onUpdate: 'CASCADE'
             });
 
+            User.hasMany(models.AdminNotification, { foreignKey: 'user_id', as: 'adminNotifications' });
+            User.hasOne(models.AdminNotificationPreference, { foreignKey: 'user_id', as: 'adminNotificationPreference' });
+
             User.belongsToMany(models.Role, {
                 through: models.UserRole,
                 foreignKey: 'user_id',

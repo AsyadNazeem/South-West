@@ -1,10 +1,13 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/api/axios.js'
+import AppPagination from '@/components/common/AppPagination.vue'
 import {
   hasPermission,
   ensureAuthorization
 } from '@/auth/authorization.js'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 // Base paths of the goods receipt pages (change here if your routes differ)
 const GOODS_RECEIPT_BASE = '/admin/purchasing/goods-receipts'
@@ -28,6 +31,7 @@ const error = ref('')
 
 const search = ref('')
 const statusFilter = ref('')
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 // "<action>-<id>" of the request currently running
 const busyKey = ref(null)
@@ -39,29 +43,36 @@ const isBusy = (action, receipt) => busyKey.value === `${action}-${receipt.id}`
 // ==========================================
 
 const fetchGoodsReceipts = async () => {
+  const requestId = paginationRequestSequence.begin()
   loading.value = true
   error.value = ''
 
   try {
-    const params = {}
+    const params = { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined }
 
     if (statusFilter.value) {
       params.status = statusFilter.value
     }
 
     const response = await api.get(API_PATH, { params })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     goodsReceipts.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: goodsReceipts.value.length, totalPages: 1 }
   } catch (err) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Failed to load goods receipts:', err)
 
     error.value =
         err.response?.data?.message ||
         'Failed to load goods receipts.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await fetchGoodsReceipts() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await fetchGoodsReceipts() }
 
 onMounted(async () => {
   // Wait for the user's permissions before showing permission-based buttons
@@ -97,6 +108,11 @@ const filteredGoodsReceipts = computed(() => {
           String(value || '').toLowerCase().includes(keyword)
       )
   )
+})
+
+watch([search, statusFilter], () => {
+  page.value = 1
+  fetchGoodsReceipts()
 })
 
 const resetFilters = () => {
@@ -326,7 +342,7 @@ const deleteGoodsReceipt = (receipt) =>
               :class="{ 'row-cancelled': receipt.status === 'cancelled' }"
           >
 
-            <td>{{ index + 1 }}</td>
+            <td>{{ (page - 1) * pageSize + index + 1 }}</td>
 
             <!-- Receipt Number -->
             <td>
@@ -467,6 +483,8 @@ const deleteGoodsReceipt = (receipt) =>
           </tbody>
 
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
       </div>
 

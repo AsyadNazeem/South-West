@@ -7,13 +7,30 @@ const {
     User,
     ItemVariant
 } = require('../models');
+const { Op } = require('sequelize');
 const { recordAuditLog } = require('../services/auditLogService');
 
 
 // GET ALL STOCK MOVEMENTS
 const getInventoryStockMovements = async (req, res) => {
     try {
-        const movements = await InventoryStockMovement.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const where = {};
+        const search = String(req.query.search || '').trim();
+        if (search) where[Op.or] = [
+            { '$item.item_code$': { [Op.like]: `%${search}%` } },
+            { '$item.item_name$': { [Op.like]: `%${search}%` } },
+            { '$location.code$': { [Op.like]: `%${search}%` } },
+            { '$location.name$': { [Op.like]: `%${search}%` } },
+            { reference_type: { [Op.like]: `%${search}%` } },
+            { reference_id: { [Op.like]: `%${search}%` } },
+            { '$creator.email$': { [Op.like]: `%${search}%` } },
+        ];
+        if (req.query.type && req.query.type !== 'all') where.movement_type = req.query.type;
+        const result = await InventoryStockMovement.findAndCountAll({
+            where,
             include: [
                 {
                     model: Item,
@@ -43,12 +60,14 @@ const getInventoryStockMovements = async (req, res) => {
                     ]
                 }
             ],
-            order: [['id', 'DESC']]
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined, distinct: true
         });
+        const movements = result.rows;
 
         return res.status(200).json({
             message: 'Inventory stock movements retrieved successfully',
-            data: movements
+            data: movements,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
 
     } catch (error) {

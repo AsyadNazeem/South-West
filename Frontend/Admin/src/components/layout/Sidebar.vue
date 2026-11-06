@@ -123,6 +123,8 @@ const menuDefinitions = [
       { label: 'Users', to: '/admin/administration/users', permissions: ['users.view'] },
       { label: 'Roles', to: '/admin/administration/roles', permissions: ['roles.view'] },
       { label: 'Audit Logs', to: '/admin/administration/audit-log', permissions: ['audit_logs.view'] },
+      { label: 'Notification Settings', to: '/admin/administration/notification-settings', permissions: ['notifications.view'] },
+      { label: 'Notification History', to: '/admin/administration/notification-history', permissions: ['notifications.view'] },
       { label: 'Permissions', to: '/admin/administration/assign-permissions', permissions: ['roles.view', 'roles.manage', 'permissions.view', 'permissions.manage'] },
     ]
   }

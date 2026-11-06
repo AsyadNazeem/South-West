@@ -10,6 +10,8 @@ const {
 
 const { fn, col } = require('sequelize');
 const { randomInt } = require('node:crypto');
+const { notifyAdmins } = require('./adminNotificationController');
+const { recordAuditLog } = require('../services/auditLogService');
 
 function maskName(value) {
     const name = String(value || '').trim();
@@ -251,6 +253,27 @@ exports.createCustomerReview = async (req, res) => {
         for (let attempt = 0; attempt < (customerId ? 1 : 10); attempt += 1) {
             try {
                 review = await ProductReview.create(reviewData);
+                await recordAuditLog({
+                    userId: null,
+                    action: 'CUSTOMER_PRODUCT_REVIEW_SUBMITTED',
+                    module: 'PRODUCT_REVIEW',
+                    entityType: 'ProductReview',
+                    entityId: String(review.id),
+                    description: 'Customer submitted a product review for moderation',
+                    newValues: {
+                        review_id: review.id,
+                        item_id: review.item_id,
+                        order_id: review.order_id,
+                        rating: review.rating,
+                        status: review.status,
+                        is_verified_purchase: review.is_verified_purchase,
+                        is_guest: !review.customer_id
+                    },
+                    ipAddress: req.ip || null,
+                    userAgent: req.get('user-agent') || null,
+                    requestId: req.id || req.requestId || null
+                });
+                await notifyAdmins({ type: 'review', title: 'New product review', message: `A customer submitted a review for product ${review.item_id}.`, referenceType: 'product_review', referenceId: review.id });
                 break;
             } catch (error) {
                 if (

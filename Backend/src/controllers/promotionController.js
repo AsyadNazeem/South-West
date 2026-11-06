@@ -1,5 +1,6 @@
 'use strict';
 
+const { Op } = require('sequelize');
 const {
     Promotion,
     User,
@@ -273,10 +274,22 @@ const allowedStatuses = [
 // GET ALL PROMOTIONS
 exports.getAllPromotions = async (req, res) => {
     try {
-        const promotions = await Promotion.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = [
+            { promotion_code: { [Op.like]: `%${search}%` } },
+            { promotion_name: { [Op.like]: `%${search}%` } },
+        ];
+        if (req.query.status && req.query.status !== 'all') where.status = req.query.status;
+        const result = await Promotion.findAndCountAll({
+            where,
             include: getPromotionIncludes(),
-            order: [['id', 'DESC']]
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined, distinct: true
         });
+        const promotions = result.rows;
 
         await auditPromotion(req, {
             action: 'PROMOTION_LIST_VIEWED',
@@ -285,7 +298,8 @@ exports.getAllPromotions = async (req, res) => {
 
         return res.status(200).json({
             message: 'Promotions retrieved successfully',
-            data: promotions
+            data: promotions,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error('Get promotions error:', error);

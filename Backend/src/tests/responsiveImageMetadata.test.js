@@ -98,7 +98,9 @@ test('product image API adds per-image metadata and preserves existing fields', 
         toJSON() { return { ...this, toJSON: undefined }; },
     };
     const modelStubs = {
-        ItemImage: { async findAll() { return [image]; } },
+        ItemImage: {
+            async findAndCountAll() { return { rows: [image], count: 1 }; }
+        },
         Item: {}, sequelize: {},
     };
     const controller = proxyquire('../controllers/itemImageController', {

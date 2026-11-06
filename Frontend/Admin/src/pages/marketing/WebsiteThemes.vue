@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import AppPagination from '@/components/common/AppPagination.vue'
 import {
   getWebsiteThemes,
   createWebsiteTheme,
@@ -7,6 +8,8 @@ import {
   updateWebsiteThemeStatus,
   deleteWebsiteTheme
 } from '@/api/websiteThemeApi'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const themes = ref([])
 const loading = ref(false)
@@ -15,6 +18,12 @@ const error = ref('')
 const success = ref('')
 const editingId = ref(null)
 const showForm = ref(false)
+const search = ref('')
+const statusFilter = ref('all')
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 1 })
+const summary = ref({ total: 0, active: 0, scheduled: 0 })
 
 const defaultConfig = () => ({
   colors: {
@@ -214,7 +223,7 @@ const previewStyle = computed(() => {
 })
 
 const activeCount = computed(() =>
-  themes.value.filter(theme => getThemeStatus(theme) === 'Active').length
+  summary.value.active
 )
 
 function resetForm() {
@@ -265,18 +274,45 @@ function getErrorMessage(err, fallback) {
 }
 
 async function loadThemes() {
+  const requestId = paginationRequestSequence.begin()
   loading.value = true
   error.value = ''
 
   try {
-    const response = await getWebsiteThemes()
+    const response = await getWebsiteThemes({
+      page: page.value,
+      pageSize: pageSize.value,
+      search: search.value.trim(),
+      status: statusFilter.value === 'all' ? undefined : statusFilter.value
+    })
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     const data = response.data?.data
     themes.value = Array.isArray(data) ? data : []
+    pagination.value = response.data?.pagination || { total: themes.value.length, totalPages: 1 }
+    summary.value = response.data?.summary || { total: pagination.value.total, active: 0, scheduled: 0 }
   } catch (err) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     error.value = getErrorMessage(err, 'Unable to load website themes.')
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
+}
+
+watch([search, statusFilter], () => {
+  page.value = 1
+  loadThemes()
+})
+
+function changePage(nextPage) {
+  page.value = nextPage
+  loadThemes()
+}
+
+function changePageSize(nextSize) {
+  pageSize.value = nextSize
+  page.value = 1
+  loadThemes()
 }
 
 function openCreateForm() {
@@ -460,7 +496,7 @@ onMounted(loadThemes)
     <section class="stats-row">
       <div class="stat-card">
         <span class="stat-label">Total themes</span>
-        <strong>{{ themes.length }}</strong>
+        <strong>{{ summary.total }}</strong>
       </div>
       <div class="stat-card">
         <span class="stat-label">Currently active</span>
@@ -468,7 +504,7 @@ onMounted(loadThemes)
       </div>
       <div class="stat-card">
         <span class="stat-label">Scheduled</span>
-        <strong>{{ themes.filter(t => getThemeStatus(t) === 'Scheduled').length }}</strong>
+        <strong>{{ summary.scheduled }}</strong>
       </div>
     </section>
 
@@ -481,6 +517,15 @@ onMounted(loadThemes)
         <button class="icon-button" aria-label="Close form" @click="showForm = false; resetForm()">
           ×
         </button>
+      </div>
+
+      <div class="theme-pagination-filters">
+        <input v-model="search" type="search" placeholder="Search themes..." />
+        <select v-model="statusFilter" aria-label="Filter themes by status">
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
       </div>
 
       <div class="preset-section">
@@ -742,6 +787,16 @@ onMounted(loadThemes)
           </div>
         </article>
       </div>
+
+      <AppPagination
+        :page="page"
+        :page-size="pageSize"
+        :total="pagination.total"
+        :total-pages="pagination.totalPages"
+        :loading="loading"
+        @update:page="changePage"
+        @update:page-size="changePageSize"
+      />
     </section>
   </div>
 </template>
@@ -1240,8 +1295,40 @@ button:disabled {
   margin-top: 24px;
 }
 
+.theme-pagination-filters {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+  margin: 16px 0;
+}
+
+.theme-pagination-filters input,
+.theme-pagination-filters select {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #fff);
+  color: inherit;
+}
+
 .themes-section {
   margin-top: 10px;
+}
+
+.theme-pagination-filters {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+  margin: 16px 0;
+}
+
+.theme-pagination-filters input,
+.theme-pagination-filters select {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #fff);
+  color: inherit;
 }
 
 .refresh-button {

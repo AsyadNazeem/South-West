@@ -2,6 +2,7 @@
 
 const { ProductReview, Item, Customer, Order } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
+const { notifyAdmins } = require('./adminNotificationController');
 
 const AUDIT_MODULE = 'PRODUCT_REVIEW';
 
@@ -74,10 +75,30 @@ const validStatus = (status) =>
 // GET all product reviews
 exports.getAllProductReviews = async (req, res) => {
     try {
-        const reviews = await ProductReview.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const { Op } = require('sequelize');
+        const where = {};
+        if (['pending', 'approved', 'rejected'].includes(req.query.status)) where.status = req.query.status;
+        if (/^[1-5]$/.test(String(req.query.rating || ''))) where.rating = Number(req.query.rating);
+        const search = String(req.query.search || '').trim();
+        if (search) where[Op.or] = [
+            { review_title: { [Op.like]: `%${search}%` } },
+            { review_text: { [Op.like]: `%${search}%` } },
+            { '$item.item_name$': { [Op.like]: `%${search}%` } },
+            { '$customer.first_name$': { [Op.like]: `%${search}%` } },
+            { '$customer.last_name$': { [Op.like]: `%${search}%` } }
+        ];
+        const result = await ProductReview.findAndCountAll({
+            where,
             include: getReviewIncludes(),
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            limit: paginationEnabled ? pageSize : undefined,
+            offset: paginationEnabled ? (page - 1) * pageSize : undefined,
+            distinct: true
         });
+        const reviews = result.rows;
 
         await auditProductReview(req, {
             action: 'PRODUCT_REVIEW_LIST_VIEWED',
@@ -86,7 +107,8 @@ exports.getAllProductReviews = async (req, res) => {
 
         return res.status(200).json({
             message: 'Product reviews retrieved successfully',
-            data: reviews
+            data: reviews,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error('Get product reviews error:', error);
@@ -258,6 +280,7 @@ exports.createProductReview = async (req, res) => {
             status: status || 'pending',
             is_verified_purchase: false
         });
+        await notifyAdmins({ type: 'review', title: 'New product review', message: `A review was submitted for product ${item_id}.`, referenceType: 'product_review', referenceId: review.id });
 
         await auditProductReview(req, {
             action: 'PRODUCT_REVIEW_CREATED',

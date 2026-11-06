@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const {
     sequelize,
     PurchaseOrder,
@@ -13,7 +14,18 @@ const {recordAuditLog} = require('../services/auditLogService');
 // GET ALL PURCHASE ORDERS
 const getPurchaseOrders = async (req, res) => {
     try {
-        const purchaseOrders = await PurchaseOrder.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = [
+            { purchase_order_number: { [Op.like]: `%${search}%` } },
+            { '$supplier.company_name$': { [Op.like]: `%${search}%` } },
+        ];
+        if (req.query.status) where.status = req.query.status;
+        const result = await PurchaseOrder.findAndCountAll({
+            where,
             include: [
                 {
                     model: Supplier,
@@ -59,12 +71,14 @@ const getPurchaseOrders = async (req, res) => {
                     ]
                 }
             ],
-            order: [['id', 'DESC']]
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined, distinct: true
         });
+        const purchaseOrders = result.rows;
 
         return res.status(200).json({
             message: 'Purchase orders retrieved successfully',
-            data: purchaseOrders
+            data: purchaseOrders,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
 
     } catch (error) {

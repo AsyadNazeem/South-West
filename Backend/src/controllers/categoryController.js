@@ -7,6 +7,7 @@ const {
     PromotionCategory
 } = require('../models');
 const { removeStoredImage } = require('../utils/fileStorage');
+const { recordAuditLog } = require('../services/auditLogService');
 
 const MAX_CATEGORY_ID = '18446744073709551615';
 
@@ -199,7 +200,20 @@ async function validateParent(parentId, categoryId = null) {
 // GET ALL CATEGORIES
 const getCategories = async (req, res) => {
     try {
-        const categories = await Category.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = [
+            { name: { [Op.like]: `%${search}%` } },
+            { code: { [Op.like]: `%${search}%` } },
+            { '$parent.name$': { [Op.like]: `%${search}%` } },
+        ];
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        const result = await Category.findAndCountAll({
+            where,
             include: [
                 {
                     model: Category,
@@ -207,8 +221,9 @@ const getCategories = async (req, res) => {
                     attributes: ['id', 'name', 'code']
                 }
             ],
-            order: [['id', 'ASC']]
+            order: [['id', 'ASC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined, distinct: true
         });
+        const categories = result.rows;
 
         const counts = await Item.count({
             attributes: ['category_id'],
@@ -237,7 +252,8 @@ const getCategories = async (req, res) => {
         return res.status(200).json({
             success: true,
             message: 'Categories retrieved successfully',
-            data
+            data,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         return handleCategoryError(res, error, 'Get categories');
@@ -401,7 +417,7 @@ const createCategory = async (req, res) => {
                     { transaction }
                 );
 
-                return Category.create(
+                const created = await Category.create(
                     {
                         name: normalizedName,
                         code: generatedCode,
@@ -411,6 +427,8 @@ const createCategory = async (req, res) => {
                     },
                     { transaction }
                 );
+                await recordAuditLog({ userId: req.user?.id ?? null, action: 'CATEGORY_CREATED', module: 'categories', entityType: 'Category', entityId: created.id, description: `Created category ${created.name}`, newValues: { name: created.name, code: created.code, description: created.description, parent_id: created.parent_id, is_active: created.is_active }, ipAddress: req.ip, userAgent: req.get('user-agent') || null, requestId: req.id || null, transaction });
+                return created;
             }
         );
 
@@ -617,7 +635,9 @@ if (req.file) {
     updates.image_url = `/uploads/${req.file.relativePath}`;
 }
 
+const oldValues = category.toJSON();
 await category.update(updates);
+await recordAuditLog({ userId: req.user?.id ?? null, action: 'CATEGORY_UPDATED', module: 'categories', entityType: 'Category', entityId: category.id, description: `Updated category ${category.name}`, oldValues, newValues: category.toJSON(), ipAddress: req.ip, userAgent: req.get('user-agent') || null, requestId: req.id || null });
 
 if (
     req.file &&
@@ -678,7 +698,9 @@ const deleteCategory = async (req, res) => {
         }
 
         const imageUrl = category.image_url;
+        const oldValues = category.toJSON();
         await category.destroy();
+        await recordAuditLog({ userId: req.user?.id ?? null, action: 'CATEGORY_DELETED', module: 'categories', entityType: 'Category', entityId: category.id, description: `Deleted category ${category.name}`, oldValues, ipAddress: req.ip, userAgent: req.get('user-agent') || null, requestId: req.id || null });
 
         if (imageUrl) {
             const cleanup = await removeStoredImage(imageUrl);

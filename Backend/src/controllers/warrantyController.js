@@ -1,5 +1,6 @@
 'use strict';
 
+const { Op } = require('sequelize');
 const { Warranty, Item, sequelize } = require('../models');
 const { QueryTypes } = require('sequelize');
 const { recordAuditLog } = require('../services/auditLogService');
@@ -82,9 +83,19 @@ const validateDurationUnit = (value) =>
 // GET ALL WARRANTIES
 const getWarranties = async (req, res) => {
     try {
-        const warranties = await Warranty.findAll({
-            order: [['id', 'DESC']]
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = ['name', 'code', 'duration_unit'].map(field => ({ [field]: { [Op.like]: `%${search}%` } }));
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        const result = await Warranty.findAndCountAll({
+            where,
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined
         });
+        const warranties = result.rows;
 
         const counts = await Item.count({
             group: ['warranty_id']
@@ -108,7 +119,8 @@ const getWarranties = async (req, res) => {
 
         return res.status(200).json({
             message: 'Warranties retrieved successfully',
-            data
+            data,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error('Get warranties error:', error);

@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import deliveryAreaApi from '@/api/deliveryAreaApi'
 import deliveryDistrictApi from '@/api/deliveryDistrictApi'
 import { hasPermission } from '@/auth/authorization'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const router = useRouter()
 
@@ -39,6 +41,7 @@ const statusFilter = ref('')
 const pageSizeOptions = [10, 25, 50, 100]
 const pageSize = ref(10)
 const currentPage = ref(1)
+const pagination = ref({ total: 0, totalPages: 1 })
 
 // =========================================================
 // LOAD DATA
@@ -83,14 +86,32 @@ const loadPrepaidPricing = async () => {
 }
 
 const loadDeliveryAreas = async () => {
+  const requestId = paginationRequestSequence.begin()
   loading.value = true
   error.value = ''
 
   try {
-    const response = await deliveryAreaApi.getDeliveryAreas()
+    const response = await deliveryAreaApi.getDeliveryAreas({
+      page: currentPage.value,
+      pageSize: pageSize.value,
+      search: search.value.trim(),
+      district_id: districtFilter.value || undefined,
+      status: statusFilter.value
+    })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
+    if (response?.pagination) {
+      const totalPages = Math.max(1, Number(response.pagination.totalPages) || 1)
+      if (currentPage.value > totalPages) {
+        currentPage.value = totalPages
+        return
+      }
+      pagination.value = response.pagination
+      currentPage.value = Number(response.pagination.page) || 1
+    }
     deliveryAreas.value = response?.data || response || []
   } catch (err) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Failed to load delivery areas:', err)
 
     error.value =
@@ -98,6 +119,7 @@ const loadDeliveryAreas = async () => {
         err?.message ||
         'Failed to load delivery areas.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
@@ -120,29 +142,7 @@ const districtOptions = computed(() =>
 // =========================================================
 
 const filteredAreas = computed(() => {
-  const searchTerm = search.value.trim().toLowerCase()
-
-  return deliveryAreas.value.filter(area => {
-    const districtName =
-        area.district?.district_name ||
-        area.district_name ||
-        ''
-
-    const matchesSearch =
-        !searchTerm ||
-        districtName.toLowerCase().includes(searchTerm) ||
-        area.area_name?.toLowerCase().includes(searchTerm)
-
-    const matchesDistrict =
-        !districtFilter.value ||
-        Number(area.district_id) === Number(districtFilter.value)
-
-    const matchesStatus =
-        statusFilter.value === '' ||
-        String(Boolean(area.status)) === statusFilter.value
-
-    return matchesSearch && matchesDistrict && matchesStatus
-  })
+  return deliveryAreas.value
 })
 
 // =========================================================
@@ -150,23 +150,21 @@ const filteredAreas = computed(() => {
 // =========================================================
 
 const totalPages = computed(() =>
-    Math.max(1, Math.ceil(filteredAreas.value.length / pageSize.value))
+    Math.max(1, Number(pagination.value.totalPages) || 1)
 )
 
 const paginatedAreas = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-
-  return filteredAreas.value.slice(start, start + pageSize.value)
+  return filteredAreas.value
 })
 
 const rangeStart = computed(() =>
-    filteredAreas.value.length === 0
+    pagination.value.total === 0
         ? 0
         : (currentPage.value - 1) * pageSize.value + 1
 )
 
 const rangeEnd = computed(() =>
-    Math.min(currentPage.value * pageSize.value, filteredAreas.value.length)
+    Math.min(currentPage.value * pageSize.value, pagination.value.total)
 )
 
 // Page buttons with ellipsis, e.g. 1 ... 4 5 6 ... 20
@@ -203,8 +201,11 @@ const goToPage = (page) => {
 
 // Back to page 1 when filters or page size change
 watch([search, districtFilter, statusFilter, pageSize], () => {
-  currentPage.value = 1
+  if (currentPage.value !== 1) currentPage.value = 1
+  else loadDeliveryAreas()
 })
+
+watch(currentPage, () => loadDeliveryAreas())
 
 // Keep the page valid (e.g. after deleting the last row on the last page)
 watch(totalPages, (total) => {
@@ -465,7 +466,7 @@ onMounted(async () => {
 
       <div class="stat-card">
         <div class="stat-label">Showing</div>
-        <div class="stat-value">{{ filteredAreas.length }}</div>
+        <div class="stat-value">{{ pagination.total }}</div>
       </div>
 
       <div class="stat-card">
@@ -550,7 +551,7 @@ onMounted(async () => {
             </td>
           </tr>
 
-          <tr v-else-if="filteredAreas.length === 0">
+          <tr v-else-if="pagination.total === 0">
             <td colspan="7" class="empty-state">
               <strong>No delivery areas found</strong>
               <span>Try changing your search or filters.</span>
@@ -616,7 +617,7 @@ onMounted(async () => {
 
       <!-- Pagination -->
       <div
-          v-if="!loading && filteredAreas.length > 0"
+          v-if="!loading && pagination.total > 0"
           class="pagination-bar"
       >
 
@@ -635,7 +636,7 @@ onMounted(async () => {
         </div>
 
         <div class="range-text">
-          {{ rangeStart }}–{{ rangeEnd }} of {{ filteredAreas.length }}
+          {{ rangeStart }}–{{ rangeEnd }} of {{ pagination.total }}
         </div>
 
         <div class="pagination-controls">

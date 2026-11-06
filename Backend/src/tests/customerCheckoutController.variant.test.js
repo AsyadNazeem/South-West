@@ -317,6 +317,10 @@ function createHarness(options = {}) {
         {
             '../models': models,
 
+            '../controllers/adminNotificationController': {
+                async notifyAdmins() {}
+            },
+
             '../services/auditLogService': {
                 async recordAuditLog(values) {
                     calls.auditEntries ??= [];

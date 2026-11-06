@@ -1,6 +1,7 @@
 
 'use strict';
 
+const { Op } = require('sequelize');
 const {
     sequelize,
     DiscountCampaign,
@@ -387,14 +388,27 @@ const getCampaignIncludes = () => [
 // GET /api/discount-campaigns
 exports.getAllCampaigns = async (req, res) => {
     try {
-        const campaigns = await DiscountCampaign.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = [
+            { campaign_name: { [Op.like]: `%${search}%` } },
+            { id: Number.isInteger(Number(search)) ? Number(search) : null },
+        ];
+        if (req.query.status && req.query.status !== 'all') where.status = req.query.status;
+        const result = await DiscountCampaign.findAndCountAll({
+            where,
             include: getCampaignIncludes(),
-            order: [['id', 'DESC']],
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined, distinct: true
         });
+        const campaigns = result.rows;
 
         return res.status(200).json({
             message: 'Discount campaigns retrieved successfully',
             data: campaigns,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) },
         });
     } catch (error) {
         console.error('Get discount campaigns error:', error);

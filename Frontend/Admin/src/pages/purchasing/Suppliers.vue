@@ -263,6 +263,8 @@
           </tbody>
 
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
       </div>
 
@@ -272,10 +274,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import supplierApi from '@/api/supplierApi.js'
+import AppPagination from '@/components/common/AppPagination.vue'
 import { hasPermission } from '@/auth/authorization.js'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const router = useRouter()
 
@@ -288,24 +293,30 @@ const errorMessage = ref('')
 
 const search = ref('')
 const statusFilter = ref('')
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const busyAction = ref(null)
 
 const fetchSuppliers = async () => {
+  const requestId = paginationRequestSequence.begin()
   loading.value = true
   errorMessage.value = ''
 
   try {
-    const response = await supplierApi.getSuppliers()
+    const response = await supplierApi.getSuppliers({ page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, status: statusFilter.value || undefined })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     suppliers.value = response?.data || []
+    pagination.value = response?.pagination || { total: suppliers.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Failed to load suppliers:', error)
 
     errorMessage.value =
         error.response?.data?.message ||
         'Failed to load suppliers.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
@@ -337,6 +348,14 @@ const filteredSuppliers = computed(() => {
 
     return matchesSearch && matchesStatus
   })
+})
+
+const changePage = async value => { page.value = value; await fetchSuppliers() }
+const changePageSize = async value => { pageSize.value = value; page.value = 1; await fetchSuppliers() }
+
+watch([search, statusFilter], () => {
+  page.value = 1
+  fetchSuppliers()
 })
 
 const goToCreate = () => {

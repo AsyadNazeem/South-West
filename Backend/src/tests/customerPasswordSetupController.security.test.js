@@ -130,6 +130,9 @@ function loadController(options = {}) {
                 hashToken: (token) => `hashed:${token}`,
                 TOKEN_EXPIRY_MINUTES: 10,
             },
+            '../services/auditLogService': {
+                recordAuditLog: async () => {},
+            },
         }
     );
 
@@ -330,6 +333,9 @@ test('setCustomerPassword saves the password, consumes the token and invalidates
                 password: PASSWORD,
                 confirmPassword: PASSWORD,
             },
+            get(name) {
+                return name.toLowerCase() === 'user-agent' ? 'security-test-agent' : undefined;
+            },
         },
         res
     );
@@ -384,6 +390,9 @@ test('setCustomerPassword does not overwrite an existing email verification date
                 token: TOKEN,
                 password: PASSWORD,
                 confirmPassword: PASSWORD,
+            },
+            get(name) {
+                return name.toLowerCase() === 'user-agent' ? 'security-test-agent' : undefined;
             },
         },
         res

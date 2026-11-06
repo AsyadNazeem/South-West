@@ -2,6 +2,7 @@
 'use strict';
 
 const { Item, ItemColor, sequelize } = require('../models');
+const { recordAuditLog } = require('../services/auditLogService');
 
 const isValidId = value =>
     (typeof value === 'string' || typeof value === 'number') &&
@@ -123,6 +124,7 @@ const replaceItemColors = async (req, res) => {
             return res.status(404).json({ message: 'Item not found' });
         }
 
+        const oldColors = await ItemColor.findAll({ where: { item_id: id }, transaction });
         await ItemColor.destroy({
             where: { item_id: id },
             transaction
@@ -150,6 +152,8 @@ await ItemColor.bulkCreate(
             order: [['id', 'ASC']],
             transaction
         });
+
+        await recordAuditLog({ userId: req.user?.id ?? null, action: 'ITEM_COLORS_REPLACED', module: 'products', entityType: 'Item', entityId: String(id), description: `Replaced colors for item ${item.item_name || id}`, oldValues: oldColors.map(color => ({ id: color.id, color_name: color.color_name, hex_code: color.hex_code })), newValues: colors.map(color => ({ id: color.id, color_name: color.color_name, hex_code: color.hex_code })), ipAddress: req.ip, userAgent: req.get('user-agent') || null, requestId: req.id || null, transaction });
 
         await transaction.commit();
 
@@ -227,6 +231,7 @@ const createItemColor = async (req, res) => {
             color_name: colorName,
             hex_code: hexCode
         });
+        await recordAuditLog({ userId: req.user?.id ?? null, action: 'ITEM_COLOR_CREATED', module: 'products', entityType: 'ItemColor', entityId: color.id, description: `Created color ${color.color_name} for item ${item.item_name || itemId}`, newValues: { item_id: itemId, color_name: color.color_name, hex_code: color.hex_code }, ipAddress: req.ip, userAgent: req.get('user-agent') || null, requestId: req.id || null });
 
         return res.status(201).json({
             success: true,

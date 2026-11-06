@@ -317,18 +317,36 @@ const getPublicBanners = async (req, res) => {
 
 const getAdminBanners = async (req, res) => {
     try {
-        const banners = await HomepageBanner.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined;
+        const where = {};
+        const search = String(req.query.search || '').trim();
+        if (search) where[Op.or] = ['title', 'subtitle', 'button_text'].map(field => ({ [field]: { [Op.like]: `%${search}%` } }));
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        const result = await HomepageBanner.findAndCountAll({
+            where,
             order: [
                 ['sort_order', 'ASC'],
                 ['id', 'ASC'],
             ],
+            limit: paginationEnabled ? pageSize : undefined,
+            offset: paginationEnabled ? (page - 1) * pageSize : undefined,
         });
+        const [allCount, activeCount] = await Promise.all([
+            HomepageBanner.count(),
+            HomepageBanner.count({ where: { is_active: true } })
+        ]);
+        const banners = result.rows;
 
         const responsiveImageCache = new Map();
         return res.status(200).json({
             data: await Promise.all(banners.map((banner) =>
                 adminBannerResponse(banner, responsiveImageCache)
             )),
+            summary: { total: allCount, active: activeCount, inactive: allCount - activeCount },
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) },
         });
     } catch (error) {
         return handleError(res, error, 'Get admin homepage banners error');

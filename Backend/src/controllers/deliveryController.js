@@ -1,6 +1,7 @@
 
 'use strict';
 
+const { Op } = require('sequelize');
 const {
     sequelize,
     Delivery,
@@ -74,7 +75,23 @@ async function auditDeliveryAction(req, {
 // Get all deliveries
 exports.getAllDeliveries = async (req, res) => {
     try {
-        const deliveries = await Delivery.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = [
+            { delivery_reference: { [Op.like]: `%${search}%` } },
+            { tracking_number: { [Op.like]: `%${search}%` } },
+            { courier_name: { [Op.like]: `%${search}%` } },
+            { recipient_name: { [Op.like]: `%${search}%` } },
+            { recipient_phone: { [Op.like]: `%${search}%` } },
+            { '$order.order_number$': { [Op.like]: `%${search}%` } },
+        ];
+        if (req.query.status) where.delivery_status = req.query.status;
+        if (req.query.method) where.delivery_method = req.query.method;
+        const result = await Delivery.findAndCountAll({
+            where,
             include: [
                 {
                     model: Order,
@@ -85,8 +102,12 @@ exports.getAllDeliveries = async (req, res) => {
                     as: 'statusHistory'
                 }
             ],
-            order: [['id', 'DESC']]
+            order: [['id', 'DESC']],
+            limit: paginationEnabled ? pageSize : undefined,
+            offset: paginationEnabled ? (page - 1) * pageSize : undefined,
+            distinct: true
         });
+        const deliveries = result.rows;
 
         await auditDeliveryAction(req, {
             action: 'DELIVERY_LIST_VIEWED',
@@ -98,7 +119,8 @@ exports.getAllDeliveries = async (req, res) => {
 
         return res.status(200).json({
             message: 'Deliveries retrieved successfully',
-            data: deliveries
+            data: deliveries,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error('Get deliveries error:', error);

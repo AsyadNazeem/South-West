@@ -1,10 +1,24 @@
 'use strict';
+const { Op } = require('sequelize');
 const { Invoice, Order, Customer, User } = require('../models');
 
 // GET /api/invoices
 const getInvoices = async (req, res) => {
     try {
-        const invoices = await Invoice.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (search) where[Op.or] = [
+            { invoice_number: { [Op.like]: `%${search}%` } },
+            { '$order.order_number$': { [Op.like]: `%${search}%` } },
+            { '$customer.first_name$': { [Op.like]: `%${search}%` } },
+            { '$customer.last_name$': { [Op.like]: `%${search}%` } },
+        ];
+        if (req.query.status) where.status = req.query.status;
+        const result = await Invoice.findAndCountAll({
+            where,
             include: [
                 {
                     model: Order,
@@ -22,12 +36,17 @@ const getInvoices = async (req, res) => {
                     }
                 }
             ],
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            limit: paginationEnabled ? pageSize : undefined,
+            offset: paginationEnabled ? (page - 1) * pageSize : undefined,
+            distinct: true
         });
+        const invoices = result.rows;
 
         return res.status(200).json({
             message: 'Invoices retrieved successfully',
-            data: invoices
+            data: invoices,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error('Get invoices error:', error);

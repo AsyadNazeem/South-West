@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const {
     Customer,
     CustomerAddress,
@@ -642,14 +643,27 @@ async function getAddressById(req, res) {
 
 async function getAllAddresses(req, res) {
     try {
-        const addresses = await CustomerAddress.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = {};
+        if (req.query.type) where.address_type = req.query.type;
+        if (search) where[Op.or] = [
+            ...['recipient_name', 'city', 'postal_code', 'phone'].map(field => ({ [field]: { [Op.like]: `%${search}%` } })),
+            { '$customer.first_name$': { [Op.like]: `%${search}%` } },
+            { '$customer.last_name$': { [Op.like]: `%${search}%` } },
+        ];
+        const result = await CustomerAddress.findAndCountAll({
+            where,
             include: [{
                 model: Customer,
                 as: 'customer',
                 attributes: ['id', 'first_name', 'last_name']
             }],
-            order: [['id', 'DESC']]
+            order: [['id', 'DESC']], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined, distinct: true
         });
+        const addresses = result.rows;
 
         const data = addresses.map(address => {
             const row = address.toJSON();
@@ -670,7 +684,8 @@ async function getAllAddresses(req, res) {
 
         return res.status(200).json({
             message: 'Customer addresses retrieved successfully.',
-            data
+            data,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         return handleError(res, 'Get all addresses error', error);

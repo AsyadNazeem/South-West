@@ -163,7 +163,8 @@ const defaultRolePermissions = {
         'customers.create',
         'customers.update',
         'reports.view',
-                'discount_campaigns.view',
+        'notifications.view',
+        'discount_campaigns.view',
         'discount_campaigns.create',
         'discount_campaigns.update'
     ],
@@ -173,8 +174,9 @@ const defaultRolePermissions = {
         'products.view',
         'orders.view',
         'customers.view',
-                'discount_campaigns.view',
-        'reports.view'
+        'discount_campaigns.view',
+        'reports.view',
+        'notifications.view'
     ],
     Sales: [
         'dashboard.view',
@@ -185,8 +187,9 @@ const defaultRolePermissions = {
         'orders.cancel',
         'customers.view',
         'customers.create',
-                'discount_campaigns.view',
-        'customers.update'
+        'discount_campaigns.view',
+        'customers.update',
+        'notifications.view'
     ]
 };
 

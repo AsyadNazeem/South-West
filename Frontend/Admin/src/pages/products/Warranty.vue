@@ -1,12 +1,16 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, watch } from "vue"
 import api from "@/api/axios"
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const warranties = ref([])
 const loading = ref(true)
 const errorMessage = ref("")
 const search = ref("")
 const statusFilter = ref("all")
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const statusOf = (warranty) =>
     warranty.is_active ? "active" : "inactive"
@@ -47,20 +51,25 @@ const filteredWarranties = computed(() => {
 })
 
 const loadWarranties = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ""
 
-    const response = await api.get("/warranties")
+    const response = await api.get("/warranties", { params: { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, status: statusFilter.value === 'all' ? undefined : statusFilter.value } })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     warranties.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: warranties.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error("Warranty loading error:", error)
 
     errorMessage.value =
         error.response?.data?.message ||
         "Failed to load warranties."
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
@@ -83,6 +92,10 @@ const deleteWarranty = async (id) => {
     )
   }
 }
+const changePage = async (value) => { page.value = value; await loadWarranties() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadWarranties() }
+
+watch([search, statusFilter], () => { page.value = 1; loadWarranties() })
 
 const toggleStatus = async (warranty) => {
   const makeActive = statusOf(warranty) !== "active"
@@ -247,7 +260,7 @@ onMounted(loadWarranties)
               :key="warranty.id"
           >
 
-            <td>{{ index + 1 }}</td>
+            <td>{{ (page - 1) * pageSize + index + 1 }}</td>
 
             <!-- Code -->
             <td>
@@ -355,6 +368,8 @@ onMounted(loadWarranties)
           </tbody>
 
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
       </div>
 

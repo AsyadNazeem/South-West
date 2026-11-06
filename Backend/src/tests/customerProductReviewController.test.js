@@ -65,7 +65,15 @@ function createHarness(options = {}) {
 
     const controller = proxyquire(
         '../controllers/customerProductReviewController',
-        { '../models': models }
+        {
+            '../models': models,
+            '../controllers/adminNotificationController': {
+                async notifyAdmins() {}
+            },
+            '../services/auditLogService': {
+                async recordAuditLog() {}
+            }
+        }
     );
 
     const req = {
@@ -77,6 +85,9 @@ function createHarness(options = {}) {
             review_title: 'Great product',
             review_text: 'Works exactly as expected.',
             ...options.body,
+        },
+        get() {
+            return 'node-test';
         },
     };
 

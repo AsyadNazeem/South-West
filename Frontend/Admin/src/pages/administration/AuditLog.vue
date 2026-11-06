@@ -87,7 +87,7 @@
 
         <div class="filter-field">
           <label for="limit">Rows per page</label>
-          <select id="limit" v-model.number="filters.limit">
+          <select id="limit" v-model.number="filters.limit" @change="changePageSize">
             <option :value="10">10</option>
             <option :value="20">20</option>
             <option :value="50">50</option>
@@ -302,6 +302,8 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import api from '@/api/axios'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const logs = ref([])
 const loading = ref(false)
@@ -326,6 +328,7 @@ const pagination = reactive({
 })
 
 async function fetchAuditLogs() {
+  const requestId = paginationRequestSequence.begin()
   loading.value = true
   error.value = ''
 
@@ -342,18 +345,26 @@ async function fetchAuditLogs() {
     }
 
     const response = await api.get('/audit-logs', { params })
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     const payload = response.data
 
     if (!Array.isArray(payload.data) || !payload.pagination) {
       throw new Error('The API returned an unexpected response format.')
     }
 
+    const totalPages = Math.max(1, Number(payload.pagination.totalPages) || 1)
+    pagination.total = Number(payload.pagination.total) || 0
+    pagination.limit = Number(payload.pagination.limit) || filters.limit
+    pagination.totalPages = totalPages
+    if (pagination.page > pagination.totalPages) {
+      pagination.page = pagination.totalPages
+      fetchAuditLogs()
+      return
+    }
     logs.value = payload.data
     pagination.page = Number(payload.pagination.page) || 1
-    pagination.limit = Number(payload.pagination.limit) || filters.limit
-    pagination.total = Number(payload.pagination.total) || 0
-    pagination.totalPages = Number(payload.pagination.totalPages) || 0
   } catch (err) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Failed to load audit logs:', err)
 
     logs.value = []
@@ -362,6 +373,7 @@ async function fetchAuditLogs() {
       err.message ||
       'An unexpected error occurred.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
@@ -395,6 +407,11 @@ function changePage(page) {
   if (page < 1 || page > pagination.totalPages || loading.value) return
 
   pagination.page = page
+  fetchAuditLogs()
+}
+
+function changePageSize() {
+  pagination.page = 1
   fetchAuditLogs()
 }
 

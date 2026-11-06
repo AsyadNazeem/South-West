@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { Op } = require('sequelize');
 const db = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
+const { notifyAdmins } = require('./adminNotificationController');
 const {
     sendOrderConfirmationEmail,
     sendAdminNewOrderEmail
@@ -1548,6 +1549,8 @@ const stocks = stocksByVariant.get(String(entry.variantId)) || [];
             notes: null,
             created_by: null
         }, { transaction });
+
+        await notifyAdmins({ type: 'order', title: 'New customer order', message: `Order ${order.order_number} was placed by a customer.`, referenceType: 'order', referenceId: order.id, transaction });
 
         // Save order line items using the server-calculated prices.
         for (const entry of preparedItems) {

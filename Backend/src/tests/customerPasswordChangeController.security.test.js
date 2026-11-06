@@ -193,6 +193,10 @@ function loadController(options = {}) {
                     }
                 },
             },
+
+            '../services/auditLogService': {
+                recordAuditLog: async () => {},
+            },
         }
     );
 
@@ -210,6 +214,9 @@ function createRequest(body = {}, customer = createCustomer()) {
         customer,
         ip: '127.0.0.1',
         id: 'security-test-request',
+        get(name) {
+            return name.toLowerCase() === 'user-agent' ? 'security-test-agent' : undefined;
+        },
     };
 }
 

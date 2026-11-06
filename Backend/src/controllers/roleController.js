@@ -1,5 +1,6 @@
 
 'use strict';
+const { Op } = require('sequelize');
 const { recordAuditLog } = require('../services/auditLogService');
 const { Role, Permission, UserRole, sequelize } = require('../models');
 
@@ -35,19 +36,33 @@ const handleError = (res, error, operation) => {
 
 exports.getRoles = async (req, res) => {
     try {
-        const roles = await Role.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const search = String(req.query.search || '').trim();
+        const where = search ? { [Op.or]: [
+            { name: { [Op.like]: `%${search}%` } },
+            { description: { [Op.like]: `%${search}%` } },
+        ] } : {};
+        const result = await Role.findAndCountAll({
+            where,
             include: [{
                 model: Permission,
                 as: 'permissions',
                 attributes: ['id', 'name', 'module'],
                 through: { attributes: [] }
             }],
-            order: [['id', 'ASC']]
+            order: [['id', 'ASC']],
+            limit: paginationEnabled ? pageSize : undefined,
+            offset: paginationEnabled ? (page - 1) * pageSize : undefined,
+            distinct: true
         });
+        const roles = result.rows;
 
         return res.status(200).json({
             message: 'Roles retrieved successfully',
-            data: roles
+            data: roles,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         return handleError(res, error, 'Retrieve roles');

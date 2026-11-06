@@ -1,9 +1,12 @@
 <script setup>
-import {computed, onMounted, ref} from 'vue'
+import {computed, onMounted, ref, watch} from 'vue'
 import {useRouter} from 'vue-router'
 
 import deliveryApi from '@/api/deliveryApi'
+import AppPagination from '@/components/common/AppPagination.vue'
 import {hasPermission} from '@/auth/authorization.js'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const router = useRouter()
 
@@ -16,6 +19,7 @@ const error = ref('')
 const search = ref('')
 const statusFilter = ref('')
 const methodFilter = ref('')
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const deletingId = ref(null)
 
@@ -36,18 +40,22 @@ const canDelete = computed(() =>
 // ==========================================
 
 const loadDeliveries = async () => {
+  const requestId = paginationRequestSequence.begin()
   loading.value = true
   error.value = ''
 
   try {
-    const response = await deliveryApi.getDeliveries()
+    const response = await deliveryApi.getDeliveries({ page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, status: statusFilter.value || undefined, method: methodFilter.value || undefined })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     deliveries.value =
         response?.data?.data ||
         response?.data ||
         []
+    pagination.value = response?.pagination || { total: deliveries.value.length, totalPages: 1 }
 
   } catch (err) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error('Failed to load deliveries:', err)
 
     error.value =
@@ -55,9 +63,12 @@ const loadDeliveries = async () => {
         err?.message ||
         'Failed to load deliveries.'
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await loadDeliveries() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadDeliveries() }
 
 // ==========================================
 // Filtered Deliveries
@@ -130,6 +141,11 @@ const filteredDeliveries = computed(() => {
         matchesMethod
     )
   })
+})
+
+watch([search, statusFilter, methodFilter], () => {
+  page.value = 1
+  loadDeliveries()
 })
 
 // ==========================================
@@ -867,6 +883,8 @@ onMounted(() => {
           </tbody>
 
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
 
       </div>
 

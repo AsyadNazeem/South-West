@@ -1,12 +1,16 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, watch } from "vue"
 import api from "@/api/axios"
+import AppPagination from '@/components/common/AppPagination.vue'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const addresses = ref([])
 const loading = ref(true)
 const errorMessage = ref("")
 const search = ref("")
 const typeFilter = ref("all")
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const filteredAddresses = computed(() => {
   const term = search.value.toLowerCase().trim()
@@ -28,23 +32,35 @@ const filteredAddresses = computed(() => {
 })
 
 const loadAddresses = async () => {
+  const requestId = paginationRequestSequence.begin()
   try {
     loading.value = true
     errorMessage.value = ""
 
-    const response = await api.get("/customer-addresses")
+    const response = await api.get("/customer-addresses", { params: { page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, type: typeFilter.value === 'all' ? undefined : typeFilter.value } })
+  if (!paginationRequestSequence.isCurrent(requestId)) return
 
     addresses.value = response.data.data || []
+    pagination.value = response.data.pagination || { total: addresses.value.length, totalPages: 1 }
   } catch (error) {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     console.error("Address loading error:", error)
 
     errorMessage.value =
         error.response?.data?.message ||
         "Failed to load addresses."
   } finally {
+    if (!paginationRequestSequence.isCurrent(requestId)) return
     loading.value = false
   }
 }
+const changePage = async (value) => { page.value = value; await loadAddresses() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadAddresses() }
+
+watch([search, typeFilter], () => {
+  page.value = 1
+  loadAddresses()
+})
 
 const deleteAddress = async (id) => {
   if (!confirm("Are you sure you want to delete this address?")) {
@@ -180,7 +196,7 @@ onMounted(loadAddresses)
           >
 
             <td>
-              {{ index + 1 }}
+              {{ (page - 1) * pageSize + index + 1 }}
             </td>
 
             <!-- Customer -->
@@ -277,6 +293,8 @@ onMounted(loadAddresses)
           </tbody>
 
         </table>
+        <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
       </div>
 
     </div>

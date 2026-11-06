@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import AppPagination from '@/components/common/AppPagination.vue'
 import {
     getCampaignFrames,
     createCampaignFrame,
@@ -23,6 +24,12 @@ const editingId = ref(null)
 const editingName = ref('')
 const replacementFile = ref(null)
 const replacementPreview = ref('')
+const search = ref('')
+const statusFilter = ref('all')
+const page = ref(1)
+const pageSize = ref(25)
+const pagination = ref({ total: 0, totalPages: 1 })
+const summary = ref({ total: 0, active: 0, inactive: 0 })
 
 const activeFrames = computed(() =>
     frames.value.filter(frame => frame.is_active)
@@ -38,6 +45,8 @@ function responseArray(response) {
 }
 
 import { getMediaUrl } from '@/utils/mediaUrl'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 function imageUrl(frame) {
     const value = frame.image_url || frame.image_path || ''
@@ -60,19 +69,46 @@ function clearMessages() {
 }
 
 async function loadFrames() {
+    const requestId = paginationRequestSequence.begin()
     loading.value = true
     error.value = ''
 
     try {
-        const response = await getCampaignFrames()
+        const response = await getCampaignFrames({
+            page: page.value,
+            pageSize: pageSize.value,
+            search: search.value.trim(),
+            status: statusFilter.value === 'all' ? undefined : statusFilter.value
+        })
+        if (!paginationRequestSequence.isCurrent(requestId)) return
         frames.value = responseArray(response)
+        pagination.value = response?.data?.pagination || { total: frames.value.length, totalPages: 1 }
+        summary.value = response?.data?.summary || { total: pagination.value.total, active: 0, inactive: 0 }
     } catch (err) {
+        if (!paginationRequestSequence.isCurrent(requestId)) return
         error.value =
             err.response?.data?.message ||
             'Unable to load campaign frames.'
     } finally {
+        if (!paginationRequestSequence.isCurrent(requestId)) return
         loading.value = false
     }
+}
+
+watch([search, statusFilter], () => {
+    page.value = 1
+    loadFrames()
+})
+
+function changePage(nextPage) {
+    page.value = nextPage
+    loadFrames()
+}
+
+function changePageSize(nextSize) {
+    pageSize.value = nextSize
+    page.value = 1
+    loadFrames()
 }
 
 function selectFile(event) {
@@ -337,8 +373,17 @@ onBeforeUnmount(() => {
             <div class="section-heading">
                 <div>
                     <h2>Active frames</h2>
-                    <p>{{ activeFrames.length }} active frames available for campaigns</p>
+                    <p>{{ summary.active }} active frames available for campaigns</p>
                 </div>
+            </div>
+
+            <div class="frame-pagination-filters">
+                <input v-model="search" type="search" placeholder="Search frames..." />
+                <select v-model="statusFilter" aria-label="Filter campaign frames by status">
+                    <option value="all">All frames</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                </select>
             </div>
 
             <div v-if="loading" class="panel state-message">
@@ -418,6 +463,7 @@ onBeforeUnmount(() => {
                     </div>
                 </article>
             </div>
+
         </section>
 
         <section v-if="inactiveFrames.length" class="frames-section">
@@ -460,6 +506,16 @@ onBeforeUnmount(() => {
                 </article>
             </div>
         </section>
+
+        <AppPagination
+            :page="page"
+            :page-size="pageSize"
+            :total="pagination.total"
+        :total-pages="pagination.totalPages"
+            :loading="loading"
+            @update:page="changePage"
+            @update:page-size="changePageSize"
+        />
     </main>
 </template>
 

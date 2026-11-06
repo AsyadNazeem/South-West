@@ -84,15 +84,20 @@ const getUserSessions = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const sessions = await UserSession.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25));
+        const result = await UserSession.findAndCountAll({
             where: { user_id: userId, revoked_at: null },
             attributes: { exclude: ['refresh_token_hash'] },
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            limit: pageSize,
+            offset: (page - 1) * pageSize,
         });
 
         return res.status(200).json({
             message: 'User sessions retrieved successfully',
-            data: sessions
+            data: result.rows,
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         console.error('Get user sessions error:', error.message);

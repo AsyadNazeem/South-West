@@ -36,7 +36,7 @@ module.exports = (sequelize, DataTypes) => {
             },
 
             permission_id: {
-                type: DataTypes.INTEGER.UNSIGNED,
+                type: DataTypes.INTEGER,
                 allowNull: false
             },
 

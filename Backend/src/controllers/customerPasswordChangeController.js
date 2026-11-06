@@ -13,6 +13,7 @@ const {
 } = db;
 
 const { sendVerificationCode } = require('../services/emailService');
+const { recordAuditLog } = require('../services/auditLogService');
 
 const CODE_EXPIRY_MINUTES = 10;
 const MAX_CODE_ATTEMPTS = 5;
@@ -57,13 +58,20 @@ function validatePassword(password) {
 
 function audit(action, req, customerId) {
     // Do not log passwords, OTPs, or authentication tokens.
-    console.info(JSON.stringify({
-        event: action,
-        customer_id: customerId,
-        ip: req.ip || null,
-        request_id: req.id || null,
-        timestamp: new Date().toISOString(),
-    }));
+    return recordAuditLog({
+        userId: null,
+        action,
+        module: 'customer_authentication',
+        entityType: 'Customer',
+        entityId: String(customerId),
+        description: action === 'CUSTOMER_PASSWORD_CHANGED'
+            ? 'Customer changed their password'
+            : 'Customer requested a password-change code',
+        newValues: { customer_id: customerId },
+        ipAddress: req.ip || null,
+        userAgent: req.get('user-agent') || null,
+        requestId: req.id || req.requestId || null
+    });
 }
 
 exports.requestCode = async (req, res) => {
@@ -146,7 +154,7 @@ exports.requestCode = async (req, res) => {
             throw emailError;
         }
 
-        audit('CUSTOMER_PASSWORD_CHANGE_CODE_SENT', req, lockedCustomer.id);
+        await audit('CUSTOMER_PASSWORD_CHANGE_CODE_SENT', req, lockedCustomer.id);
 
         return res.status(200).json({
             message: 'A password-change code has been sent to your registered email address.',
@@ -307,10 +315,10 @@ exports.changePassword = async (req, res) => {
             }
         );
 
+        await audit('CUSTOMER_PASSWORD_CHANGED', req, customerId);
+
         await transaction.commit();
         transaction = null;
-
-        audit('CUSTOMER_PASSWORD_CHANGED', req, customerId);
 
         return res.status(200).json({
             message: 'Password changed successfully. Please log in again.',

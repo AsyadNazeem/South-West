@@ -56,22 +56,27 @@ const getItemImages = async (req, res) => {
             where.item_id = req.query.item_id;
         }
 
-        const images = await ItemImage.findAll({
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const result = await ItemImage.findAndCountAll({
             where,
             include: itemInclude,
             order: [
                 ['item_id', 'ASC'],
                 ['sort_order', 'ASC'],
                 ['id', 'ASC']
-            ]
+            ], limit: paginationEnabled ? pageSize : undefined, offset: paginationEnabled ? (page - 1) * pageSize : undefined, distinct: true
         });
+        const images = result.rows;
 
         const responsiveImageCache = new Map();
         return res.status(200).json({
             message: 'Item images retrieved successfully',
             data: await Promise.all(images.map((image) =>
                 serializeItemImage(image, responsiveImageCache)
-            ))
+            )),
+            pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
         return sendError(

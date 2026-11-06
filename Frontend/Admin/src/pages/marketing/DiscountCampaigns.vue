@@ -1,12 +1,15 @@
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import AppPagination from '@/components/common/AppPagination.vue'
 import { useRouter } from 'vue-router'
 import {
     getDiscountCampaigns,
     updateDiscountCampaignStatus,
     deleteDiscountCampaign
 } from '@/api/discountCampaignApi'
+import { createRequestSequence } from '@/composables/useServerPagination.js'
+const paginationRequestSequence = createRequestSequence()
 
 const router = useRouter()
 
@@ -16,6 +19,7 @@ const error = ref('')
 const search = ref('')
 const statusFilter = ref('all')
 const updatingId = ref(null)
+const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const statuses = [
     'draft',
@@ -107,21 +111,33 @@ function campaignTargetNames(campaign) {
 }
 
 async function loadCampaigns() {
+    const requestId = paginationRequestSequence.begin()
     loading.value = true
     error.value = ''
 
     try {
-        const response = await getDiscountCampaigns()
+        const response = await getDiscountCampaigns({ page: page.value, pageSize: pageSize.value, search: search.value.trim() || undefined, status: statusFilter.value === 'all' ? undefined : statusFilter.value })
+        if (!paginationRequestSequence.isCurrent(requestId)) return
         const result = response.data?.data
         campaigns.value = Array.isArray(result) ? result : []
+        pagination.value = response.data?.pagination || { total: campaigns.value.length, totalPages: 1 }
     } catch (err) {
+        if (!paginationRequestSequence.isCurrent(requestId)) return
         error.value =
             err.response?.data?.message ||
             'Unable to load discount campaigns.'
     } finally {
+        if (!paginationRequestSequence.isCurrent(requestId)) return
         loading.value = false
     }
 }
+const changePage = async (value) => { page.value = value; await loadCampaigns() }
+const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadCampaigns() }
+
+watch([search, statusFilter], () => {
+    page.value = 1
+    loadCampaigns()
+})
 
 function createCampaign() {
     router.push('/admin/marketing/discount-campaigns/create')
@@ -399,6 +415,8 @@ onMounted(loadCampaigns)
                         </tr>
                     </tbody>
                 </table>
+                <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
+        :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
             </div>
 
             <footer v-if="!loading && filteredCampaigns.length" class="table-footer">

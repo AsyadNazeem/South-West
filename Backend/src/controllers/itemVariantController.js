@@ -1,6 +1,7 @@
 
 'use strict';
 
+const { Op } = require('sequelize');
 const {
     sequelize,
     Item,
@@ -232,6 +233,57 @@ const getItemVariants = async (req, res) => {
         return res.status(500).json({
             message: 'Failed to retrieve item variants'
         });
+    }
+};
+
+const getAdminItemVariants = async (req, res) => {
+    try {
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25));
+        const where = {};
+        const search = String(req.query.search || '').trim();
+
+        if (search) where[Op.or] = [
+            { variant_sku: { [Op.like]: `%${search}%` } },
+            { variant_name: { [Op.like]: `%${search}%` } },
+            { qb_item_code: { [Op.like]: `%${search}%` } },
+            { '$item.item_code$': { [Op.like]: `%${search}%` } },
+            { '$item.item_name$': { [Op.like]: `%${search}%` } }
+        ];
+
+        if (req.query.status === 'active') where.is_active = true;
+        if (req.query.status === 'inactive') where.is_active = false;
+        if (req.query.default === 'default') where.is_default = true;
+        if (req.query.default === 'non_default') where.is_default = false;
+
+        const result = await ItemVariant.findAndCountAll({
+            where,
+            include: [{
+                model: Item,
+                as: 'item',
+                attributes: ['id', 'item_code', 'item_name'],
+                required: true
+            }],
+            distinct: true,
+            order: [['variant_sku', 'ASC'], ['id', 'ASC']],
+            limit: pageSize,
+            offset: (page - 1) * pageSize
+        });
+
+        const variants = result.rows.map(variant => variant.toJSON());
+
+        return res.status(200).json({
+            data: variants,
+            pagination: {
+                page,
+                pageSize,
+                total: result.count,
+                totalPages: Math.ceil(result.count / pageSize)
+            }
+        });
+    } catch (error) {
+        console.error('Get admin item variants error:', error);
+        return res.status(500).json({ message: 'Failed to load item variants' });
     }
 };
 
@@ -1133,6 +1185,7 @@ const updateVariantColors = async (req, res) => {
 
 
 module.exports = {
+    getAdminItemVariants,
     getItemVariants,
     getItemVariantById,
     createItemVariant,
