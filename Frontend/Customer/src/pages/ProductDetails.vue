@@ -3,7 +3,7 @@ import {
   getResponsiveImageSrcSet,
   getResponsiveImageUrl,
 } from '@/utils/mediaUrl'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import DOMPurify from 'dompurify'
@@ -41,6 +41,7 @@ const approvedReviewCount = ref(0)
 const reviewRating = ref(5)
 const reviewTitle = ref('')
 const reviewText = ref('')
+const displayReviewName = ref(false)
 const submittingReview = ref(false)
 const reviewMessage = ref('')
 const reviewSubmitError = ref('')
@@ -50,6 +51,20 @@ const reviewSubmitted = ref(false)
 // ---------- Review UI helpers ----------
 const hoverRating = ref(0)
 const reviewSort = ref('newest')
+
+const isGuestReviewer = ref(!sessionStorage.getItem('customerToken'))
+
+function refreshReviewAuthState() {
+  isGuestReviewer.value = !sessionStorage.getItem('customerToken')
+}
+
+onMounted(() => {
+  window.addEventListener('customer-auth-changed', refreshReviewAuthState)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('customer-auth-changed', refreshReviewAuthState)
+})
 
 const ratingLabels = {
   1: 'Poor',
@@ -93,11 +108,7 @@ const sortedReviews = computed(() => {
 })
 
 function reviewerName(review) {
-  return (
-    [review.customer?.first_name, review.customer?.last_name]
-      .filter(Boolean)
-      .join(' ') || 'Customer'
-  )
+  return review.reviewer_name || 'Customer'
 }
 
 function reviewerInitials(review) {
@@ -253,13 +264,7 @@ async function submitProductReview() {
   reviewMessage.value = ''
   reviewSubmitError.value = ''
 
-  if (!sessionStorage.getItem('customerToken')) {
-    router.push({
-      path: '/login',
-      query: { redirect: route.fullPath }
-    })
-    return
-  }
+  const customerToken = sessionStorage.getItem('customerToken')
 
   if (!product.value?.id) {
     reviewSubmitError.value = 'Unable to identify this product.'
@@ -281,12 +286,18 @@ async function submitProductReview() {
   submittingReview.value = true
 
   try {
-    const response = await api.post('/customer-reviews', {
+    const payload = {
       item_id: product.value.id,
       rating: Number(reviewRating.value),
       review_title: reviewTitle.value.trim(),
       review_text: reviewText.value.trim()
-    })
+    }
+
+    if (customerToken) {
+      payload.display_name = displayReviewName.value
+    }
+
+    const response = await api.post('/customer-reviews', payload)
 
     reviewMessage.value =
       response.data?.message ||
@@ -295,6 +306,7 @@ async function submitProductReview() {
     reviewSubmitted.value = true
     reviewTitle.value = ''
     reviewText.value = ''
+    displayReviewName.value = false
   } catch (err) {
     reviewSubmitError.value =
       err.response?.data?.message ||
@@ -1933,6 +1945,8 @@ onMounted(loadProduct)
     </ul>
   </div>
 
+  <div class="reviews-layout">
+    <div class="reviews-list">
   <!-- List states -->
   <p v-if="reviewsLoading" class="muted review-state">Loading reviews...</p>
 
@@ -2002,6 +2016,8 @@ onMounted(loadProduct)
     </article>
   </template>
 
+    </div>
+
   <!-- Write a review -->
   <div id="write-review" class="review-form">
     <h4>Write a review</h4>
@@ -2011,6 +2027,23 @@ onMounted(loadProduct)
     <p v-if="reviewSubmitError" class="review-alert error">{{ reviewSubmitError }}</p>
 
     <form v-if="!reviewSubmitted" @submit.prevent="submitProductReview">
+      <p v-if="isGuestReviewer" class="muted guest-review-notice">
+        Your review will be displayed using an automatically generated guest number.
+      </p>
+
+      <div v-else class="form-field review-name-preference">
+        <label class="checkbox-label">
+          <input
+            v-model="displayReviewName"
+            type="checkbox"
+          />
+          Display my full name with this review
+        </label>
+        <small class="muted">
+          If unchecked, your first and last name will be partially hidden.
+        </small>
+      </div>
+
       <div class="form-field">
         <span class="field-label">Your rating</span>
 
@@ -2070,6 +2103,7 @@ onMounted(loadProduct)
 
     <p v-else class="muted">Thank you. Your review is awaiting approval.</p>
   </div>
+    </div>
 </div>
 
       </section>
@@ -3113,9 +3147,28 @@ onMounted(loadProduct)
 
 /* Write a review */
 
+.reviews-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "form reviews";
+  align-items: start;
+  gap: 28px;
+}
+
+.reviews-list {
+  grid-area: reviews;
+  min-width: 0;
+  max-height: 680px;
+  overflow-y: auto;
+  padding-right: 10px;
+  scrollbar-width: thin;
+}
+
 .review-form {
-  max-width: 650px;
-  margin-top: 36px;
+  grid-area: form;
+  min-width: 0;
+  max-width: none;
+  margin-top: 0;
   padding: 24px;
   border: 1px solid var(--color-border-soft, #e5e9f0);
   border-radius: 12px;
@@ -3444,6 +3497,652 @@ onMounted(loadProduct)
   font-weight: 600;
 }
 
+/* ==========================================================================
+   REVIEWS + REVIEW FORM  (paste at the very END of your <style scoped>)
+   Same markup and same layout (form left, reviews right). Only the look changes.
+   These rules override the older review rules above them, so nothing else needs
+   to be edited. You can delete the old review rules later to keep the file tidy.
+   ========================================================================== */
+
+.customer-reviews {
+  --rv-primary: var(--color-primary, #1f4a8a);
+  --rv-surface: var(--color-surface, #fff);
+  --rv-soft: var(--color-surface-muted, #f6f8fb);
+  --rv-border: var(--color-border-soft, #e5e9f0);
+  --rv-muted: var(--color-text-muted, #687386);
+  --rv-star: #f5a623;
+  --rv-success: #167447;
+  --rv-success-bg: #e8f7f0;
+  --rv-danger: #b42318;
+  --rv-danger-bg: #fdecec;
+
+  margin-top: 44px;
+  padding-top: 34px;
+  border-top: 1px solid var(--rv-border);
+  scroll-margin-top: 20px;
+}
+
+/* ---------- Header ---------- */
+.reviews-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.reviews-header h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.btn-outline {
+  padding: 10px 20px;
+  border: 1px solid var(--rv-primary);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--rv-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn-outline:hover {
+  background: var(--rv-primary);
+  color: #fff;
+}
+
+.btn-outline:focus-visible {
+  outline: 2px solid var(--rv-primary);
+  outline-offset: 3px;
+}
+
+/* ---------- Summary ---------- */
+.review-summary {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  align-items: center;
+  gap: 32px;
+  margin-bottom: 28px;
+  padding: 24px 28px;
+  border: 1px solid var(--rv-border);
+  border-radius: 16px;
+  background: var(--rv-soft);
+}
+
+.summary-score {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding-right: 32px;
+  border-right: 1px solid var(--rv-border);
+  text-align: center;
+}
+
+.review-average {
+  font-family: var(--font-family-display, inherit);
+  font-size: 3.2rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.summary-score p {
+  margin: 2px 0 0;
+}
+
+.rating-bars {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rating-bars li {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.bar-label {
+  color: var(--rv-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bar-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e1e6ee;
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f7b73e, var(--rv-star));
+  transition: width 0.3s ease;
+}
+
+.bar-count {
+  color: var(--rv-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ---------- Layout areas stay exactly as before ---------- */
+.reviews-layout {
+  gap: 28px;
+}
+
+/* ---------- Reviews list (scrolls on its own) ---------- */
+.reviews-list {
+  max-height: 680px;
+  padding-right: 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #c9d1de transparent;
+}
+
+.reviews-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.reviews-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c9d1de;
+}
+
+/* Sort bar stays visible while scrolling the reviews */
+.review-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid var(--rv-border);
+  background: var(--rv-surface);
+}
+
+.sort-control select {
+  appearance: none;
+  padding: 9px 34px 9px 14px;
+  border: 1px solid var(--color-border, #d5dbe5);
+  border-radius: 999px;
+  background-color: var(--rv-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23687386' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+  background-size: 14px;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sort-control select:hover {
+  border-color: var(--rv-muted);
+}
+
+.sort-control select:focus-visible {
+  outline: 2px solid transparent;
+  border-color: var(--rv-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rv-primary) 18%, transparent);
+}
+
+/* ---------- Review cards ---------- */
+.review-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--rv-border);
+  border-radius: 14px;
+  background: var(--rv-surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.review-card + .review-card {
+  margin-top: 12px;
+}
+
+@media (hover: hover) {
+  .review-card:hover {
+    border-color: #d3dae6;
+    box-shadow: 0 4px 14px rgb(16 24 40 / 6%);
+  }
+}
+
+.review-avatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rv-primary) 18%, #fff),
+    color-mix(in srgb, var(--rv-primary) 8%, #fff)
+  );
+  color: var(--rv-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.review-card-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-bottom: 6px;
+}
+
+.review-card-heading strong {
+  font-size: 14px;
+}
+
+.verified-purchase {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--rv-success-bg);
+  color: var(--rv-success);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.review-date {
+  margin-left: auto;
+  color: var(--rv-muted);
+  font-size: 12px;
+}
+
+.review-content h4 {
+  margin: 10px 0 4px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.review-body {
+  margin: 6px 0 0;
+  color: #2b3447;
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+/* ---------- Empty / loading / error ---------- */
+.review-state {
+  padding: 24px 0;
+  text-align: center;
+}
+
+.empty-reviews {
+  padding: 40px 20px;
+  border: 2px dashed #d5dbe5;
+  border-radius: 16px;
+  background: var(--rv-soft);
+  text-align: center;
+}
+
+.empty-reviews::before {
+  content: '★';
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  background: #fff4dc;
+  color: var(--rv-star);
+  font-size: 26px;
+}
+
+.empty-reviews strong {
+  font-size: 15px;
+}
+
+.empty-reviews p {
+  margin: 6px 0 0;
+  color: var(--rv-muted);
+  font-size: 13px;
+}
+
+.review-alert {
+  margin: 0 0 14px;
+  padding: 11px 14px;
+  border-left: 3px solid transparent;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.review-alert.success {
+  border-left-color: var(--rv-success);
+  background: var(--rv-success-bg);
+  color: var(--rv-success);
+}
+
+.review-alert.error {
+  border-left-color: var(--rv-danger);
+  background: var(--rv-danger-bg);
+  color: var(--rv-danger);
+}
+
+.link-button {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   Write a review (form)
+   ========================================================================== */
+.review-form {
+  padding: 26px;
+  border: 1px solid var(--rv-border);
+  border-radius: 16px;
+  background: var(--rv-surface);
+  box-shadow: 0 1px 2px rgb(16 24 40 / 5%), 0 8px 22px rgb(16 24 40 / 5%);
+}
+
+.review-form h4 {
+  margin: 0 0 4px;
+  font-family: var(--font-family-display, inherit);
+  font-size: 19px;
+}
+
+.review-form > .muted {
+  margin: 0 0 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--rv-border);
+}
+
+.review-form form {
+  display: grid;
+  gap: 20px;
+}
+
+.form-field {
+  display: grid;
+  gap: 8px;
+}
+
+.form-field label,
+.field-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.optional {
+  color: var(--rv-muted);
+  font-weight: 400;
+}
+
+/* Guest notice: friendly info box */
+.guest-review-notice {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--rv-primary);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--rv-primary) 7%, var(--rv-surface));
+  color: #34425a;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* "Display my full name" checkbox as one easy tap target */
+.review-name-preference {
+  padding: 12px 14px;
+  border: 1px solid var(--rv-border);
+  border-radius: 12px;
+  background: var(--rv-soft);
+  gap: 4px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.review-form .checkbox-label input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--rv-primary);
+  cursor: pointer;
+}
+
+.review-name-preference small {
+  margin-left: 28px;
+  color: var(--rv-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Inputs */
+.review-form input:not([type='checkbox']),
+.review-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border, #d5dbe5);
+  border-radius: 10px;
+  background: var(--rv-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.review-form input:not([type='checkbox']) {
+  min-height: 46px;
+}
+
+.review-form textarea {
+  min-height: 130px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.review-form input::placeholder,
+.review-form textarea::placeholder {
+  color: #9aa4b5;
+}
+
+@media (hover: hover) {
+  .review-form input:not([type='checkbox']):hover:not(:focus),
+  .review-form textarea:hover:not(:focus) {
+    border-color: var(--rv-muted);
+  }
+}
+
+.review-form input:not([type='checkbox']):focus,
+.review-form textarea:focus {
+  outline: 2px solid transparent;
+  border-color: var(--rv-primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--rv-primary) 16%, transparent);
+}
+
+.char-count {
+  justify-self: end;
+  color: var(--rv-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Star picker */
+.star-picker {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 0;
+}
+
+.star-btn {
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #d5dbe5;
+  font-size: 34px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.1s ease, transform 0.12s ease;
+}
+
+.star-btn.active {
+  color: var(--rv-star);
+}
+
+.star-btn:hover {
+  transform: scale(1.15);
+}
+
+.star-btn:focus-visible {
+  outline: 2px solid var(--rv-primary);
+  outline-offset: 2px;
+}
+
+.star-label {
+  margin-left: 10px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: #fff4dc;
+  color: #8a5a06;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Submit */
+.btn-submit {
+  justify-self: stretch;
+  min-height: 50px;
+  padding: 12px 24px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--rv-primary);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.btn-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 6px 16px rgb(16 24 40 / 18%);
+}
+
+.btn-submit:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-submit:focus-visible {
+  outline: 2px solid var(--rv-primary);
+  outline-offset: 3px;
+}
+
+.btn-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* ---------- Responsive (same breakpoints as before) ---------- */
+@media (max-width: 900px) {
+  .reviews-list {
+    max-height: 520px;
+  }
+}
+
+@media (max-width: 650px) {
+  .review-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 18px;
+  }
+
+  .summary-score {
+    padding-right: 0;
+    padding-bottom: 18px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rv-border);
+  }
+
+  .reviews-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .review-card {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .review-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 12px;
+  }
+
+  .review-date {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .review-form {
+    padding: 18px 16px;
+  }
+
+  .star-btn {
+    font-size: 38px;
+  }
+
+  /* 16px stops iOS zooming into the field on focus */
+  .review-form input:not([type='checkbox']),
+  .review-form textarea,
+  .sort-control select {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar-fill,
+  .star-btn,
+  .review-card,
+  .btn-submit,
+  .btn-outline,
+  .review-form input,
+  .review-form textarea {
+    transition: none;
+  }
+}
+
 @media (max-width: 600px) {
   .variant-options-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3488,6 +4187,19 @@ onMounted(loadProduct)
 
   .delivery-panel section:last-child {
     border-right: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .reviews-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "form"
+      "reviews";
+  }
+
+  .reviews-list {
+    max-height: 520px;
   }
 }
 

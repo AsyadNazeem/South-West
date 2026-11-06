@@ -30,22 +30,28 @@ module.exports = (sequelize, DataTypes) => {
                 autoIncrement: true,
                 allowNull: false
             },
-
             item_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: false
             },
-
             customer_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
-                allowNull: false
+                allowNull: true
             },
-
+            guest_number: {
+                type: DataTypes.STRING(6),
+                allowNull: true,
+                unique: true
+            },
+            display_name: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false
+            },
             order_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: true
             },
-
             rating: {
                 type: DataTypes.TINYINT.UNSIGNED,
                 allowNull: false,
@@ -54,17 +60,14 @@ module.exports = (sequelize, DataTypes) => {
                     max: 5
                 }
             },
-
             review_title: {
                 type: DataTypes.STRING(200),
                 allowNull: true
             },
-
             review_text: {
                 type: DataTypes.TEXT,
                 allowNull: true
             },
-
             status: {
                 type: DataTypes.ENUM(
                     'pending',
@@ -74,18 +77,15 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false,
                 defaultValue: 'pending'
             },
-
             is_verified_purchase: {
                 type: DataTypes.BOOLEAN,
                 allowNull: false,
                 defaultValue: false
             },
-
             created_at: {
                 type: DataTypes.DATE,
                 allowNull: false
             },
-
             updated_at: {
                 type: DataTypes.DATE,
                 allowNull: false

@@ -1,5 +1,6 @@
-
 <script setup>
+import { ref } from 'vue'
+
 const emit = defineEmits(['select-category'])
 const props = defineProps({
   categories: {
@@ -12,6 +13,12 @@ import {
   getResponsiveImageSrcSet,
   getResponsiveImageUrl,
 } from '@/utils/mediaUrl'
+
+const failedCategoryImages = ref(new Set())
+
+function handleCategoryImageError(categoryId) {
+  failedCategoryImages.value.add(String(categoryId))
+}
 
 function getCategoryImage(category) {
   return {
@@ -42,12 +49,14 @@ function getCategoryImage(category) {
       >
         <div class="category-image-wrap">
           <img
-            v-if="getCategoryImage(category).src"
+            v-if="getCategoryImage(category).src && !failedCategoryImages.has(String(category.id))"
             :src="getCategoryImage(category).src"
             :srcset="getCategoryImage(category).srcset || undefined"
             sizes="(max-width: 420px) 28vw, 112px"
             :alt="category.name"
             loading="lazy"
+            decoding="async"
+            @error="handleCategoryImageError(category.id)"
           />
           <div v-else class="category-image-placeholder">
             {{ category.name }}

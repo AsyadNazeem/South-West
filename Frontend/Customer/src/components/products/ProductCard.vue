@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import {
@@ -54,6 +54,12 @@ const image = computed(() => {
     src: getResponsiveImageUrl(source) || directUrl,
     srcset: getResponsiveImageSrcSet(source?.responsive_images),
   }
+})
+
+const imageFailed = ref(false)
+
+watch(() => image.value.src, () => {
+  imageFailed.value = false
 })
 
 const imageSizes = computed(() => props.layout === 'list'
@@ -322,13 +328,14 @@ onBeforeUnmount(() => {
     <div class="image-wrap">
       <RouterLink :to="link" class="image-link" :aria-label="`View ${name}`">
         <img
-          v-if="image.src"
+          v-if="image.src && !imageFailed"
           :src="image.src"
           :srcset="image.srcset || undefined"
           :sizes="imageSizes"
           alt=""
           loading="lazy"
           decoding="async"
+          @error="imageFailed = true"
         />
 
         <span v-else class="image-fallback">

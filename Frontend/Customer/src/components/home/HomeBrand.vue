@@ -16,6 +16,11 @@ const router = useRouter()
 const brands = ref([])
 const loading = ref(false)
 const showAll = ref(false)
+const failedBrandImages = ref(new Set())
+
+function handleBrandImageError(brandId) {
+  failedBrandImages.value.add(String(brandId))
+}
 
 import {
   getResponsiveImageSrcSet,
@@ -139,18 +144,15 @@ v-if="brandsWithProducts.length > 10"
       >
         <div class="brand-image-wrap">
           <img
-            v-if="getBrandImage(brand).src"
+            v-if="getBrandImage(brand).src && !failedBrandImages.has(String(brand.id))"
             :src="getBrandImage(brand).src"
             :srcset="getBrandImage(brand).srcset || undefined"
             sizes="(max-width: 420px) 28vw, (max-width: 760px) 18vw, (max-width: 1100px) 15vw, 9vw"
             :alt="brand.name"
-            loading="lazy"
-            @error="$event.target.style.display = 'none'"
+            decoding="async"
+            @error="handleBrandImageError(brand.id)"
           />
-          <span
-            v-else
-            class="brand-name-fallback"
-          >
+          <span v-else class="brand-name-fallback">
             {{ brand.name }}
           </span>
         </div>
