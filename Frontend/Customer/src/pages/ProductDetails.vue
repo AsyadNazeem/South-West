@@ -10,12 +10,16 @@ import DOMPurify from 'dompurify'
 import { formatMeasure, formatAttributeLabel } from '@/utils/measure.js'
 import VariantSelector from '@/components/VariantSelector.vue'
 import SimilarProducts from '@/components/products/SimilarProducts.vue'
+import { setPageMeta } from '@/composables/usePageMeta'
+import { trackAddToCart, trackProductView } from '@/services/analytics'
+import { breadcrumbSchema, productSchema, setStructuredData } from '@/utils/structuredData'
 
 const route = useRoute()
 const router = useRouter()
 
 const product = ref(null)
 const loading = ref(true)
+let latestProductLoadId = 0
 const error = ref('')
 const selectedImage = ref(0)
 const selectedVariantId = ref('')
@@ -1203,6 +1207,9 @@ function onVariantChange() {
 // --------------------------------------------------
 
 async function loadProduct() {
+  const requestId = ++latestProductLoadId
+  setStructuredData('product', null)
+  setStructuredData('breadcrumb', null)
   loading.value = true
   error.value = ''
   cartMessage.value = ''
@@ -1231,6 +1238,7 @@ const publicId = publicIdMatch?.[1]
     const response = await api.get('/store/products', {
       params: { publicId },
     })
+    if (requestId !== latestProductLoadId) return
     const list = getProductList(response.data)
 
     if (!list) {
@@ -1254,6 +1262,7 @@ const found = publicId
     const variantsResponse = await api.get(
       `/store/products/${found.id}/variants`
     )
+    if (requestId !== latestProductLoadId) return
 
     const variantsPayload =
       variantsResponse.data?.data ?? variantsResponse.data
@@ -1277,7 +1286,17 @@ product.value = {
   variants: variantsWithColors
 }
 
+const seoName = product.value.item_name || product.value.name || product.value.product_name || 'Product'
+const seoDescription = String(product.value.description || `View ${seoName} at South West, Sri Lanka.`)
+  .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
+const productPath = `/product/${route.params.productSlug}`
+const productImage = getResponsiveImageUrl(product.value.image || product.value.image_url || product.value.images?.[0])
+setPageMeta({ title: `${seoName} | South West Sri Lanka`, description: seoDescription, path: productPath, index: true, image: productImage || '/SWShareImage.png', type: 'product' })
+setStructuredData('product', productSchema(product.value, productPath, productImage))
+setStructuredData('breadcrumb', breadcrumbSchema([{ name: 'Home', path: '/' }, { name: 'Shop', path: '/shop' }, { name: seoName, path: productPath }]))
+
 chooseDefaultVariant(product.value)
+trackProductView(product.value, price.value)
 
 reviews.value = []
 averageReviewRating.value = null
@@ -1291,6 +1310,7 @@ await Promise.all([
   loadProductReviews(),
 ])
   } catch (err) {
+    if (requestId !== latestProductLoadId) return
     console.error('Load product error:', err)
 
     error.value =
@@ -1298,9 +1318,15 @@ await Promise.all([
       err.message ||
       'Unable to load this product. Please try again.'
   } finally {
-    loading.value = false
+    if (requestId === latestProductLoadId) loading.value = false
   }
 }
+
+onUnmounted(() => {
+  latestProductLoadId++
+  setStructuredData('product', null)
+  setStructuredData('breadcrumb', null)
+})
 
 // --------------------------------------------------
 // Quantity and cart
@@ -1379,6 +1405,8 @@ async function addToCart() {
         sessionStorage.setItem('guestCheckoutToken', guestToken)
       }
     }
+
+    trackAddToCart(product.value, quantity.value, price.value)
 
     const variantDescription = selectedVariant.value
       ? ` (${getVariantLength(selectedVariant.value)}${

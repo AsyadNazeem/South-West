@@ -1,5 +1,7 @@
 
 import { createRouter, createWebHistory } from 'vue-router'
+import { setPageMeta } from '@/composables/usePageMeta'
+import { rememberCampaignParams, trackPageView } from '@/services/analytics'
 
 const Login = () => import('@/pages/auth/Login.vue')
 const Register = () => import('@/pages/auth/Register.vue')
@@ -30,95 +32,95 @@ const routes = [
         path: '/shop',
         name: 'store-shop',
         component: StoreListing,
-        meta: { title: 'All Products' },
+        meta: { title: 'Shop products | South West Sri Lanka', description: 'Browse products available from South West, Sri Lanka.', index: true },
     },
     {
         path: '/offers',
         name: 'store-offers',
         component: StoreListing,
-        meta: { title: 'Special Offers' },
+        meta: { title: 'Special offers | South West Sri Lanka', description: 'Explore current offers and discounted products at South West.', index: true },
     },
     {
         path: '/categories',
         name: 'store-categories',
         component: Categories,
-        meta: { title: 'Categories' },
+        meta: { title: 'Shop by category | South West Sri Lanka', description: 'Explore product categories available from South West.', index: true },
     },
     {
         path: '/brands',
         name: 'store-brands',
         component: Brands,
-        meta: { title: 'Brands' },
+        meta: { title: 'Shop by brand | South West Sri Lanka', description: 'Browse brands available at South West online store.', index: true },
     },
 
     {
         path: '/',
         name: 'home',
         component: Home,
-        meta: { title: 'Home' },
+        meta: { title: 'South West | Online shopping in Sri Lanka', description: 'Shop products by category and brand at South West, Sri Lanka.', index: true },
     },
 {
     path: '/product/:productSlug',
     name: 'product-details',
     component: ProductDetails,
-    meta: { title: 'Product Details' },
+    meta: { title: 'Product details | South West Sri Lanka', description: 'View product details, price and availability at South West.', index: true },
     props: true,
 },
     {
         path: '/cart',
         name: 'customer-cart',
         component: Cart,
-        meta: { title: 'Shopping Cart' },
+        meta: { title: 'Shopping Cart', index: false, noAnalytics: true },
     },
     {
         path: '/checkout/address/:token?',
         name: 'guest-checkout-address',
         component: GuestCheckoutAddress,
-        meta: { title: 'Delivery Details' },
+        meta: { title: 'Delivery Details', index: false, noAnalytics: true },
     },
     {
         path: '/checkout/:token?',
         name: 'customer-checkout',
         component: Checkout,
-        meta: { title: 'Checkout' },
+        meta: { title: 'Checkout', index: false, noAnalytics: true },
     },
 
     {
         path: '/login',
         name: 'customer-login',
         component: Login,
-        meta: { title: 'Login' },
+    meta: { title: 'Login', index: false, noAnalytics: true },
     },
     {
     path: '/auth/google/callback',
     name: 'customer-google-callback',
     component: GoogleCallback,
-    meta: { title: 'Signing In' },
+    meta: { title: 'Signing In', index: false, noAnalytics: true },
 },
     {
         path: '/register',
         name: 'customer-register',
         component: Register,
-        meta: { title: 'Create Account' },
+    meta: { title: 'Create Account', index: false, noAnalytics: true },
     },
     {
         path: '/set-password',
         name: 'customer-set-password',
         component: SetPassword,
-        meta: { title: 'Set Password' },
+    meta: { title: 'Set Password', index: false, noAnalytics: true },
     },
     {
         path: '/verify-email',
         name: 'customer-verify-email',
         component: VerifyEmail,
-        meta: { title: 'Verify Email' },
+    meta: { title: 'Verify Email', index: false, noAnalytics: true },
     },
 
 
     {
         path: '/account',
         component: AccountLayout,
-        meta: { requiresCustomerAuth: true },
+        meta: { requiresCustomerAuth: true, index: false, noAnalytics: true },
         children: [
             {
                 path: '',
@@ -173,43 +175,43 @@ const routes = [
         path: '/contact',
         name: 'info-contact',
         component: InformationPage,
-        meta: { title: 'Contact Us' },
+        meta: { title: 'Contact South West | Sri Lanka', description: 'Find support information for South West orders and products.', index: true },
     },
     {
         path: '/faq',
         name: 'info-faq',
         component: InformationPage,
-        meta: { title: 'FAQs' },
+        meta: { title: 'FAQs | South West Sri Lanka', description: 'Answers to common questions about shopping with South West.', index: true },
     },
     {
         path: '/shipping',
         name: 'info-shipping',
         component: InformationPage,
-        meta: { title: 'Shipping Information' },
+        meta: { title: 'Shipping information | South West', description: 'Read delivery information for orders from South West.', index: true },
     },
     {
         path: '/returns',
         name: 'info-returns',
         component: InformationPage,
-        meta: { title: 'Returns & Refunds' },
+        meta: { title: 'Returns and refunds | South West', description: 'Information about returns and refunds at South West.', index: true },
     },
     {
         path: '/about',
         name: 'info-about',
         component: InformationPage,
-        meta: { title: 'About Us' },
+        meta: { title: 'About South West | Sri Lanka', description: 'Learn about the South West online store in Sri Lanka.', index: true },
     },
     {
         path: '/privacy-policy',
         name: 'info-privacy-policy',
         component: InformationPage,
-        meta: { title: 'Privacy Policy' },
+        meta: { title: 'Privacy policy | South West', description: 'Read the South West website privacy policy.', index: true },
     },
     {
         path: '/terms',
         name: 'info-terms',
         component: InformationPage,
-        meta: { title: 'Terms & Conditions' },
+        meta: { title: 'Terms and conditions | South West', description: 'Read the South West website terms and conditions.', index: true },
     },
 ]
 
@@ -222,8 +224,15 @@ const router = createRouter({
 })
 
 router.afterEach((to) => {
-    const pageTitle = to.meta.title || 'South West'
-    document.title = `${pageTitle} | South West`
+    const index = to.meta.index === true && !Object.keys(to.query || {}).length
+    setPageMeta({
+        title: to.meta.title || 'South West | Online Store',
+        description: to.meta.description,
+        path: to.path,
+        index,
+    })
+    rememberCampaignParams(to.fullPath.includes('?') ? to.fullPath.slice(to.fullPath.indexOf('?')) : '')
+    trackPageView(to)
 })
 
 export default router

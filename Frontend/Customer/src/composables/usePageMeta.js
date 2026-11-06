@@ -1,55 +1,42 @@
-// src/composables/usePageMeta.js
-// Sets <title>, description, robots, canonical, Open Graph and Twitter tags.
-// No dependency needed. If you later add SSR/prerendering, swap this for @unhead/vue.
-import { onMounted } from 'vue'
+const SITE_URL = 'https://southwest.lk'
+const DEFAULT_DESCRIPTION = 'Discover products from South West, Sri Lanka. Browse our online store by category and brand.'
 
-function upsertMeta(attr, key, content) {
-    let el = document.head.querySelector(`meta[${attr}="${key}"]`)
-    if (!el) {
-        el = document.createElement('meta')
-        el.setAttribute(attr, key)
-        document.head.appendChild(el)
-    }
-    el.setAttribute('content', content)
+function setMeta(selector, attr, key, content) {
+  if (content == null || content === '') return
+  let el = document.head.querySelector(selector)
+  if (!el) {
+    el = document.createElement('meta')
+    el.setAttribute(attr, key)
+    document.head.appendChild(el)
+  }
+  el.setAttribute('content', String(content))
 }
 
-function upsertCanonical(href) {
-    let el = document.head.querySelector('link[rel="canonical"]')
-    if (!el) {
-        el = document.createElement('link')
-        el.setAttribute('rel', 'canonical')
-        document.head.appendChild(el)
-    }
-    el.setAttribute('href', href)
+export function setPageMeta({ title = 'South West | Online Store', description = DEFAULT_DESCRIPTION, path = '/', index = true, image = '/SWShareImage.png', type = 'website' } = {}) {
+  const safePath = String(path || '/').split('?')[0]
+  const url = new URL(safePath.startsWith('/') ? safePath : `/${safePath}`, SITE_URL).href
+  document.title = title
+  setMeta('meta[name="description"]', 'name', 'description', description)
+  setMeta('meta[name="robots"]', 'name', 'robots', index ? 'index, follow' : 'noindex, nofollow')
+  setMeta('meta[property="og:type"]', 'property', 'og:type', type)
+  setMeta('meta[property="og:site_name"]', 'property', 'og:site_name', 'South West')
+  setMeta('meta[property="og:title"]', 'property', 'og:title', title)
+  setMeta('meta[property="og:description"]', 'property', 'og:description', description)
+  setMeta('meta[property="og:url"]', 'property', 'og:url', url)
+  setMeta('meta[property="og:image"]', 'property', 'og:image', new URL(image, SITE_URL).href)
+  setMeta('meta[name="twitter:card"]', 'name', 'twitter:card', 'summary_large_image')
+  setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', title)
+  setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', description)
+  setMeta('meta[name="twitter:image"]', 'name', 'twitter:image', new URL(image, SITE_URL).href)
+  let canonical = document.head.querySelector('link[rel="canonical"]')
+  if (!canonical) {
+    canonical = document.createElement('link')
+    canonical.rel = 'canonical'
+    document.head.appendChild(canonical)
+  }
+  canonical.href = url
 }
 
-export function usePageMeta({
-                                title,
-                                description,
-                                path = window.location.pathname,
-                                index = true,
-                                siteName = 'South-West',
-                                image = '',
-                            }) {
-    onMounted(() => {
-        const url = `${window.location.origin}${path}`
-
-        document.title = title
-        upsertMeta('name', 'description', description)
-        upsertMeta('name', 'robots', index ? 'index, follow' : 'noindex, follow')
-        upsertMeta('name', 'theme-color', '#263b55')
-        upsertCanonical(url)
-
-        upsertMeta('property', 'og:type', 'website')
-        upsertMeta('property', 'og:site_name', siteName)
-        upsertMeta('property', 'og:title', title)
-        upsertMeta('property', 'og:description', description)
-        upsertMeta('property', 'og:url', url)
-        if (image) upsertMeta('property', 'og:image', image)
-
-        upsertMeta('name', 'twitter:card', image ? 'summary_large_image' : 'summary')
-        upsertMeta('name', 'twitter:title', title)
-        upsertMeta('name', 'twitter:description', description)
-        if (image) upsertMeta('name', 'twitter:image', image)
-    })
+export function usePageMeta(options) {
+  setPageMeta(options)
 }

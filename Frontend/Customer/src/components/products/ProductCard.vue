@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { analyticsItem, trackAddToCart, trackEvent } from '@/services/analytics'
 import {
   getMediaUrl,
   getResponsiveImageSrcSet,
@@ -57,6 +58,11 @@ const image = computed(() => {
 })
 
 const imageFailed = ref(false)
+
+function trackSelectItem() {
+  const item = analyticsItem(props.product)
+  trackEvent('select_item', { item_list_name: route.path === '/offers' ? 'Special Offers' : 'Product Listing', items: [item] })
+}
 
 watch(() => image.value.src, () => {
   imageFailed.value = false
@@ -297,6 +303,7 @@ async function handleAddToCart() {
     }
 
     cartState.value = 'added'
+    try { trackAddToCart(props.product, 1) } catch { /* Analytics must not affect cart updates. */ }
     showToast('Added to cart')
 
     clearTimeout(cartTimer)
@@ -326,7 +333,7 @@ onBeforeUnmount(() => {
 <template>
   <li class="product-card" :class="{ 'is-out': !inStock, 'is-list': layout === 'list' }">
     <div class="image-wrap">
-      <RouterLink :to="link" class="image-link" :aria-label="`View ${name}`">
+      <RouterLink :to="link" class="image-link" :aria-label="`View ${name}`" @click="trackSelectItem">
         <img
           v-if="image.src && !imageFailed"
           :src="image.src"
@@ -425,7 +432,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <RouterLink :to="link" class="card-link">
+    <RouterLink :to="link" class="card-link" @click="trackSelectItem">
       <div class="body">
         <p v-if="product.brand" class="brand">{{ product.brand }}</p>
         <h3 class="name">{{ name }}</h3>

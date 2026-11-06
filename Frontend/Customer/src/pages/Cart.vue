@@ -6,6 +6,7 @@ import {
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import { analyticsItem, trackEvent } from '@/services/analytics'
 
 const router = useRouter()
 
@@ -264,6 +265,10 @@ async function loadCart() {
         })
 
     setCartResponse(response.data)
+    try {
+      const items = cartItems.value.map(item => analyticsItem(getProduct(item), getQuantity(item)))
+      trackEvent('view_cart', { currency: 'LKR', value: cartItems.value.reduce((total, item) => total + (Number(getProduct(item).price ?? getProduct(item).selling_price) || 0) * getQuantity(item), 0), items })
+    } catch { /* Analytics must not affect cart loading. */ }
   } catch (err) {
     if (
       !customerToken &&
@@ -355,6 +360,10 @@ async function removeItem(item) {
       })
     }
 
+    const removedProduct = getProduct(item)
+    try {
+      trackEvent('remove_from_cart', { currency: 'LKR', value: (Number(removedProduct.price ?? removedProduct.selling_price) || 0) * getQuantity(item), items: [analyticsItem(removedProduct, getQuantity(item))] })
+    } catch { /* Analytics must not affect cart updates. */ }
     await loadCart()
     notice.value = 'Item removed from your cart.'
   } catch (err) {

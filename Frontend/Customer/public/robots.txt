@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /account
+Disallow: /cart
+Disallow: /checkout
+Disallow: /login
+Disallow: /register
+Disallow: /set-password
+Disallow: /verify-email
+
+Sitemap: https://southwest.lk/sitemap.xml

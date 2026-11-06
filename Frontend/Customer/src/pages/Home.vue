@@ -9,6 +9,7 @@ import ProductSort from '@/components/products/ProductSort.vue'
 import HomeCategory from '@/components/home/HomeCategory.vue'
 import HomeBrand from '@/components/home/HomeBrand.vue'
 import HomeDiscount from '@/components/home/HomeDiscount.vue'
+import { organizationSchema, setStructuredData, websiteSchema } from '@/utils/structuredData'
 
 const route = useRoute()
 const router = useRouter()
@@ -498,6 +499,8 @@ watch(
   { immediate: true }
 )
 onMounted(() => {
+  setStructuredData('organization', organizationSchema())
+  setStructuredData('website', websiteSchema())
   restoreView()
   loadProducts()
   loadFilterOptions()
@@ -507,6 +510,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     stopBannerRotation()
+    setStructuredData('organization', null)
+    setStructuredData('website', null)
 })
 </script>
 

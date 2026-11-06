@@ -2,6 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { analyticsItem, trackEventOncePerSession, trackPurchaseOnce } from '@/services/analytics'
 import CheckoutAddressForm from '@/components/CheckoutAddressForm.vue'
 
 const route = useRoute()
@@ -212,6 +213,46 @@ const cartItems = computed(() => {
     []
   return Array.isArray(items) ? items : []
 })
+
+function getCheckoutAnalyticsItems() {
+  const source = quote.value?.items?.length ? quote.value.items : cartItems.value
+  return source.map(line => {
+    const product = line.item || line.Item || line.product || line.Product || line
+    return analyticsItem(product, line.quantity ?? line.qty ?? 1)
+  }).filter(item => item.item_id && item.quantity > 0)
+}
+
+function checkoutItemsIdentity(items) {
+  const identity = items.map(item => ({ item_id: item.item_id, quantity: item.quantity }))
+    .sort((left, right) => left.item_id.localeCompare(right.item_id) || left.quantity - right.quantity)
+  return JSON.stringify(identity)
+}
+
+function trackCheckoutStartAndShipping() {
+  const items = getCheckoutAnalyticsItems()
+  if (!items.length) return
+
+  const identity = checkoutItemsIdentity(items)
+  const itemValue = items.reduce((sum, item) => sum + (Number(item.price) || 0) * item.quantity, 0)
+  const quotedSubtotal = Number(quote.value?.subtotal)
+  const value = Number.isFinite(quotedSubtotal) ? quotedSubtotal : itemValue
+
+  trackEventOncePerSession('begin_checkout', `items:${identity}`, {
+    currency: 'LKR',
+    value,
+    items,
+  })
+
+  const shippingAmount = Number(quote.value?.shipping_amount)
+  if (quote.value && Number.isFinite(shippingAmount) && shippingAmount >= 0) {
+    trackEventOncePerSession('add_shipping_info', `items:${identity}|shipping:${shippingAmount}`, {
+      currency: 'LKR',
+      value,
+      shipping: shippingAmount,
+      items,
+    })
+  }
+}
 
 const cartReady = computed(() => {
   if (isGuest.value) {
@@ -463,6 +504,7 @@ if (!cartReady.value) return
     }
 
     quote.value = result
+    try { trackCheckoutStartAndShipping() } catch { /* Analytics must not affect checkout quotes. */ }
   } catch (err) {
     if (requestNumber !== quoteRequestNumber) return
 
@@ -708,6 +750,7 @@ async function loadCheckout() {
         await router.replace('/cart')
         return
       }
+
     }
 
     await refreshQuote()
@@ -801,6 +844,19 @@ async function placeOrder() {
 }
 
   submitting.value = true
+
+  try {
+    const checkoutItems = getCheckoutAnalyticsItems()
+    if (checkoutItems.length && paymentMethod.value?.value) {
+      const identity = checkoutItemsIdentity(checkoutItems)
+      trackEventOncePerSession('add_payment_info', `items:${identity}|payment:${paymentMethod.value.value}`, {
+        currency: 'LKR',
+        value: Number(quote.value?.total_amount) || 0,
+        payment_type: String(paymentMethod.value.value).slice(0, 50),
+        items: checkoutItems,
+      })
+    }
+  } catch { /* Analytics must not affect order submission. */ }
 
   // Keep the same key for a retry after an uncertain network result.
   if (!idempotencyKey.value) {
@@ -931,6 +987,19 @@ const payload = {
       total_amount:
         createdOrder.total_amount ?? quote.value?.total_amount
     }
+
+    try {
+      const purchaseItems = confirmationItems.value.map(item => {
+        const product = item.item || item.Item || item.product || item.Product || item
+        return analyticsItem(product, item.quantity || item.qty || 1)
+      }).filter(item => item.item_id && item.quantity > 0)
+      const total = Number(order.value.total_amount)
+      trackPurchaseOnce(createdOrder.id || createdOrder.order_number, {
+        currency: 'LKR',
+        value: Number.isFinite(total) ? total : undefined,
+        items: purchaseItems,
+      })
+    } catch { /* Analytics must not affect successful order confirmation. */ }
 
     notice.value =
       responseData?.message || 'Your order was placed successfully.'

@@ -1,9 +1,11 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
 import ProductGrid from '@/components/products/ProductGrid.vue'
 import ProductSort from '@/components/products/ProductSort.vue'
+import { analyticsItem, trackEvent } from '@/services/analytics'
+import { itemListSchema, setStructuredData } from '@/utils/structuredData'
 
 const route = useRoute()
 const products = ref([])
@@ -16,6 +18,7 @@ const sortBy = ref('relevance')
 const hasMore = ref(false)
 const nextCursor = ref(null)
 const shuffleSeed = ref(null)
+let latestLoadId = 0
 
 const selectedCategoryId = computed(() => {
   const value = Number(route.query.category)
@@ -63,7 +66,31 @@ const description = computed(() => isOffers.value
 
 const visibleProducts = computed(() => products.value)
 
+function getStructuredProductPath(product) {
+  const slug = String(product?.slug || '').trim()
+  const publicId = String(product?.public_id || '').trim()
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(slug)) return ''
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(publicId)) return ''
+  return `/product/${slug}-${publicId}`
+}
+
+function updateItemListSchema() {
+  const seen = new Set()
+  const entries = products.value.flatMap(product => {
+    const path = getStructuredProductPath(product)
+    const id = String(product?.public_id || '')
+    if (!path || !id || seen.has(id)) return []
+    seen.add(id)
+    return [{
+      name: product.item_name || product.name || product.product_name || '',
+      path,
+    }]
+  })
+  setStructuredData('item-list', itemListSchema(entries))
+}
+
 async function loadProducts(reset = true) {
+  const requestId = reset ? ++latestLoadId : latestLoadId
   if (reset) {
     products.value = []
     nextCursor.value = null
@@ -71,6 +98,7 @@ async function loadProducts(reset = true) {
     hasMore.value = false
     loading.value = true
     error.value = ''
+    setStructuredData('item-list', null)
   } else {
     if (loading.value || loadingMore.value || !hasMore.value) return
     loadingMore.value = true
@@ -99,6 +127,7 @@ async function loadProducts(reset = true) {
     if (isOffers.value) params.offers = 1
 
     const response = await api.get('/store/products', { params })
+    if (requestId !== latestLoadId) return
     const payload = response.data
     const list = Array.isArray(payload?.data) ? payload.data : null
 
@@ -127,28 +156,39 @@ async function loadProducts(reset = true) {
 
     if (reset) {
       products.value = mappedProducts
+      trackEvent('view_item_list', {
+        item_list_name: isOffers.value ? 'Special Offers' : 'All Products',
+        items: mappedProducts.map(product => analyticsItem(product)),
+      })
     } else {
       const existingIds = new Set(
-        products.value.map(product => String(product.id))
+        products.value.map(product => String(product.public_id || product.id))
       )
 
-      products.value.push(
-        ...mappedProducts.filter(
-          product => !existingIds.has(String(product.id))
-        )
-      )
+      products.value.push(...mappedProducts.filter(product => {
+        const id = String(product.public_id || product.id || '')
+        if (!id || existingIds.has(id)) return false
+        existingIds.add(id)
+        return true
+      }))
     }
+
+    updateItemListSchema()
 
     shuffleSeed.value = payload.pagination.seed
     nextCursor.value = payload.pagination.nextCursor
     hasMore.value = Boolean(payload.pagination.hasMore)
   } catch (err) {
-    error.value = err.response?.data?.message ||
-      err.message ||
-      'Please try again later.'
+    if (requestId === latestLoadId) {
+      error.value = err.response?.data?.message ||
+        err.message ||
+        'Please try again later.'
+    }
   } finally {
-    loading.value = false
-    loadingMore.value = false
+    if (requestId === latestLoadId) {
+      loading.value = false
+      loadingMore.value = false
+    }
   }
 }
 
@@ -178,6 +218,8 @@ onMounted(async () => {
   await loadCategories()
   await loadProducts(true)
 })
+
+onBeforeUnmount(() => setStructuredData('item-list', null))
 </script>
 
 <template>
