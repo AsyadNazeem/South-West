@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const {
     getEligibleProductPage,
+    getEligibleBrandIds,
 } = require('../utils/storeProductListingQuery');
 
 const SEED = 'abcdef0123456789abcdef0123456789';
@@ -105,4 +106,60 @@ test('rejects invalid shuffle seeds before querying', async () => {
     );
 
     assert.equal(queried, false);
+});
+
+test('top-rated listing ranks eligible items by approved rating and review count with a bounded page', async () => {
+    let captured;
+    const rankedRows = [
+        { id: 8, rating: 5, review_count: 4 },
+        { id: 3, rating: 5, review_count: 2 },
+        { id: 12, rating: 4, review_count: 1 },
+    ];
+    const sequelize = {
+        async query(sql, options) {
+            captured = { sql, options };
+            return rankedRows;
+        },
+    };
+
+    const rows = await getEligibleProductPage({
+        sequelize,
+        seed: SEED,
+        limit: 12,
+        sort: 'top_rated',
+        filters: { minRating: 4 },
+    });
+
+    assert.deepEqual(rows, rankedRows);
+    assert.match(captured.sql, /INNER JOIN \([\s\S]*AVG\(rating\)[\s\S]*COUNT\(\*\)[\s\S]*FROM product_reviews[\s\S]*WHERE status = 'approved'/);
+    assert.match(captured.sql, /approved_review_summary\.rating >= :minRating/);
+    assert.match(captured.sql, /ORDER BY approved_review_summary\.rating DESC, approved_review_summary\.review_count DESC, items\.id ASC/);
+    assert.doesNotMatch(captured.sql, /LEFT JOIN/);
+    assert.equal(captured.options.replacements.minRating, 4);
+    assert.equal(captured.options.replacements.limit, 13);
+    assert.equal(rows.some(row => row.rating == null), false);
+});
+
+test('eligible brand ids use the same active-product and current selling-price rules as the storefront listing', async () => {
+    let captured;
+    const sequelize = {
+        async query(sql, options) {
+            captured = { sql, options };
+            return [{ brand_id: 4 }, { brand_id: 9 }];
+        },
+    };
+
+    const ids = await getEligibleBrandIds({ sequelize, now: new Date('2026-11-07T00:00:00Z') });
+
+    assert.deepEqual(ids, [4, 9]);
+    assert.match(captured.sql, /SELECT DISTINCT items\.brand_id/);
+    assert.match(captured.sql, /items\.is_active = 1/);
+    assert.match(captured.sql, /items\.brand_id IS NOT NULL/);
+    assert.match(captured.sql, /item_variants AS active_variants[\s\S]*active_variants\.is_active = 1/);
+    assert.match(captured.sql, /candidate\.price_type = 'selling'/);
+    assert.match(captured.sql, /candidate\.currency = 'LKR'/);
+    assert.match(captured.sql, /candidate\.is_active = 1/);
+    assert.match(captured.sql, /candidate\.effective_from <= :now/);
+    assert.match(captured.sql, /candidate\.effective_to >= :now/);
+    assert.equal(captured.options.replacements.now.toISOString(), '2026-11-07T00:00:00.000Z');
 });

@@ -65,9 +65,18 @@ async function authenticate(req, res, next) {
 
                 // Only server-observed authenticated activity may refresh the
                 // idle timeout. Never trust a timestamp supplied by the client.
-                await session.update(
-                    { updated_at: new Date(now) },
-                    { transaction, silent: true }
+                // Use SQL directly because Sequelize instance updates are not
+                // persisting updated_at for this model.
+                await sequelize.query(
+                    `UPDATE user_sessions
+                     SET updated_at = NOW()
+                     WHERE id = :sessionId`,
+                    {
+                        replacements: {
+                            sessionId: session.id
+                        },
+                        transaction
+                    }
                 );
 
                 return {

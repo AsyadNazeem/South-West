@@ -748,13 +748,12 @@ onBeforeUnmount(() => {
           @select-category="selectCategory"
         />
 
-<HomeBrand :products="products" />
+<HomeBrand />
 
 
 <HomeDiscount
   v-if="
     !loading &&
-    !error &&
     activeCategory === 'All Products'
   "
   :products="products"

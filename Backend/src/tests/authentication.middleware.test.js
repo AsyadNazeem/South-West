@@ -48,7 +48,10 @@ function createAdminMiddleware({
     const calls = {
         verify: 0,
         session: 0,
-        user: 0
+        user: 0,
+        activityUpdate: 0,
+        activitySql: null,
+        activityQueryOptions: null
     };
 
     const middleware = proxyquire('../middleware/authMiddleware', {
@@ -66,6 +69,16 @@ function createAdminMiddleware({
                     return callback({
                         LOCK: this.LOCK
                     });
+                },
+                async query(sql, options) {
+                    calls.activityUpdate++;
+                    calls.activitySql = sql;
+                    calls.activityQueryOptions = options;
+
+                    assert.match(sql, /NOW\(\)/i);
+                    session.updated_at = new Date();
+
+                    return [[], {}];
                 }
             },
             User: {
@@ -231,6 +244,7 @@ test('Admin auth: accepts a valid token and active session', async () => {
 
 test('Admin auth: server-observed activity refreshes session activity', async () => {
     const now = Date.now();
+
     const session = {
         id: 1,
         updated_at: new Date(now - 60 * 1000),
@@ -239,17 +253,24 @@ test('Admin auth: server-observed activity refreshes session activity', async ()
         }
     };
 
-    const { middleware } = createAdminMiddleware({ session });
+    const { middleware, calls } = createAdminMiddleware({ session });
     const res = createResponse();
     let nextCalled = false;
 
     await middleware(
-        createRequest('Bearer valid-token', now + 5 * 60 * 1000),
+        createRequest('Bearer valid-token'),
         res,
         () => { nextCalled = true; }
     );
 
     assert.equal(nextCalled, true);
+    assert.equal(calls.activityUpdate, 1);
+    assert.match(calls.activitySql, /UPDATE user_sessions/i);
+    assert.ok(calls.activityQueryOptions.transaction);
+    assert.equal(
+        calls.activityQueryOptions.replacements.sessionId,
+        session.id
+    );
     assert.ok(new Date(session.updated_at).getTime() >= now);
     assert.ok(new Date(session.updated_at).getTime() <= Date.now());
 });

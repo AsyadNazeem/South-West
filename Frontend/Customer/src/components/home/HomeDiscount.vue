@@ -1,6 +1,7 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import ProductCard from '@/components/products/ProductCard.vue'
+import api from '@/services/api'
 
 const props = defineProps({
   products: {
@@ -9,9 +10,29 @@ const props = defineProps({
   }
 })
 
-console.log('HomeDiscount products:', props.products)
-
 const RAIL_SIZE = 12
+const topRatedProducts = ref([])
+const topRatedLoading = ref(true)
+const topRatedError = ref(false)
+
+async function loadTopRatedProducts() {
+  topRatedLoading.value = true
+  topRatedError.value = false
+  try {
+    const response = await api.get('/store/products/top-rated', { params: { limit: RAIL_SIZE } })
+    const payload = response.data
+    topRatedProducts.value = Array.isArray(payload?.data) ? payload.data : []
+    if (!Array.isArray(payload?.data)) throw new Error('Unexpected top-rated product response.')
+  } catch (error) {
+    console.error('Failed to load top-rated products:', error)
+    topRatedProducts.value = []
+    topRatedError.value = true
+  } finally {
+    topRatedLoading.value = false
+  }
+}
+
+onMounted(loadTopRatedProducts)
 
 
 function productPrice(product) {
@@ -83,22 +104,16 @@ const discountCampaignRails = computed(() => {
   }))
 })
 
-// Keep the top-rated section as a separate optional rail.
-const topRatedProducts = computed(() =>
-  props.products
-    .filter(product => Number(product.rating) >= 4)
-    .sort((a, b) => Number(b.rating) - Number(a.rating))
-    .slice(0, RAIL_SIZE)
-)
-
 const rails = computed(() => [
   ...discountCampaignRails.value,
-  ...(topRatedProducts.value.length
+  ...(topRatedProducts.value.length || topRatedLoading.value || topRatedError.value
     ? [{
         key: 'top-rated',
         title: 'Top rated',
         subtitle: 'Highest customer ratings',
-        products: topRatedProducts.value
+        products: topRatedProducts.value,
+        loading: topRatedLoading.value,
+        error: topRatedError.value,
       }]
     : [])
 ])
@@ -160,7 +175,13 @@ function scrollRail(event, direction) {
         </div>
       </div>
 
-      <ul class="product-rail">
+      <p v-if="rail.loading" class="rail-message" role="status">
+        Loading top rated products...
+      </p>
+      <p v-else-if="rail.error" class="rail-message" role="status">
+        Top rated products are temporarily unavailable.
+      </p>
+      <ul v-else class="product-rail">
         <ProductCard
           v-for="(product, index) in rail.products"
           :key="productKey(product, index)"
@@ -239,6 +260,13 @@ function scrollRail(event, direction) {
   list-style: none;
   scroll-snap-type: x mandatory;
   scrollbar-width: thin;
+}
+
+.rail-message {
+  margin: 0;
+  padding: 20px 4px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
 }
 
 .product-rail > * {

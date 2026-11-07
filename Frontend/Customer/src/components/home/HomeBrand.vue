@@ -5,16 +5,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 
-const props = defineProps({
-  products: {
-    type: Array,
-    default: () => []
-  }
-})
-
 const router = useRouter()
 const brands = ref([])
-const loading = ref(false)
+const loading = ref(true)
+const loadError = ref(false)
 const showAll = ref(false)
 const failedBrandImages = ref(new Set())
 
@@ -27,32 +21,10 @@ import {
   getResponsiveImageUrl,
 } from '@/utils/mediaUrl'
 
-// Get brand IDs that have at least one available product.
-const productBrandIds = computed(() => {
-  return new Set(
-    props.products
-      .map(product =>
-        product.brand_id ??
-        product.brandId ??
-        product.brand?.id ??
-        product.Brand?.id
-      )
-      .filter(id => id !== null && id !== undefined)
-      .map(id => String(id))
-  )
-})
-
-// Only display brands that have products.
-const brandsWithProducts = computed(() =>
-  brands.value.filter(brand =>
-    productBrandIds.value.has(String(brand.id))
-  )
-)
-
 const visibleBrands = computed(() =>
   showAll.value
-    ? brandsWithProducts.value
-    : brandsWithProducts.value.slice(0, 10)
+    ? brands.value
+    : brands.value.slice(0, 20)
 )
 
 function getBrandImage(brand) {
@@ -69,6 +41,7 @@ function getBrandImage(brand) {
 
 async function loadBrands() {
   loading.value = true
+  loadError.value = false
 
   try {
     const response = await api.get('/store/brands')
@@ -90,6 +63,7 @@ async function loadBrands() {
   } catch (error) {
     console.error('Failed to load brands:', error)
     brands.value = []
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -108,7 +82,7 @@ onMounted(loadBrands)
 
 <template>
 <section
-  v-if="brandsWithProducts.length || loading"
+  v-if="brands.length || loading || loadError"
     class="brand-section"
     aria-labelledby="homepage-brands-title"
   >
@@ -118,22 +92,16 @@ onMounted(loadBrands)
         <p>Shop your favourite brands</p>
       </div>
 
-      <button
-v-if="brandsWithProducts.length > 10"
-        type="button"
-        class="view-all-brands"
-        @click="showAll = !showAll"
-      >
-        {{ showAll ? 'Show less' : 'View all' }}
-        <span aria-hidden="true">{{ showAll ? '↑' : '→' }}</span>
-      </button>
     </div>
 
     <p v-if="loading && !brands.length" class="brands-loading">
       Loading brands...
     </p>
+    <p v-else-if="loadError" class="brands-loading" role="status">
+      Brands are temporarily unavailable.
+    </p>
 
-    <div v-else class="brand-grid">
+    <div v-else id="homepage-brand-grid" class="brand-grid">
       <button
         v-for="brand in visibleBrands"
         :key="brand.id"
@@ -158,6 +126,18 @@ v-if="brandsWithProducts.length > 10"
         </div>
       </button>
     </div>
+
+    <button
+      v-if="brands.length > 20 && !showAll"
+      type="button"
+      class="view-all-brands"
+      aria-controls="homepage-brand-grid"
+      :aria-expanded="showAll"
+      @click="showAll = true"
+    >
+      Show More
+      <span aria-hidden="true">→</span>
+    </button>
   </section>
 </template>
 
@@ -189,9 +169,12 @@ v-if="brandsWithProducts.length > 10"
 }
 
 .view-all-brands {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  width: fit-content;
   gap: 8px;
+  margin: var(--space-4) auto 0;
   padding: 9px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);

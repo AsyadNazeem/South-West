@@ -124,7 +124,11 @@ test('store category and brand APIs add metadata without changing base URLs', as
         '../utils/fileStorage': fileStorage,
     });
     const brandController = proxyquire('../controllers/storeBrandController', {
-        '../models': { Brand: { async findAll() { return [{ id: 2, name: 'Brand', image_url: brandPath }]; } } },
+        '../models': {
+            Brand: { async findAll() { return [{ id: 2, name: 'Brand', image_url: brandPath }]; } },
+            sequelize: {},
+        },
+        '../utils/storeProductListingQuery': { getEligibleBrandIds: async () => [2] },
         '../utils/fileStorage': fileStorage,
     });
 

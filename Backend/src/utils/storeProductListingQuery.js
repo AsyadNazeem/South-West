@@ -128,6 +128,7 @@ async function getEligibleProductPage({
     sort = 'relevance',
     campaigns = [],
 }) {
+    const topRated = sort === 'top_rated';
     const scoreExpression = getShuffleScoreExpression(seed).val;
 
     const replacements = {
@@ -218,7 +219,7 @@ async function getEligibleProductPage({
         conditions.push(`AND (${discountedPrice}) <= :maxPrice`);
     }
 
-    if (filters.minRating !== null && Number.isFinite(filters.minRating)) {
+    if (!topRated && filters.minRating !== null && Number.isFinite(filters.minRating)) {
         replacements.minRating = filters.minRating;
         conditions.push(`
             AND (
@@ -276,6 +277,10 @@ async function getEligibleProductPage({
     }
 
     const sortOptions = {
+        top_rated: {
+            expression: 'approved_review_summary.rating',
+            direction: 'DESC',
+        },
         relevance: {
             expression: 'shuffle_score',
             direction: 'ASC',
@@ -298,7 +303,9 @@ async function getEligibleProductPage({
     const usesSortValue = sort === 'price_asc' || sort === 'price_desc';
     const usesNameValue = sort === 'name_asc';
 
-    const orderBy = usesSortValue
+    const orderBy = topRated
+        ? 'approved_review_summary.rating DESC, approved_review_summary.review_count DESC, items.id ASC'
+        : usesSortValue
         ? `sort_value ${selectedSort.direction}, shuffle_score ASC, items.id ASC`
         : usesNameValue
             ? 'items.item_name ASC, shuffle_score ASC, items.id ASC'
@@ -364,15 +371,32 @@ async function getEligibleProductPage({
         }
     }
 
+    const approvedReviewJoin = topRated ? `
+        INNER JOIN (
+            SELECT item_id, AVG(rating) AS rating, COUNT(*) AS review_count
+            FROM product_reviews
+            WHERE status = 'approved'
+            GROUP BY item_id
+        ) AS approved_review_summary
+            ON approved_review_summary.item_id = items.id
+    ` : '';
+    const topRatedCondition = topRated
+        ? 'AND approved_review_summary.rating >= :minRating'
+        : '';
+    if (topRated) replacements.minRating = Number.isFinite(filters.minRating) ? filters.minRating : 4;
+
     const sql = `
         SELECT
             items.id,
-            ${scoreExpression} AS shuffle_score,
+            ${topRated ? 'NULL' : scoreExpression} AS shuffle_score,
             ${usesSortValue ? discountedPrice : usesNameValue ? 'items.item_name' : 'NULL'} AS sort_value
+            ${topRated ? ', approved_review_summary.rating AS rating, approved_review_summary.review_count AS review_count' : ''}
         FROM items
+        ${approvedReviewJoin}
         WHERE
             items.is_active = 1
             AND (${basePrice}) IS NOT NULL
+            ${topRatedCondition}
             ${conditions.join('\n')}
             ${cursorCondition}
         ORDER BY ${orderBy}
@@ -385,6 +409,25 @@ async function getEligibleProductPage({
     });
 }
 
+async function getEligibleBrandIds({ sequelize, now = new Date() }) {
+    const replacements = { now };
+    const { basePrice } = buildListingExpressions([], replacements);
+    const sql = `
+        SELECT DISTINCT items.brand_id
+        FROM items
+        WHERE items.is_active = 1
+          AND items.brand_id IS NOT NULL
+          AND (${basePrice}) IS NOT NULL
+        ORDER BY items.brand_id ASC
+    `;
+    const rows = await sequelize.query(sql, {
+        replacements,
+        type: QueryTypes.SELECT,
+    });
+    return rows.map(row => row.brand_id).filter(id => id !== null && id !== undefined);
+}
+
 module.exports = {
     getEligibleProductPage,
+    getEligibleBrandIds,
 };

@@ -46,7 +46,7 @@ const {
     getResponsiveImageMetadata,
 } = require('../utils/fileStorage');
 
-async function getStoreProducts(req, res) {
+async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
     try {
         const now = new Date();
 
@@ -59,6 +59,7 @@ async function getStoreProducts(req, res) {
             : null;
 
         let pagination = null;
+        let topRatedSummaries = new Map();
         let selectedIds = Array.isArray(req._storeProductIds)
             ? req._storeProductIds.map(String)
             : null;
@@ -104,9 +105,11 @@ async function getStoreProducts(req, res) {
                 offers: req.query.offers === '1',
             };
 
-            const sort = ['relevance', 'name_asc', 'price_asc', 'price_desc'].includes(req.query.sort)
-                ? req.query.sort
-                : 'relevance';
+            const sort = topRatedMode
+                ? 'top_rated'
+                : ['relevance', 'name_asc', 'price_asc', 'price_desc'].includes(req.query.sort)
+                    ? req.query.sort
+                    : 'relevance';
 
             const queryHash = createQueryFingerprint({
                 filters,
@@ -146,24 +149,31 @@ async function getStoreProducts(req, res) {
                 : pageRows;
 
             selectedIds = currentPage.map(row => String(row.id));
+            if (topRatedMode) {
+                topRatedSummaries = new Map(currentPage.map(row => [String(row.id), {
+                    rating: Number(row.rating),
+                    count: Number(row.review_count),
+                }]));
+            }
 
-            const lastRow = currentPage[currentPage.length - 1];
-
-            pagination = {
-                limit,
-                seed,
-                hasMore,
-                nextCursor: hasMore && lastRow
-                    ? createCursor(
-                        lastRow.shuffle_score,
-                        String(lastRow.id),
-                        seed,
-                        queryHash,
-                        undefined,
-                        lastRow.sort_value
-                    )
-                    : null,
-            };
+            if (!topRatedMode) {
+                const lastRow = currentPage[currentPage.length - 1];
+                pagination = {
+                    limit,
+                    seed,
+                    hasMore,
+                    nextCursor: hasMore && lastRow
+                        ? createCursor(
+                            lastRow.shuffle_score,
+                            String(lastRow.id),
+                            seed,
+                            queryHash,
+                            undefined,
+                            lastRow.sort_value
+                        )
+                        : null,
+                };
+            }
         }
 
         // Only active products are publicly visible.
@@ -273,7 +283,7 @@ async function getStoreProducts(req, res) {
                 success: true,
                 message: 'Store products retrieved successfully',
                 data: [],
-                ...(paginationEnabled ? {
+                ...(paginationEnabled && !topRatedMode ? {
                     pagination: {
                         ...pagination,
                         hasMore: false,
@@ -393,13 +403,15 @@ async function getStoreProducts(req, res) {
             ],
         });
 
-        const reviewsPromise = ProductReview.findAll({
-            where: {
-                item_id: { [Op.in]: ids },
-                status: 'approved',
-            },
-            attributes: ['item_id', 'rating'],
-        });
+        const reviewsPromise = topRatedMode
+            ? Promise.resolve([])
+            : ProductReview.findAll({
+                where: {
+                    item_id: { [Op.in]: ids },
+                    status: 'approved',
+                },
+                attributes: ['item_id', 'rating'],
+            });
 
         // All three queries use the already-loaded item/variant ids and are
         // independent, so run them together instead of serializing DB latency.
@@ -498,7 +510,9 @@ async function getStoreProducts(req, res) {
         }
 
         // Only approved reviews contribute to customer ratings.
-        const ratingByItem = new Map();
+        const ratingByItem = topRatedMode
+            ? topRatedSummaries
+            : new Map();
 
         for (const review of reviews) {
             const key = String(review.item_id);
@@ -641,9 +655,7 @@ currency: currentPrice?.currency || 'LKR',
 in_stock: availableQuantity > 0,
 available_quantity: availableQuantity,
                     rating: rating
-                        ? Number(
-                            (rating.total / rating.count).toFixed(2)
-                        )
+                        ? Number((topRatedMode ? rating.rating : rating.total / rating.count).toFixed(2))
                         : null,
                     review_count: rating?.count || 0,
                     color: colourSpec?.value || null,
@@ -658,7 +670,7 @@ available_quantity: availableQuantity,
             success: true,
             message: 'Store products retrieved successfully',
             data,
-            ...(paginationEnabled ? { pagination } : {}),
+            ...(paginationEnabled && !topRatedMode ? { pagination } : {}),
         });
     } catch (error) {
        console.error('Get store products failed:', error)
@@ -667,6 +679,26 @@ available_quantity: availableQuantity,
             message: 'Unable to retrieve store products',
         });
     }
+}
+
+function parseTopRatedLimit(value) {
+    if (value === undefined || value === null || value === '') return 12;
+    if (!/^\d+$/.test(String(value))) return 12;
+    const requested = Number(value);
+    if (!Number.isSafeInteger(requested) || requested < 1) return 12;
+    return Math.min(requested, 25);
+}
+
+async function getTopRatedStoreProducts(req, res) {
+    const limit = parseTopRatedLimit(req.query?.limit);
+    return getStoreProducts({
+        ...req,
+        query: {
+            paginate: '1',
+            limit: String(limit),
+            minRating: '4',
+        },
+    }, res, { topRatedMode: true });
 }
 
 
@@ -1161,6 +1193,7 @@ color: colors[0] || null,
 
 module.exports = {
     getStoreProducts,
+    getTopRatedStoreProducts,
     getRelatedStoreProducts,
     getStoreProductFilters,
     getStoreProductVariants,

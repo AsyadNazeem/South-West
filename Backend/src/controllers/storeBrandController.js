@@ -1,11 +1,15 @@
-const { Brand } = require('../models');
+const { Op } = require('sequelize');
+const { Brand, sequelize } = require('../models');
 const { getResponsiveImageMetadata } = require('../utils/fileStorage');
+const { getEligibleBrandIds } = require('../utils/storeProductListingQuery');
 
 const getStoreBrands = async (req, res) => {
     try {
+        const eligibleBrandIds = await getEligibleBrandIds({ sequelize });
         const brands = await Brand.findAll({
             where: {
-                is_active: true
+                is_active: true,
+                id: { [Op.in]: eligibleBrandIds },
             },
             attributes: [
                 'id',
