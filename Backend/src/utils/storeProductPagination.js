@@ -52,6 +52,39 @@ function createQueryFingerprint(query) {
         .digest('hex');
 }
 
+function createStoreProductQueryFingerprint({
+    filters,
+    sort,
+    campaigns = [],
+    imageItemIds = [],
+}) {
+    const campaignFingerprint = campaigns
+        .map(campaign => ({
+            target_type: campaign.target_type,
+            discount_type: campaign.discount_type,
+            discount_value: String(campaign.discount_value),
+            itemIds: (campaign.campaignItems || [])
+                .map(row => String(row.item_id))
+                .sort(),
+            categoryIds: (campaign.campaignCategories || [])
+                .map(row => String(row.category_id))
+                .sort(),
+            brandIds: (campaign.campaignBrands || [])
+                .map(row => String(row.brand_id))
+                .sort(),
+        }))
+        .sort((a, b) =>
+            JSON.stringify(a).localeCompare(JSON.stringify(b))
+        );
+
+    return createQueryFingerprint({
+        filters,
+        sort,
+        campaigns: campaignFingerprint,
+        imageItemIds: imageItemIds.map(String).sort(),
+    });
+}
+
 function getSigningSecret(secret = process.env.JWT_SECRET) {
     if (typeof secret !== 'string' || secret.length < 32) {
         throw new Error('A valid cursor signing secret is required.');
@@ -171,6 +204,7 @@ module.exports = {
     parseLimit,
     validateSeed,
     createQueryFingerprint,
+    createStoreProductQueryFingerprint,
     createCursor,
     parseCursor,
     getShuffleScoreExpression,

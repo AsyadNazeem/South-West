@@ -9,7 +9,7 @@ const {
     createSeed,
     parseLimit,
     validateSeed,
-    createQueryFingerprint,
+    createStoreProductQueryFingerprint,
     createCursor,
     parseCursor,
 } = require('../utils/storeProductPagination');
@@ -117,7 +117,7 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
                     ? req.query.sort
                     : 'relevance';
 
-            const queryHash = createQueryFingerprint({
+            const queryHash = createStoreProductQueryFingerprint({
                 filters,
                 sort,
                 campaigns,

@@ -57,6 +57,96 @@ test('fingerprints nested filters and array values', () => {
     );
 });
 
+test('store product fingerprints ignore campaign and image result ordering', () => {
+    const filters = {
+        search: '',
+        categoryIds: [],
+        brandIds: [],
+        offers: false,
+    };
+
+    const campaignsA = [
+        {
+            target_type: 'selected_products',
+            discount_type: 'percentage',
+            discount_value: 10,
+            campaignItems: [{ item_id: 12 }, { item_id: 5 }],
+            campaignCategories: [],
+            campaignBrands: [],
+        },
+        {
+            target_type: 'brand',
+            discount_type: 'fixed',
+            discount_value: 500,
+            campaignItems: [],
+            campaignCategories: [],
+            campaignBrands: [{ brand_id: 8 }, { brand_id: 3 }],
+        },
+    ];
+
+    const campaignsB = [
+        {
+            target_type: 'brand',
+            discount_type: 'fixed',
+            discount_value: 500,
+            campaignItems: [],
+            campaignCategories: [],
+            campaignBrands: [{ brand_id: 3 }, { brand_id: 8 }],
+        },
+        {
+            target_type: 'selected_products',
+            discount_type: 'percentage',
+            discount_value: 10,
+            campaignItems: [{ item_id: 5 }, { item_id: 12 }],
+            campaignCategories: [],
+            campaignBrands: [],
+        },
+    ];
+
+    const first = pagination.createStoreProductQueryFingerprint({
+        filters,
+        sort: 'relevance',
+        campaigns: campaignsA,
+        imageItemIds: ['12', '5', '8'],
+    });
+
+    const second = pagination.createStoreProductQueryFingerprint({
+        filters,
+        sort: 'relevance',
+        campaigns: campaignsB,
+        imageItemIds: ['8', '12', '5'],
+    });
+
+    assert.equal(first, second);
+});
+
+test('store product fingerprints still detect changed campaign values', () => {
+    const base = {
+        filters: {},
+        sort: 'relevance',
+        campaigns: [{
+            target_type: 'all_products',
+            discount_type: 'percentage',
+            discount_value: 10,
+        }],
+        imageItemIds: ['1', '2'],
+    };
+
+    const changed = {
+        ...base,
+        campaigns: [{
+            target_type: 'all_products',
+            discount_type: 'percentage',
+            discount_value: 15,
+        }],
+    };
+
+    assert.notEqual(
+        pagination.createStoreProductQueryFingerprint(base),
+        pagination.createStoreProductQueryFingerprint(changed)
+    );
+});
+
 test('encodes and decodes signed cursors', () => {
     const cursor = pagination.createCursor(
         123456,
