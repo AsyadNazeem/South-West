@@ -16,7 +16,11 @@ const {
 
 const {
     getEligibleProductPage,
+    getEligibleBrandIds,
 } = require('../utils/storeProductListingQuery');
+const { getProductsWithStockEvidence } = require('../utils/productStockHistory');
+const { getAllProductsWithValidImages, getProductsWithValidImages } = require('../utils/productStockHistory');
+const { getEligibleCustomerVariantIds, hasCustomerVisibleProduct } = require('../utils/customerProductEligibility');
 const {
     Item,
     ItemVariant,
@@ -44,11 +48,13 @@ const {
 const {
     buildFileUrl,
     getResponsiveImageMetadata,
+    isValidUploadedImagePath,
 } = require('../utils/fileStorage');
 
 async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
     try {
         const now = new Date();
+        const imageItemIds = [...await getAllProductsWithValidImages()];
 
         const campaigns = await getActiveCampaigns(now);
 
@@ -115,6 +121,7 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
                 filters,
                 sort,
                 campaigns,
+                imageItemIds,
             });
 
             const cursor = req.query.cursor
@@ -177,7 +184,7 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
         }
 
         // Only active products are publicly visible.
-        const items = await Item.findAll({
+        let items = await Item.findAll({
             where: {
                 is_active: true,
                 ...(typeof req.query.publicId === 'string' && req.query.publicId.trim()
@@ -201,6 +208,7 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
                 'condition',
                 'shipping_weight',
                 'shipping_weight_unit',
+                'is_new',
             ],
             include: [
                 {
@@ -274,6 +282,13 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
                     orderIndex.get(String(a.id)) -
                     orderIndex.get(String(b.id))
             );
+        }
+
+        const validImageIds = await getProductsWithValidImages(items.map(item => item.id));
+        items = items.filter(item => validImageIds.has(String(item.id)));
+        if (!paginationEnabled) {
+            const visibleIds = await getProductsWithStockEvidence(items.map(item => item.id));
+            items = items.filter(item => visibleIds.has(String(item.id)));
         }
 
         const ids = items.map(item => item.id);
@@ -421,6 +436,8 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
             reviewsPromise,
         ]);
 
+        const eligibleVariantIds = await getEligibleCustomerVariantIds(variantIds, now);
+
         const priceByVariant = new Map();
         const priceByItem = new Map();
 
@@ -477,7 +494,7 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
                         variant,
                         price: priceByVariant.get(String(variant.id)),
                     }))
-                    .filter(entry => entry.price);
+                    .filter(entry => entry.price && Number(entry.price.price) > 0 && eligibleVariantIds.has(String(entry.variant.id)));
 
                 const lowest = pricedVariants.reduce(
                     (best, entry) =>
@@ -491,7 +508,7 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
                 const availableQuantity = itemVariants.reduce(
                     (total, variant) =>
                         total +
-                        (stockByVariant.get(String(variant.id)) || 0),
+                        (eligibleVariantIds.has(String(variant.id)) ? (stockByVariant.get(String(variant.id)) || 0) : 0),
                     0
                 );
 
@@ -599,7 +616,10 @@ if (originalPrice !== null) {
                     );
                 });
 
-                const images = await Promise.all((product.images || []).sort(
+                const validImages = (await Promise.all((product.images || []).map(async image =>
+                    await isValidUploadedImagePath(image.file_path) ? image : null
+                ))).filter(Boolean);
+                const images = await Promise.all(validImages.sort(
                     (a, b) =>
                         Number(b.is_primary) - Number(a.is_primary) ||
                         a.sort_order - b.sort_order
@@ -628,6 +648,7 @@ return {
                     condition: product.condition,
                     shipping_weight: product.shipping_weight,
                     shipping_weight_unit: product.shipping_weight_unit,
+                    is_new: Boolean(product.is_new),
             price: campaignDiscount
     ? campaignDiscount.discounted_price
     : originalPrice,
@@ -664,7 +685,7 @@ available_quantity: availableQuantity,
                 };
             })))
             // Never advertise products without a valid selling price.
-            .filter(product => product.price !== null);
+            .filter(product => Number(product.price) > 0 && product.images.length > 0);
 
         return res.status(200).json({
             success: true,
@@ -728,6 +749,13 @@ async function getRelatedStoreProducts(req, res) {
         });
 
         if (!currentItem) {
+            return res.status(404).json({
+                success: false,
+                message: 'Product not found',
+            });
+        }
+
+        if (!(await hasCustomerVisibleProduct(currentItem.id))) {
             return res.status(404).json({
                 success: false,
                 message: 'Product not found',
@@ -859,13 +887,9 @@ async function getRelatedStoreProducts(req, res) {
 
 async function getStoreProductFilters(req, res) {
     try {
-        const [brands, warranties, itemColors, specificationColors] =
+        const [eligibleBrandIds, warranties, itemColors, specificationColors] =
             await Promise.all([
-                Brand.findAll({
-                    where: { is_active: true },
-                    attributes: ['id', 'name'],
-                    order: [['name', 'ASC']],
-                }),
+                getEligibleBrandIds({ sequelize: db.sequelize, imageItemIds: [...await getAllProductsWithValidImages()] }),
                 Warranty.findAll({
                     where: { is_active: true },
                     attributes: ['id', 'name'],
@@ -886,6 +910,11 @@ async function getStoreProductFilters(req, res) {
                     ORDER BY name ASC
                 `, { type: QueryTypes.SELECT }),
             ]);
+        const brands = await Brand.findAll({
+            where: { is_active: true, id: { [Op.in]: eligibleBrandIds } },
+            attributes: ['id', 'name'],
+            order: [['name', 'ASC']],
+        });
 
         const colorMap = new Map();
 
@@ -957,6 +986,13 @@ async function getStoreProductVariants(req, res) {
             });
         }
 
+        if (!(await hasCustomerVisibleProduct(item.id))) {
+            return res.status(404).json({
+                success: false,
+                message: 'Product not found',
+            });
+        }
+
         const variants = await require('../models').ItemVariant.findAll({
             where: {
                 item_id: item.id,
@@ -977,11 +1013,17 @@ async function getStoreProductVariants(req, res) {
             ],
         });
 
+        const eligibleVariantIds = await getEligibleCustomerVariantIds(
+            variants.map(variant => variant.id),
+            new Date()
+        );
+        const visibleVariants = variants.filter(variant => eligibleVariantIds.has(String(variant.id)));
+
         const now = new Date();
         const campaigns = await getActiveCampaigns(now);
 
         const data = await Promise.all(
-            variants.map(async variant => {
+            visibleVariants.map(async variant => {
                 const paymentPrices = await ItemPaymentPrice.findAll({
     where: {
         item_id: item.id,

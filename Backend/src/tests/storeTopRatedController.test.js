@@ -24,7 +24,7 @@ function createController(eligibleRows) {
             item_name: name,
             item_code: `SKU-${id}`,
             brand_id: 1,
-            images: [],
+            images: [{ id: id, file_path: 'items/test.jpg', url: '/uploads/items/test.jpg', is_primary: true, sort_order: 0 }],
             specificationValues: [],
         }),
     });
@@ -37,12 +37,12 @@ function createController(eligibleRows) {
                 return itemModels;
             },
         },
-        ItemVariant: { async findAll() { return []; } },
+        ItemVariant: { async findAll() { return [{ id: 3, item_id: 3 }, { id: 8, item_id: 8 }]; } },
         ItemPrice: {
             async findAll() {
                 return [
-                    { item_id: 8, variant_id: null, price: 100, currency: 'LKR' },
-                    { item_id: 3, variant_id: null, price: 200, currency: 'LKR' },
+                    { item_id: 8, variant_id: 8, price: 100, currency: 'LKR' },
+                    { item_id: 3, variant_id: 3, price: 200, currency: 'LKR' },
                 ];
             },
         },
@@ -70,6 +70,15 @@ function createController(eligibleRows) {
                 return eligibleRows;
             },
         },
+        '../utils/productStockHistory': {
+            getAllProductsWithValidImages: async () => new Set(['3', '8']),
+            getProductsWithValidImages: async ids => new Set(ids.map(String)),
+            getProductsWithStockEvidence: async ids => new Set(ids.map(String)),
+        },
+        '../utils/customerProductEligibility': {
+            getEligibleCustomerVariantIds: async ids => new Set(ids.map(String)),
+            hasCustomerVisibleProduct: async () => true,
+        },
         '../services/discountCampaignService': {
             getActiveCampaigns: async () => [],
             campaignTargetsItem: () => false,
@@ -79,6 +88,7 @@ function createController(eligibleRows) {
         '../utils/fileStorage': {
             buildFileUrl: value => value,
             getResponsiveImageMetadata: async () => [],
+            isValidUploadedImagePath: async () => true,
         },
     });
     return { controller, calls };
@@ -104,7 +114,7 @@ test('top-rated endpoint delegates to eligible-product sorting and preserves ful
     assert.deepEqual(res.body.data.map(product => product.rating), [4.5, 4]);
     assert.deepEqual(res.body.data.map(product => product.review_count), [2, 1]);
     assert.deepEqual(res.body.data.map(product => product.price), [100, 200]);
-    assert.equal(res.body.data[0].images.length, 0);
+    assert.equal(res.body.data[0].images.length, 1);
     assert.equal(Object.hasOwn(res.body, 'pagination'), false);
 });
 

@@ -29,9 +29,9 @@ function loadController(state = {}) {
     };
 
     const ItemImage = {
-        findOne: async (...args) => {
+        findAll: async (...args) => {
             state.imageQuery = args[0];
-            return state.image || null;
+            return state.image ? [state.image] : [];
         },
     };
 
@@ -40,7 +40,9 @@ function loadController(state = {}) {
         '../utils/fileStorage': {
             buildFileUrl: (filePath) =>
                 filePath ? `/uploads/${filePath}` : null,
+            isValidUploadedImagePath: async filePath => Boolean(filePath),
         },
+        '../utils/customerProductEligibility': { hasCustomerVisibleProduct: async () => true },
     });
 }
 
@@ -98,6 +100,21 @@ test('generates product-specific Open Graph and Twitter metadata', async () => {
     assert.equal(state.itemQuery.where.is_active, true);
 });
 
+test('does not expose social metadata for a product that has never been stocked', async () => {
+    const controller = proxyquire('../controllers/socialPreviewController', {
+        '../models': {
+            Item: { findOne: async () => ({ id: 22, item_name: 'Hidden product' }) },
+            ItemImage: { findAll: async () => [] },
+        },
+        '../utils/fileStorage': { buildFileUrl: () => null, isValidUploadedImagePath: async () => true },
+        '../utils/customerProductEligibility': { hasCustomerVisibleProduct: async () => false },
+    });
+    const res = responseMock();
+    await controller.getProductSocialPreview({ params: { slug: `hidden-${UUID}` } }, res);
+    assert.equal(res.statusCode, 404);
+    assert.equal(res.body, 'Product not found');
+});
+
 test('rejects product URLs without a public UUID', async () => {
     const { getProductSocialPreview } = loadController();
     const res = responseMock();
@@ -126,7 +143,7 @@ test('returns 404 for unavailable products', async () => {
     assert.equal(res.body, 'Product not found');
 });
 
-test('uses the default storefront image when product has no image', async () => {
+test('does not expose social metadata when product has no valid uploaded image', async () => {
     const { getProductSocialPreview } = loadController({
         image: null,
     });
@@ -137,8 +154,8 @@ test('uses the default storefront image when product has no image', async () => 
         res
     );
 
-    assert.equal(res.statusCode, 200);
-    assert.match(res.body, /https:\/\/southwest\.lk\/SWShareImage\.png/);
+    assert.equal(res.statusCode, 404);
+    assert.equal(res.body, 'Product not found');
 });
 
 test('returns a generic 500 response when the database fails', async () => {

@@ -60,6 +60,7 @@ const menuDefinitions = [
       { label: 'Item Type', to: '/admin/products/item-types', permissions: ['products.view'] },
       { label: 'Specifications', to: '/admin/products/item-specifications', permissions: ['products.view'] },
       { label: 'Items', to: '/admin/products/items', permissions: ['products.view'] },
+      { label: 'Bulk Product Import', to: '/admin/products/bulk-import', permissions: ['products.create'] },
       { label: "Item Variants", to: "/admin/products/item-variants", permissions: ['products.view']},
       { label: 'Item Prices', to: '/admin/products/item-prices', permissions: ['products.view'] },
       { label: 'Images', to: '/admin/products/item-images', permissions: ['item_images.view'] }

@@ -213,6 +213,12 @@ qb_item_code: {
                 defaultValue: true
             },
 
+            is_new: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false
+            },
+
             created_at: {
                 type: DataTypes.DATE,
                 allowNull: false

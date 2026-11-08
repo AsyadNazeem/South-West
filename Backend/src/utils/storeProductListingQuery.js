@@ -10,6 +10,44 @@ function addListCondition(column, values, replacements, key) {
     return `AND ${column} IN (:${key})`;
 }
 
+const ELIGIBLE_VARIANT_CONDITION = `
+    EXISTS (
+        SELECT 1
+        FROM item_variants AS eligible_variant
+        INNER JOIN item_prices AS eligible_price
+          ON eligible_price.variant_id = eligible_variant.id
+         AND eligible_price.item_id = items.id
+         AND eligible_price.price_type = 'selling'
+         AND eligible_price.currency = 'LKR'
+         AND eligible_price.is_active = 1
+         AND eligible_price.price > 0
+         AND (eligible_price.effective_from IS NULL OR eligible_price.effective_from <= :now)
+         AND (eligible_price.effective_to IS NULL OR eligible_price.effective_to >= :now)
+        WHERE eligible_variant.item_id = items.id
+          AND eligible_variant.is_active = 1
+          AND (
+              EXISTS (SELECT 1 FROM inventory_stock AS eligible_stock
+                      WHERE eligible_stock.variant_id = eligible_variant.id
+                        AND eligible_stock.quantity_on_hand > 0)
+              OR EXISTS (SELECT 1 FROM inventory_stock_movements AS eligible_receipt
+                         WHERE eligible_receipt.variant_id = eligible_variant.id
+                           AND eligible_receipt.quantity > 0
+                           AND eligible_receipt.movement_type IN ('purchase','goods_receipt','customer_return','transfer_in'))
+              OR EXISTS (SELECT 1 FROM inventory_stock_movements AS eligible_adjustment
+                         WHERE eligible_adjustment.variant_id = eligible_variant.id
+                           AND eligible_adjustment.movement_type = 'adjustment'
+                           AND eligible_adjustment.quantity > 0
+                           AND CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(eligible_adjustment.notes, 'Signed difference: ', -1), ' | ', 1) AS DECIMAL(15,3)) > 0)
+          )
+    )
+`;
+
+function imageIdsCondition(imageItemIds) {
+    if (!Array.isArray(imageItemIds)) return '';
+    if (!imageItemIds.length) return 'AND 1 = 0';
+    return 'AND items.id IN (:imageItemIds)';
+}
+
 function buildListingExpressions(campaigns, replacements) {
     const latestVariantPrice = `
         SELECT MIN(selected_prices.price)
@@ -27,39 +65,31 @@ function buildListingExpressions(campaigns, replacements) {
                        OR candidate.effective_from <= :now)
                   AND (candidate.effective_to IS NULL
                        OR candidate.effective_to >= :now)
+                  AND candidate.price > 0
                 ORDER BY candidate.effective_from DESC, candidate.id DESC
                 LIMIT 1
             )
         WHERE priced_variants.item_id = items.id
           AND priced_variants.is_active = 1
-    `;
-
-    const parentPrice = `
-        SELECT parent_price.price
-        FROM item_prices AS parent_price
-        WHERE parent_price.item_id = items.id
-          AND parent_price.variant_id IS NULL
-          AND parent_price.price_type = 'selling'
-          AND parent_price.currency = 'LKR'
-          AND parent_price.is_active = 1
-          AND (parent_price.effective_from IS NULL
-               OR parent_price.effective_from <= :now)
-          AND (parent_price.effective_to IS NULL
-               OR parent_price.effective_to >= :now)
-        ORDER BY parent_price.effective_from DESC, parent_price.id DESC
-        LIMIT 1
+          AND selected_prices.price > 0
+          AND (
+              EXISTS (SELECT 1 FROM inventory_stock AS price_stock
+                      WHERE price_stock.variant_id = priced_variants.id
+                        AND price_stock.quantity_on_hand > 0)
+              OR EXISTS (SELECT 1 FROM inventory_stock_movements AS price_receipt
+                         WHERE price_receipt.variant_id = priced_variants.id
+                           AND price_receipt.quantity > 0
+                           AND price_receipt.movement_type IN ('purchase','goods_receipt','customer_return','transfer_in'))
+              OR EXISTS (SELECT 1 FROM inventory_stock_movements AS price_adjustment
+                         WHERE price_adjustment.variant_id = priced_variants.id
+                           AND price_adjustment.movement_type = 'adjustment'
+                           AND price_adjustment.quantity > 0
+                           AND CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(price_adjustment.notes, 'Signed difference: ', -1), ' | ', 1) AS DECIMAL(15,3)) > 0)
+          )
     `;
 
     const basePrice = `
-        CASE
-            WHEN EXISTS (
-                SELECT 1 FROM item_variants AS active_variants
-                WHERE active_variants.item_id = items.id
-                  AND active_variants.is_active = 1
-            )
-            THEN (${latestVariantPrice})
-            ELSE (${parentPrice})
-        END
+        (${latestVariantPrice})
     `;
 
     const campaignDiscounts = [];
@@ -127,6 +157,7 @@ async function getEligibleProductPage({
     filters = {},
     sort = 'relevance',
     campaigns = [],
+    imageItemIds,
 }) {
     const topRated = sort === 'top_rated';
     const scoreExpression = getShuffleScoreExpression(seed).val;
@@ -135,6 +166,9 @@ async function getEligibleProductPage({
         now,
         limit: limit + 1,
     };
+    if (Array.isArray(imageItemIds) && imageItemIds.length) {
+        replacements.imageItemIds = imageItemIds;
+    }
 
     const {
         basePrice,
@@ -395,6 +429,8 @@ async function getEligibleProductPage({
         ${approvedReviewJoin}
         WHERE
             items.is_active = 1
+            ${imageIdsCondition(imageItemIds)}
+            AND (${ELIGIBLE_VARIANT_CONDITION})
             AND (${basePrice}) IS NOT NULL
             ${topRatedCondition}
             ${conditions.join('\n')}
@@ -409,14 +445,19 @@ async function getEligibleProductPage({
     });
 }
 
-async function getEligibleBrandIds({ sequelize, now = new Date() }) {
+async function getEligibleBrandIds({ sequelize, now = new Date(), imageItemIds }) {
     const replacements = { now };
+    if (Array.isArray(imageItemIds) && imageItemIds.length) {
+        replacements.imageItemIds = imageItemIds;
+    }
     const { basePrice } = buildListingExpressions([], replacements);
     const sql = `
         SELECT DISTINCT items.brand_id
         FROM items
         WHERE items.is_active = 1
+          ${imageIdsCondition(imageItemIds)}
           AND items.brand_id IS NOT NULL
+          AND (${ELIGIBLE_VARIANT_CONDITION})
           AND (${basePrice}) IS NOT NULL
         ORDER BY items.brand_id ASC
     `;
@@ -430,4 +471,6 @@ async function getEligibleBrandIds({ sequelize, now = new Date() }) {
 module.exports = {
     getEligibleProductPage,
     getEligibleBrandIds,
+    ELIGIBLE_VARIANT_CONDITION,
+    imageIdsCondition,
 };

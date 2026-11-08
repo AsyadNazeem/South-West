@@ -1190,6 +1190,7 @@ module.exports = {
     getItemVariantById,
     createItemVariant,
     bulkCreateItemVariants,
+    generateVariantSku,
     updateItemVariant,
     getVariantColors,
     updateVariantColors

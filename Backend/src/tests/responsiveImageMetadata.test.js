@@ -19,9 +19,9 @@ async function writeImageSet(folder, uuid = randomUUID(), variants = []) {
     const directory = path.join(uploadRoot, folder);
     await fs.promises.mkdir(directory, { recursive: true });
     const basePath = path.join(directory, `${uuid}.webp`);
-    await fs.promises.writeFile(basePath, 'base');
+    await fs.promises.writeFile(basePath, Buffer.from('RIFF0000WEBP'));
     for (const width of variants) {
-        await fs.promises.writeFile(path.join(directory, `${uuid}-${width}.webp`), 'variant');
+        await fs.promises.writeFile(path.join(directory, `${uuid}-${width}.webp`), Buffer.from('RIFF0000WEBP'));
     }
     return `${folder}/${uuid}.webp`;
 }
@@ -57,6 +57,17 @@ test('does not create candidates for external, legacy, or unsupported image path
     assert.deepEqual(await getResponsiveImageMetadata('/uploads/items/legacy-image.webp', 'products'), []);
     assert.deepEqual(await getResponsiveImageMetadata('items/images/image.jpg', 'products'), []);
     assert.deepEqual(await getResponsiveImageMetadata('/etc/passwd', 'products'), []);
+});
+
+test('recognizes only existing uploaded image files and rejects placeholders', async () => {
+    const uploaded = await writeImageSet('items/images', randomUUID(), []);
+    assert.equal(await fileStorage.isValidUploadedImagePath(uploaded), true);
+    assert.equal(await fileStorage.isValidUploadedImagePath('items/images/missing.webp'), false);
+    assert.equal(await fileStorage.isValidUploadedImagePath('items/images/no-image.webp'), false);
+    assert.equal(await fileStorage.isValidUploadedImagePath('https://cdn.example/item.jpg'), false);
+    const invalidPath = path.join(uploadRoot, 'items/images/invalid.webp');
+    await fs.promises.writeFile(invalidPath, 'not an image');
+    assert.equal(await fileStorage.isValidUploadedImagePath('items/images/invalid.webp'), false);
 });
 
 test('reuses one asynchronous directory read for repeated paths within a request', async () => {
@@ -129,6 +140,7 @@ test('store category and brand APIs add metadata without changing base URLs', as
             sequelize: {},
         },
         '../utils/storeProductListingQuery': { getEligibleBrandIds: async () => [2] },
+        '../utils/productStockHistory': { getAllProductsWithValidImages: async () => new Set(['2']) },
         '../utils/fileStorage': fileStorage,
     });
 
@@ -144,6 +156,7 @@ test('store category and brand APIs add metadata without changing base URLs', as
 });
 
 test('public banner API reports desktop and mobile variants independently', async () => {
+    process.env.FILE_BASE_URL = '';
     const desktopPath = await writeImageSet('homepage/banners', randomUUID(), [640, 960]);
     const mobileUuid = randomUUID();
     const mobilePath = await writeImageSet('homepage/banners', mobileUuid, [640]);
@@ -172,14 +185,14 @@ test('store product image serialization adds metadata per image and retains base
     const storedPath = await writeImageSet('items/images', randomUUID(), [320]);
     const models = {
         Item: { async findAll() { return [{ id: 1, toJSON: () => ({
-            id: 1, item_name: 'Sample', images: [{
+            id: 1, item_name: 'Sample', is_new: true, images: [{
                 id: 3, file_path: storedPath, url: `/uploads/${storedPath}`,
                 is_primary: true, sort_order: 0,
             }],
             specificationValues: [],
         }) }]; } },
-        ItemVariant: { async findAll() { return []; } },
-        ItemPrice: { async findAll() { return [{ item_id: 1, variant_id: null, price: 10, currency: 'LKR' }]; } },
+        ItemVariant: { async findAll() { return [{ id: 11, item_id: 1 }]; } },
+        ItemPrice: { async findAll() { return [{ item_id: 1, variant_id: 11, price: 10, currency: 'LKR' }]; } },
         InventoryStock: { async findAll() { return []; } },
         ProductReview: { async findAll() { return []; } },
         Brand: {}, Category: {}, Warranty: {}, ItemImage: {},
@@ -197,10 +210,20 @@ test('store product image serialization adds metadata per image and retains base
             getBestVisualCampaignForItem: () => null,
         },
         '../utils/storeProductListingQuery': { getEligibleProductPage: async () => [] },
+        '../utils/productStockHistory': {
+            getAllProductsWithValidImages: async () => new Set(['1']),
+            getProductsWithValidImages: async ids => new Set(ids.map(String)),
+            getProductsWithStockEvidence: async () => new Set(['1']),
+        },
+        '../utils/customerProductEligibility': {
+            getEligibleCustomerVariantIds: async () => new Set(['11']),
+            hasCustomerVisibleProduct: async () => true,
+        },
     });
     const res = mockResponse();
     await controller.getStoreProducts({ query: {} }, res);
     const image = res.body.data[0].images[0];
+    assert.equal(res.body.data[0].is_new, true);
     assert.equal(image.url, `/uploads/${storedPath}`);
     assert.equal(image.file_path, storedPath);
     assert.deepEqual(image.responsive_images.map(value => value.width), [320]);

@@ -154,6 +154,31 @@ function normalizeUploadPath(filePath) {
     return candidate;
 }
 
+async function isValidUploadedImagePath(filePath) {
+    if (typeof filePath !== 'string' || /^https?:\/\//i.test(filePath.trim())) return false;
+    const relativePath = normalizeUploadPath(filePath);
+    if (!relativePath || !/\.(?:jpe?g|png|webp|gif)$/i.test(relativePath)) return false;
+    if (/(?:placeholder|no[-_]?image|default[-_]?image)/i.test(path.posix.basename(relativePath))) return false;
+    let handle;
+    try {
+        handle = await fs.promises.open(path.resolve(UPLOAD_ROOT, relativePath), 'r');
+        const stats = await handle.stat();
+        if (!stats.isFile() || stats.size < 12) return false;
+        const header = Buffer.alloc(12);
+        const { bytesRead } = await handle.read(header, 0, header.length, 0);
+        const validSignature =
+            (header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) ||
+            header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ||
+            ['GIF87a', 'GIF89a'].includes(header.toString('ascii', 0, 6)) ||
+            (header.toString('ascii', 0, 4) === 'RIFF' && header.toString('ascii', 8, 12) === 'WEBP');
+        return bytesRead >= 12 && validSignature;
+    } catch {
+        return false;
+    } finally {
+        await handle?.close().catch(() => {});
+    }
+}
+
 // Removes an uploaded image and its predictable responsive siblings. UUID
 // paths are checked against every image-bearing table first so a shared path
 // is retained while any record still references it.
@@ -216,6 +241,7 @@ module.exports = {
     UPLOAD_ROOT,
     buildFileUrl,
     getResponsiveImageMetadata,
+    isValidUploadedImagePath,
     removeStoredFile,
     removeStoredImage
 };

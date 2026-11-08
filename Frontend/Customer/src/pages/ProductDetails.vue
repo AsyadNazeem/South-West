@@ -1590,6 +1590,7 @@ onMounted(loadProduct)
             <span v-if="discount" class="discount-badge">
               -{{ discount }}%
             </span>
+            <span v-if="product.is_new" class="new-product-badge">NEW!</span>
           </div>
 
           <div v-if="images.length > 1" class="thumbnails">
@@ -2245,6 +2246,18 @@ onMounted(loadProduct)
   padding: 5px 10px;
   border-radius: 999px;
   background: #dc3e36;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.new-product-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #17365d;
   color: #fff;
   font-size: 12px;
   font-weight: 700;

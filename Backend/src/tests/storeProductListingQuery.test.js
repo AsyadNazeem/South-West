@@ -24,17 +24,22 @@ test('queries only eligible active products with valid selling prices', async ()
         sequelize,
         seed: SEED,
         limit: 20,
+        imageItemIds: ['3', '4'],
     });
 
     assert.match(captured.sql, /items\.is_active = 1/);
+    assert.match(captured.sql, /items\.id IN \(:imageItemIds\)/);
+    assert.match(captured.sql, /eligible_stock\.quantity_on_hand > 0/);
+    assert.match(captured.sql, /eligible_receipt\.movement_type IN \([\s\S]*goods_receipt/);
+    assert.match(captured.sql, /eligible_adjustment\.movement_type = 'adjustment'/);
     assert.match(captured.sql, /item_variants/);
-    assert.match(captured.sql, /candidate\.variant_id = priced_variants\.id/);
-    assert.match(captured.sql, /parent_price\.variant_id IS NULL/);
-    assert.match(captured.sql, /candidate\.price_type = 'selling'/);
-    assert.match(captured.sql, /candidate\.currency = 'LKR'/);
-    assert.match(captured.sql, /candidate\.is_active = 1/);
-    assert.match(captured.sql, /effective_from <= :now/);
-    assert.match(captured.sql, /effective_to >= :now/);
+    assert.match(captured.sql, /eligible_price\.price_type = 'selling'/);
+    assert.match(captured.sql, /eligible_price\.currency = 'LKR'/);
+    assert.match(captured.sql, /eligible_price\.is_active = 1/);
+    assert.match(captured.sql, /eligible_price\.price > 0/);
+    assert.match(captured.sql, /eligible_price\.effective_from <= :now/);
+    assert.match(captured.sql, /eligible_price\.effective_to >= :now/);
+    assert.deepEqual(captured.options.replacements.imageItemIds, ['3', '4']);
     assert.equal(captured.options.replacements.limit, 21);
 });
 
@@ -108,6 +113,18 @@ test('rejects invalid shuffle seeds before querying', async () => {
     assert.equal(queried, false);
 });
 
+test('returns no customer products when there are no valid uploaded image ids', async () => {
+    let captured;
+    await getEligibleProductPage({
+        sequelize: { async query(sql, options) { captured = { sql, options }; return []; } },
+        seed: SEED,
+        limit: 20,
+        imageItemIds: [],
+    });
+    assert.match(captured.sql, /AND 1 = 0/);
+    assert.equal(captured.options.replacements.imageItemIds, undefined);
+});
+
 test('top-rated listing ranks eligible items by approved rating and review count with a bounded page', async () => {
     let captured;
     const rankedRows = [
@@ -149,17 +166,20 @@ test('eligible brand ids use the same active-product and current selling-price r
         },
     };
 
-    const ids = await getEligibleBrandIds({ sequelize, now: new Date('2026-11-07T00:00:00Z') });
+    const ids = await getEligibleBrandIds({ sequelize, now: new Date('2026-11-07T00:00:00Z'), imageItemIds: ['3', '4'] });
 
     assert.deepEqual(ids, [4, 9]);
     assert.match(captured.sql, /SELECT DISTINCT items\.brand_id/);
     assert.match(captured.sql, /items\.is_active = 1/);
     assert.match(captured.sql, /items\.brand_id IS NOT NULL/);
-    assert.match(captured.sql, /item_variants AS active_variants[\s\S]*active_variants\.is_active = 1/);
-    assert.match(captured.sql, /candidate\.price_type = 'selling'/);
-    assert.match(captured.sql, /candidate\.currency = 'LKR'/);
-    assert.match(captured.sql, /candidate\.is_active = 1/);
-    assert.match(captured.sql, /candidate\.effective_from <= :now/);
-    assert.match(captured.sql, /candidate\.effective_to >= :now/);
+    assert.match(captured.sql, /eligible_receipt\.movement_type IN \([\s\S]*goods_receipt/);
+    assert.match(captured.sql, /items\.id IN \(:imageItemIds\)/);
+    assert.match(captured.sql, /eligible_variant\.is_active = 1/);
+    assert.match(captured.sql, /eligible_price\.price_type = 'selling'/);
+    assert.match(captured.sql, /eligible_price\.currency = 'LKR'/);
+    assert.match(captured.sql, /eligible_price\.is_active = 1/);
+    assert.match(captured.sql, /eligible_price\.price > 0/);
+    assert.match(captured.sql, /eligible_price\.effective_from <= :now/);
+    assert.match(captured.sql, /eligible_price\.effective_to >= :now/);
     assert.equal(captured.options.replacements.now.toISOString(), '2026-11-07T00:00:00.000Z');
 });

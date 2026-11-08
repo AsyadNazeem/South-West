@@ -39,6 +39,7 @@ test('returns only active brands with eligible products, preserving order and im
         '../utils/storeProductListingQuery': {
             getEligibleBrandIds: async () => eligibleBrandIds,
         },
+        '../utils/productStockHistory': { getAllProductsWithValidImages: async () => new Set(['1', '3', '4']) },
         '../utils/fileStorage': {
             getResponsiveImageMetadata: async image => image ? [{ width: 320, url: `${image}?w=320` }] : [],
         },
@@ -66,6 +67,7 @@ test('returns no brands when no eligible publicly sellable products have brands'
             sequelize: {},
         },
         '../utils/storeProductListingQuery': { getEligibleBrandIds: async () => [] },
+        '../utils/productStockHistory': { getAllProductsWithValidImages: async () => new Set() },
         '../utils/fileStorage': { getResponsiveImageMetadata: async () => [] },
     });
     const res = response();

@@ -91,6 +91,7 @@ const getItems = async (req, res) => {
                     'condition',
                     'is_serialized',
                     'is_active',
+                    'is_new',
                 ],
                 include: [
                     {
@@ -339,8 +340,14 @@ const createItem = async (req, res) => {
     shipping_weight_unit,
     condition,
     is_serialized,
-    is_active
+    is_active,
+    is_new
 } = req.body;
+
+      if (is_new !== undefined && typeof is_new !== 'boolean') {
+    await transaction.rollback();
+    return res.status(400).json({ message: 'is_new must be a boolean' });
+}
 
       if (!item_name || !item_name.trim()) {
     await transaction.rollback();
@@ -404,7 +411,8 @@ item_name: item_name.trim(),
                 is_serialized ?? false,
 
             is_active:
-                is_active ?? true
+                is_active ?? true,
+            is_new: is_new ?? false
         });
 
         await recordAuditLog({
@@ -421,7 +429,9 @@ item_name: item_name.trim(),
                 brand_id: item.brand_id,
                 unit_id: item.unit_id,
                 item_type_id: item.item_type_id,
-                warranty_id: item.warranty_id
+                warranty_id: item.warranty_id,
+                is_new: item.is_new,
+                is_active: item.is_active,
             },
             ipAddress: req.ip || null,
             userAgent: req.get('user-agent') || null,
@@ -500,8 +510,14 @@ const updateItem = async (req, res) => {
             shipping_weight_unit,
             condition,
             is_serialized,
-            is_active
+            is_active,
+            is_new
         } = req.body
+
+        if (is_new !== undefined && typeof is_new !== 'boolean') {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'is_new must be a boolean' });
+        }
 
         const oldValues = {
             item_code: item.item_code,
@@ -510,7 +526,8 @@ const updateItem = async (req, res) => {
             brand_id: item.brand_id,
             unit_id: item.unit_id,
             item_type_id: item.item_type_id,
-            warranty_id: item.warranty_id
+            warranty_id: item.warranty_id,
+            is_new: item.is_new,
         };
 
         await item.update({
@@ -564,7 +581,11 @@ const updateItem = async (req, res) => {
 
             is_active: is_active !== undefined
                 ? is_active
-                : item.is_active
+                : item.is_active,
+
+            is_new: is_new !== undefined
+                ? is_new
+                : item.is_new
         })
 
         await recordAuditLog({
@@ -582,7 +603,9 @@ const updateItem = async (req, res) => {
                 brand_id: item.brand_id,
                 unit_id: item.unit_id,
                 item_type_id: item.item_type_id,
-                warranty_id: item.warranty_id
+                warranty_id: item.warranty_id,
+                is_new: item.is_new,
+                is_active: item.is_active,
             },
             ipAddress: req.ip || null,
             userAgent: req.get('user-agent') || null,

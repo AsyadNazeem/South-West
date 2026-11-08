@@ -770,5 +770,6 @@ module.exports = {
     createItemSpecificationValue,
     updateItemSpecificationValue,
     deleteItemSpecificationValue,
-    upsertSpecificationValue
+    upsertSpecificationValue,
+    validateSpecificationValue
 };

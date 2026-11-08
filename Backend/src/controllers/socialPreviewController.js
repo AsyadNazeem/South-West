@@ -2,6 +2,8 @@
 
 const { Item, ItemImage } = require('../models');
 const { buildFileUrl } = require('../utils/fileStorage');
+const { hasCustomerVisibleProduct } = require('../utils/customerProductEligibility');
+const { isValidUploadedImagePath } = require('../utils/fileStorage');
 
 const SITE_ORIGIN = (
     process.env.PUBLIC_SITE_URL || 'https://southwest.lk'
@@ -85,7 +87,11 @@ async function getProductSocialPreview(req, res) {
             return res.status(404).type('text').send('Product not found');
         }
 
-        const image = await ItemImage.findOne({
+        if (!(await hasCustomerVisibleProduct(product.id))) {
+            return res.status(404).type('text').send('Product not found');
+        }
+
+        const imageRows = await ItemImage.findAll({
             where: {
                 item_id: product.id,
                 is_active: true,
@@ -101,6 +107,12 @@ async function getProductSocialPreview(req, res) {
                 ['id', 'ASC'],
             ],
         });
+        const image = (await Promise.all(imageRows.map(async row =>
+            await isValidUploadedImagePath(row.file_path) ? row : null
+        ))).find(Boolean);
+        if (!image) {
+            return res.status(404).type('text').send('Product not found');
+        }
 
         const title = `${product.item_name} | South West`;
         const description = plainText(product.description) ||
@@ -117,8 +129,7 @@ async function getProductSocialPreview(req, res) {
             : null;
 
         // This fallback image must be added to Customer/public before launch.
-        const imageUrl = absoluteImageUrl(storedImageUrl) ||
-            `${SITE_ORIGIN}/SWShareImage.png`;
+        const imageUrl = absoluteImageUrl(storedImageUrl);
 
         const imageAlt = image?.alt_text || product.item_name;
 

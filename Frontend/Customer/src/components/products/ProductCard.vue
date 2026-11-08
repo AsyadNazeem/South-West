@@ -364,6 +364,7 @@ onBeforeUnmount(() => {
       </div>
 
       <span v-if="discountPercent" class="tag discount">-{{ discountPercent }}%</span>
+      <span v-if="product.is_new" class="tag new" :class="{ 'has-discount': discountPercent }">NEW!</span>
       <span v-if="!inStock" class="tag out">Out of stock</span>
 
       <Transition name="toast">
@@ -578,6 +579,16 @@ onBeforeUnmount(() => {
   left: var(--space-2);
   background: var(--color-primary);
   color: var(--color-on-primary);
+}
+
+.tag.new {
+  left: var(--space-2);
+  background: #17365d;
+  color: #fff;
+}
+
+.tag.new.has-discount {
+  top: calc(var(--space-2) + 24px);
 }
 
 .tag.out {

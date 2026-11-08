@@ -75,6 +75,7 @@ test('paginated item listing returns first-page metadata and selected rows', asy
         'condition',
         'is_serialized',
         'is_active',
+        'is_new',
     ]);
     assert.deepEqual(
         calls.paginated.include.map(include => [include.as, include.attributes]),

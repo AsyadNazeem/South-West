@@ -122,3 +122,14 @@ Mailpit can also act as substitute for sendmail. For instructions on how to set 
   For team features, multiple inboxes, and a hosted setup, try
   <a href="https://mailtrap.io/?ref=mailpit">Mailtrap</a>, our friendly companion.
 </p>
+
+
+<!-- for port in 5173 5174 5001; do
+  pids=$(lsof -tiTCP:$port -sTCP:LISTEN)
+  if [ -n "$pids" ]; then
+    echo "Killing port $port (PID: $pids)"
+    kill -9 $pids
+  else
+    echo "Port $port is already free"
+  fi
+done -->

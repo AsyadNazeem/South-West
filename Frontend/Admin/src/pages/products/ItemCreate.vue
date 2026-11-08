@@ -499,6 +499,17 @@
             Inactive items will not be available for normal selling operations.
           </small>
         </div>
+
+        <div class="checkbox-group">
+          <label>
+            <input
+                v-model="form.is_new"
+                type="checkbox"
+            />
+            <span>Mark as New</span>
+          </label>
+          <small>Show a NEW! badge on customer-facing product cards and details.</small>
+        </div>
       </section>
 
 
@@ -1113,6 +1124,7 @@ item_name: "",
   condition: "new",
   is_serialized: false,
   is_active: true,
+  is_new: false,
 
   specifications: []
 })
@@ -1649,6 +1661,9 @@ const loadItem = async () => {
   form.value.is_active =
       Boolean(item.is_active)
 
+  form.value.is_new =
+      Boolean(item.is_new)
+
   /* -----------------------------------------
      Category display value
   ----------------------------------------- */
@@ -1804,7 +1819,10 @@ qb_item_code: null,
       form.value.is_serialized,
 
       is_active:
-      form.value.is_active
+      form.value.is_active,
+
+      is_new:
+      Boolean(form.value.is_new)
     }
 
     let savedItemId

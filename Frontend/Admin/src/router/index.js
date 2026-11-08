@@ -12,6 +12,7 @@ const CustomerCreate = () => import('@/pages/customers/CustomerCreate.vue')
 const CustomerAddressCreate = () => import('@/pages/customers/CustomerAddressCreate.vue')
 const CustomerView = () => import('@/pages/customers/CustomerView.vue')
 const Items = () => import('@/pages/products/ItemList.vue')
+const BulkProductImport = () => import('@/pages/products/BulkProductImport.vue')
 const ItemCreate = () => import('@/pages/products/ItemCreate.vue')
 const ItemVariants = () => import('@/pages/products/ItemVariants.vue')
 const ItemVariantsCreate = () => import('@/pages/products/CreateItemVariants.vue')
@@ -182,6 +183,12 @@ const routes = [
                 name: 'items',
                 component: Items,
                 meta: { permission: 'products.view' }
+            },
+            {
+                path: 'products/bulk-import',
+                name: 'bulk-product-import',
+                component: BulkProductImport,
+                meta: { permission: 'products.create' }
             },
             {
                 path: 'products/items/create',

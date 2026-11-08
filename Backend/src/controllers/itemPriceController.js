@@ -1123,5 +1123,6 @@ module.exports = {
     updateItemPrice,
     deleteItemPrice,
     bulkUpdateItemPrices,
-    bulkSaveItemPrices
+    bulkSaveItemPrices,
+    isValidPrice
 };

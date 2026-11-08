@@ -1,0 +1,11 @@
+'use strict';
+const express=require('express');const multer=require('multer');const {rateLimit}=require('express-rate-limit');
+const authenticate=require('../middleware/authMiddleware');const {requirePermission}=require('../middleware/requirePermission');const controller=require('../controllers/bulkProductImportController');
+const router=express.Router();
+const limiter=rateLimit({windowMs:15*60*1000,limit:20,standardHeaders:true,legacyHeaders:false});
+const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:controller.MAX_BYTES,files:1},fileFilter(_req,file,cb){cb(null,file.originalname.toLowerCase().endsWith('.xlsx')&&file.mimetype==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');}});
+router.get('/template',authenticate,requirePermission('products.view'),limiter,controller.downloadTemplate);
+router.post('/validate',authenticate,requirePermission('products.create'),limiter,upload.single('file'),controller.upload);
+router.get('/:id/errors',authenticate,requirePermission('products.create'),limiter,controller.errorReport);
+router.post('/:id/confirm',authenticate,requirePermission('products.create'),limiter,controller.confirm);
+module.exports=router;
