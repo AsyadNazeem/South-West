@@ -88,6 +88,9 @@ const reportRoutes = require('./routes/reportRoutes');
 
 const app = express();
 
+// Trust the single reverse proxy used by the hosting environment.
+app.set('trust proxy', 1);
+
 
 const defaultCorsOrigins = process.env.NODE_ENV === 'production'
   ? ['https://southwest.lk', 'https://admin.southwest.lk']
