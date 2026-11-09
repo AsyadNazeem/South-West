@@ -13,47 +13,132 @@ function response() {
     };
 }
 
-function loadController({ stocked = false } = {}) {
+function loadController() {
+    const variant = {
+        id: 15,
+        item_id: 9,
+        variant_sku: 'TEST-001',
+        variant_name: 'Standard',
+        attributes: {},
+        is_default: true,
+        is_active: true,
+    };
+
+const item = {
+    id: 9,
+    item_name: 'Never Stocked Product',
+    category_id: 2,
+    item_type_id: 3,
+    images: [{
+        id: 1,
+        file_path: 'items/images/test-product.jpg',
+        url: 'items/images/test-product.jpg',
+        is_primary: true,
+        sort_order: 0,
+    }],
+};
+
     return proxyquire('../controllers/storeProductController', {
         '../models': {
-            Item: {
-                async findAll() { return [{ id: 9 }]; },
-                async findOne() { return { id: 9, category_id: 2, item_type_id: 3 }; },
+Item: {
+    async findAll() {
+        return [{
+            ...item,
+            toJSON() {
+                return { ...item };
             },
-            Brand: {}, Category: {}, Warranty: {}, ItemVariant: {}, ItemPrice: {},
-            ItemPaymentPrice: {}, ItemImage: {}, ItemSpecificationValue: {}, ItemSpecification: {},
-            InventoryStock: {}, InventoryLocation: {}, ProductReview: {}, ItemColor: {}, sequelize: {},
+        }];
+    },
+    async findOne() { return item; },
+},
+            Brand: {}, Category: {}, Warranty: {},
+            ItemVariant: {
+                async findAll() { return [variant]; },
+                async findByPk() { return { id: 15, colors: [] }; },
+            },
+ItemPrice: {
+    async findOne() {
+        return { id: 1, price: 1000, currency: 'LKR' };
+    },
+    async findAll() {
+        return [{
+            id: 1,
+            item_id: 9,
+            variant_id: 15,
+            price: 1000,
+            currency: 'LKR',
+            effective_from: new Date('2026-01-01'),
+            effective_to: null,
+        }];
+    },
+},
+            ItemPaymentPrice: {
+                async findAll() { return []; },
+            },
+            ItemImage: {},
+            ItemSpecificationValue: {},
+            ItemSpecification: {},
+            InventoryStock: {
+                async findAll() { return []; },
+            },
+            InventoryLocation: {},
+ProductReview: {
+    async findAll() {
+        return [];
+    },
+},
+            ItemColor: {},
+            sequelize: {},
         },
         '../utils/storeProductListingQuery': {
-            getEligibleProductPage: async () => [],
+            getEligibleProductPage: async () => [
+                { id: 9, shuffle_score: 123 },
+            ],
             getEligibleBrandIds: async () => [],
         },
         '../utils/productStockHistory': {
-            getProductsWithStockEvidence: async ids => stocked ? new Set(ids.map(String)) : new Set(),
+            getProductsWithStockEvidence: async () => new Set(),
             getAllProductsWithValidImages: async () => new Set(['9']),
-            getProductsWithValidImages: async ids => new Set(ids.map(String)),
+            getProductsWithValidImages: async () => new Set(['9']),
         },
         '../utils/customerProductEligibility': {
-            hasCustomerVisibleProduct: async () => stocked,
-            getEligibleCustomerVariantIds: async () => new Set(),
+            hasCustomerVisibleProduct: async () => true,
+            getEligibleCustomerVariantIds: async () => new Set(['15']),
         },
-        '../services/discountCampaignService': { getActiveCampaigns: async () => [] },
-        '../utils/fileStorage': { getResponsiveImageMetadata: async () => [], buildFileUrl: value => value, isValidUploadedImagePath: async () => true },
+'../services/discountCampaignService': {
+    getActiveCampaigns: async () => [],
+    getBestVisualCampaignForItem: async () => null,
+},
+        '../utils/fileStorage': {
+            getResponsiveImageMetadata: async () => [],
+            buildFileUrl: value => value,
+            isValidUploadedImagePath: async () => true,
+        },
     });
 }
 
-test('public product listings exclude never-stocked products even if active', async () => {
+test('public product listings include never-stocked products when otherwise eligible', async () => {
     const controller = loadController();
     const res = response();
+
     await controller.getStoreProducts({ query: {} }, res);
+
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(res.body.data, []);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.data.length, 1);
+    assert.equal(res.body.data[0].id, 9);
 });
 
-test('the direct customer variant endpoint also hides never-stocked products', async () => {
+test('direct customer variant endpoint exposes eligible never-stocked products as out of stock', async () => {
     const controller = loadController();
     const res = response();
+
     await controller.getStoreProductVariants({ params: { id: '9' } }, res);
-    assert.equal(res.statusCode, 404);
-    assert.equal(res.body.message, 'Product not found');
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.data.length, 1);
+    assert.equal(res.body.data[0].id, 15);
+    assert.equal(res.body.data[0].available_quantity, 0);
+    assert.equal(res.body.data[0].in_stock, false);
 });

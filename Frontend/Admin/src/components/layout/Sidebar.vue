@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   hasAllPermissions,
@@ -60,10 +60,10 @@ const menuDefinitions = [
       { label: 'Item Type', to: '/admin/products/item-types', permissions: ['products.view'] },
       { label: 'Specifications', to: '/admin/products/item-specifications', permissions: ['products.view'] },
       { label: 'Items', to: '/admin/products/items', permissions: ['products.view'] },
-      { label: 'Bulk Product Import', to: '/admin/products/bulk-import', permissions: ['products.create'] },
       { label: "Item Variants", to: "/admin/products/item-variants", permissions: ['products.view']},
       { label: 'Item Prices', to: '/admin/products/item-prices', permissions: ['products.view'] },
-      { label: 'Images', to: '/admin/products/item-images', permissions: ['item_images.view'] }
+      { label: 'Images', to: '/admin/products/item-images', permissions: ['item_images.view'] },
+      { label: 'Bulk Product Import', to: '/admin/products/bulk-import', permissions: ['products.create'] }
     ]
   },
   {
@@ -141,6 +141,11 @@ const menus = computed(() =>
 )
 
 const openMenu = ref(null)
+const showLogoutConfirmation = ref(false)
+const logoutInProgress = ref(false)
+const cancelLogoutButton = ref(null)
+const logoutButton = ref(null)
+let previousBodyOverflow = ''
 
 watch(
   [() => route.path, menus],
@@ -165,9 +170,57 @@ const toggleMenu = (menu) => {
 const isGroupActive = (menu) =>
     menu.children.some(c => route.path.startsWith(c.to))
 
+function onLogoutDialogKeydown(event) {
+  if (event.key === 'Escape' && !logoutInProgress.value) {
+    showLogoutConfirmation.value = false
+    return
+  }
+
+  if (event.key !== 'Tab') return
+  const dialog = document.querySelector('.logout-dialog')
+  const focusable = dialog?.querySelectorAll('button:not(:disabled)')
+  if (!focusable?.length) return
+
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+watch(showLogoutConfirmation, async (isOpen) => {
+  if (isOpen) {
+    previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onLogoutDialogKeydown)
+    await nextTick()
+    cancelLogoutButton.value?.focus()
+  } else {
+    document.body.style.overflow = previousBodyOverflow
+    window.removeEventListener('keydown', onLogoutDialogKeydown)
+    logoutButton.value?.focus()
+  }
+})
+
+onBeforeUnmount(() => {
+  document.body.style.overflow = previousBodyOverflow
+  window.removeEventListener('keydown', onLogoutDialogKeydown)
+})
+
 const logout = async () => {
-  await logoutSession().catch(() => undefined)
-  router.replace('/login')
+  if (logoutInProgress.value) return
+  logoutInProgress.value = true
+  try {
+    await logoutSession().catch(() => undefined)
+    showLogoutConfirmation.value = false
+    await router.replace('/login')
+  } finally {
+    logoutInProgress.value = false
+  }
 }
 
 const emit = defineEmits([
@@ -257,16 +310,84 @@ const emit = defineEmits([
 
     <!-- Footer -->
     <div class="sidebar-footer">
-      <button class="logout-button" title="Logout" @click="logout">
+      <button ref="logoutButton" class="logout-button" title="Logout" @click="showLogoutConfirmation = true">
         <span class="icon"><LogOut :size="18" :stroke-width="1.75" /></span>
         <span class="label">Logout</span>
       </button>
     </div>
 
   </aside>
+
+  <Teleport to="body">
+    <div
+      v-if="showLogoutConfirmation"
+      class="logout-modal-backdrop"
+      @click.self="!logoutInProgress && (showLogoutConfirmation = false)"
+    >
+      <section
+        class="logout-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="logout-dialog-title"
+        aria-describedby="logout-dialog-message"
+      >
+        <div class="logout-dialog-icon" aria-hidden="true"><LogOut :size="22" :stroke-width="1.8" /></div>
+        <h2 id="logout-dialog-title">Logout</h2>
+        <p id="logout-dialog-message">Are you sure you want to logout?</p>
+        <div class="logout-dialog-actions">
+          <button ref="cancelLogoutButton" type="button" class="logout-cancel" :disabled="logoutInProgress" @click="showLogoutConfirmation = false">Cancel</button>
+          <button type="button" class="logout-confirm" :disabled="logoutInProgress" @click="logout">
+            <LogOut :size="16" :stroke-width="1.8" />
+            {{ logoutInProgress ? 'Logging out…' : 'Logout' }}
+          </button>
+        </div>
+      </section>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
+.logout-modal-backdrop {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(15 23 42 / 48%);
+  backdrop-filter: blur(2px);
+}
+
+.logout-dialog {
+  width: min(100%, 420px);
+  padding: 28px;
+  border: 1px solid var(--color-border-light, #e5e7eb);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--color-surface, #fff);
+  box-shadow: 0 24px 70px rgb(15 23 42 / 22%);
+}
+
+.logout-dialog-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: var(--color-danger-bg, #fef2f2);
+  color: var(--color-danger, #b91c1c);
+}
+
+.logout-dialog h2 { margin: 0 0 8px; color: var(--color-text-primary, #111827); font-size: 20px; }
+.logout-dialog p { margin: 0; color: var(--color-text-secondary, #6b7280); font-size: 14px; line-height: 1.5; }
+.logout-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 26px; }
+.logout-dialog-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 96px; height: 40px; padding: 0 14px; border: 1px solid transparent; border-radius: var(--radius-lg, 8px); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.logout-dialog-actions button:focus-visible { outline: 3px solid var(--color-primary-light, rgb(37 99 235 / 24%)); outline-offset: 2px; }
+.logout-dialog-actions button:disabled { opacity: .6; cursor: wait; }
+.logout-cancel { border-color: var(--color-border, #d1d5db) !important; background: var(--color-surface, #fff); color: var(--color-text-primary, #111827); }
+.logout-confirm { background: var(--color-danger, #b91c1c); color: #fff; }
+.logout-confirm:hover:not(:disabled) { filter: brightness(.92); }
+
 .sidebar-logo {
   width: 190px;
   max-width: 100%;

@@ -98,10 +98,13 @@ function signUpWithGoogle() {
 
 <template>
   <main class="auth-page">
-    <section class="auth-card" aria-labelledby="register-title">
-      <RouterLink to="/" class="wordmark" aria-label="South West home">
-        SOUTH<span>WEST</span>
+    <div class="auth-shell">
+      <RouterLink to="/" class="back-home">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 18-6-6 6-6M9 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        Back to Home
       </RouterLink>
+      <section class="auth-card" aria-labelledby="register-title">
+      <img src="/SWLogoBlack.webp" class="auth-logo" alt="South West" />
 
       <header class="heading">
         <h1 id="register-title">Create your account</h1>
@@ -130,36 +133,38 @@ function signUpWithGoogle() {
       </div>
 
       <form class="auth-form" novalidate @submit.prevent="register">
-        <div class="field">
-          <label for="register-first-name" class="field-label">First name</label>
-          <div class="field-box">
-            <input
-                id="register-first-name"
-                v-model="form.first_name"
-                class="field-input"
-                name="first_name"
-                type="text"
-                autocomplete="given-name"
-                maxlength="100"
-                required
-                :disabled="loading"
-            />
+        <div class="form-row">
+          <div class="field">
+            <label for="register-first-name" class="field-label">First name</label>
+            <div class="field-box">
+              <input
+                  id="register-first-name"
+                  v-model="form.first_name"
+                  class="field-input"
+                  name="first_name"
+                  type="text"
+                  autocomplete="given-name"
+                  maxlength="100"
+                  required
+                  :disabled="loading"
+              />
+            </div>
           </div>
-        </div>
-        <div class="field">
-          <label for="register-last-name" class="field-label">Last name</label>
-          <div class="field-box">
-            <input
-                id="register-last-name"
-                v-model="form.last_name"
-                class="field-input"
-                name="last_name"
-                type="text"
-                autocomplete="family-name"
-                maxlength="100"
-                required
-                :disabled="loading"
-            />
+          <div class="field">
+            <label for="register-last-name" class="field-label">Last name</label>
+            <div class="field-box">
+              <input
+                  id="register-last-name"
+                  v-model="form.last_name"
+                  class="field-input"
+                  name="last_name"
+                  type="text"
+                  autocomplete="family-name"
+                  maxlength="100"
+                  required
+                  :disabled="loading"
+              />
+            </div>
           </div>
         </div>
         <div class="field">
@@ -265,7 +270,8 @@ function signUpWithGoogle() {
         Already have an account?
         <RouterLink to="/login">Sign in</RouterLink>
       </p>
-    </section>
+      </section>
+    </div>
   </main>
 </template>
 
@@ -275,40 +281,30 @@ function signUpWithGoogle() {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   background: var(--color-store-bg);
 }
 
-/* Compact card so the whole form fits the viewport without scrolling */
+.auth-shell { width: min(620px, 100%); }
+.back-home { display: inline-flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2) var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-xs); text-decoration: none; }
+.back-home:hover { color: var(--color-primary); }
+.back-home:focus-visible { outline: 2px solid var(--color-focus-outline); outline-offset: 3px; }
+.back-home svg { width: 16px; height: 16px; }
+
 .auth-card {
-  width: min(var(--container-auth), 100%);
-  padding: var(--space-8) var(--space-10);
+  width: 100%;
+  padding: var(--space-6) var(--space-8);
   background: var(--color-surface);
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
 
-/* Wordmark */
-.wordmark {
-  display: inline-block;
-  margin-bottom: var(--space-6);
-  color: var(--color-primary);
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.16em;
-  text-decoration: none;
-}
-
-.wordmark span {
-  color: var(--color-accent-deep);
-  font-weight: var(--font-weight-medium);
-}
+.auth-logo { display: block; width: clamp(160px, 28vw, 210px); height: 54px; object-fit: contain; object-position: left center; margin: 0 0 var(--space-4); }
 
 /* Heading */
 .heading {
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 
 .heading h1 {
@@ -371,7 +367,7 @@ function signUpWithGoogle() {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin: var(--space-4) 0;
+  margin: var(--space-5) 0;
 }
 
 .divider span:first-child,
@@ -398,7 +394,7 @@ function signUpWithGoogle() {
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .field {
@@ -418,7 +414,7 @@ function signUpWithGoogle() {
 .field-box {
   display: flex;
   align-items: center;
-  height: var(--field-height);
+  height: 46px;
   background: var(--color-surface);
   border: var(--border-width-field) solid var(--color-border);
   border-radius: var(--radius-md);
@@ -496,8 +492,8 @@ function signUpWithGoogle() {
 /* Submit: flat primary colour */
 .submit-button {
   width: 100%;
-  height: var(--field-height);
-  margin-top: var(--space-1);
+  height: 46px;
+  margin-top: 0;
   border: 0;
   border-radius: var(--radius-md);
   background: var(--color-primary);
@@ -536,7 +532,7 @@ function signUpWithGoogle() {
 
 /* Footer */
 .footer {
-  margin: var(--space-5) 0 0;
+  margin: var(--space-4) 0 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
   text-align: center;
@@ -559,8 +555,9 @@ function signUpWithGoogle() {
 }
 
 @media (max-width: 480px) {
+  .auth-page { place-items: start center; padding-top: var(--space-3); }
   .auth-card {
-    padding: var(--space-6) var(--space-5);
+    padding: var(--space-5) var(--space-4);
   }
 
   .form-row {

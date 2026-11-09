@@ -78,10 +78,13 @@ function loginWithGoogle() {
 
 <template>
   <main class="auth-page">
-    <section class="auth-card" aria-labelledby="login-title">
-      <RouterLink to="/" class="wordmark" aria-label="South West home">
-        SOUTH<span>WEST</span>
+    <div class="auth-shell">
+      <RouterLink to="/" class="back-home">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 18-6-6 6-6M9 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        Back to Home
       </RouterLink>
+      <section class="auth-card" aria-labelledby="login-title">
+      <img src="/SWLogoBlack.webp" class="auth-logo" alt="South West" />
 
       <header class="heading">
         <h1 id="login-title">Sign in</h1>
@@ -174,7 +177,8 @@ function loginWithGoogle() {
         New to South West?
         <RouterLink to="/register">Create an account</RouterLink>
       </p>
-    </section>
+      </section>
+    </div>
   </main>
 </template>
 
@@ -184,39 +188,30 @@ function loginWithGoogle() {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: var(--space-6) var(--space-4);
+  padding: var(--space-4);
   background: var(--color-store-bg);
 }
 
+.auth-shell { width: min(var(--container-auth), 100%); }
+.back-home { display: inline-flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3) var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-xs); text-decoration: none; }
+.back-home:hover { color: var(--color-primary); }
+.back-home:focus-visible { outline: 2px solid var(--color-focus-outline); outline-offset: 3px; }
+.back-home svg { width: 16px; height: 16px; }
+
 .auth-card {
-  width: min(var(--container-auth), 100%);
-  padding: var(--space-10);
+  width: 100%;
+  padding: var(--space-8);
   background: var(--color-surface);
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
 
-/* Wordmark */
-.wordmark {
-  display: inline-block;
-  margin-bottom: var(--space-8);
-  color: var(--color-primary);
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.16em;
-  text-decoration: none;
-}
-
-.wordmark span {
-  color: var(--color-accent-deep);
-  font-weight: var(--font-weight-medium);
-}
+.auth-logo { display: block; width: clamp(160px, 28vw, 210px); height: 54px; object-fit: contain; object-position: left center; margin-bottom: var(--space-4); }
 
 /* Heading */
 .heading {
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-4);
 }
 
 .heading h1 {
@@ -279,7 +274,7 @@ function loginWithGoogle() {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin: var(--space-5) 0;
+  margin: var(--space-4) 0;
 }
 
 .divider span:first-child,
@@ -299,7 +294,7 @@ function loginWithGoogle() {
 .auth-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .field {
@@ -436,7 +431,7 @@ function loginWithGoogle() {
 
 /* Footer */
 .footer {
-  margin: var(--space-6) 0 0;
+  margin: var(--space-4) 0 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
   text-align: center;

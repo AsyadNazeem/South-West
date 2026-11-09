@@ -20,14 +20,14 @@ function loadEligibility({ variants = [], prices = [], stocked = [] } = {}) {
     return { ...eligibility, calls };
 }
 
-test('requires the same variant to have positive price and its own stock history', async () => {
+test('requires the same variant to have a positive price but not stock history', async () => {
     const eligibility = loadEligibility({
         variants: [{ id: 1 }, { id: 2 }, { id: 3 }],
         prices: [{ variant_id: 1 }, { variant_id: 2 }],
         stocked: ['1', '3'],
     });
     const result = await eligibility.getEligibleCustomerVariantIds([1, 2, 3]);
-    assert.deepEqual([...result], ['1']);
+    assert.deepEqual([...result], ['1', '2']);
     assert.deepEqual(Object.getOwnPropertySymbols(eligibility.calls.priceQuery.where.price)
         .map(symbol => eligibility.calls.priceQuery.where.price[symbol]), [0]);
 });
@@ -44,12 +44,12 @@ test('a product without a valid image is not customer visible', async () => {
     assert.equal(await eligibility.hasCustomerVisibleProduct(50), false);
 });
 
-test('an image alone does not make a never-stocked product visible', async () => {
+test('a never-stocked product with an image and valid variant price is visible', async () => {
     const eligibility = loadEligibility({ variants: [{ id: 4 }], prices: [{ variant_id: 4 }], stocked: [] });
-    assert.equal(await eligibility.hasCustomerVisibleProduct(12), false);
+    assert.equal(await eligibility.hasCustomerVisibleProduct(12), true);
 });
 
-test('exposes two priced and stocked variants while excluding an unpriced third variant', async () => {
+test('exposes two priced variants while excluding an unpriced third variant', async () => {
     const eligibility = loadEligibility({
         variants: [{ id: 1 }, { id: 2 }, { id: 3 }],
         prices: [{ variant_id: 1 }, { variant_id: 2 }],

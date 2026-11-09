@@ -336,7 +336,14 @@ onUnmounted(() => {
   gap: var(--space-6);
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  scrollbar-width: thin;
+
+  /* Hide scrollbar while preserving scrolling */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.category-inner::-webkit-scrollbar {
+  display: none;
 }
 
 .category-item {
@@ -461,14 +468,6 @@ onUnmounted(() => {
 
 /* ---------- Touch devices: 44px targets, no scrollbar on the category row ---------- */
 @media (pointer: coarse) {
-  .category-inner {
-    scrollbar-width: none;
-  }
-
-  .category-inner::-webkit-scrollbar {
-    display: none;
-  }
-
   .category-button {
     min-height: 44px;
   }

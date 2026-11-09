@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const emit = defineEmits(['select-category'])
 const props = defineProps({
@@ -15,6 +15,23 @@ import {
 } from '@/utils/mediaUrl'
 
 const failedCategoryImages = ref(new Set())
+const showAll = ref(false)
+const columnCount = ref(9)
+const initialCount = computed(() => columnCount.value === 9 ? 8 : columnCount.value * 3)
+const visibleCategories = computed(() => showAll.value
+  ? props.categories
+  : props.categories.slice(0, initialCount.value))
+
+function updateColumnCount() {
+  const width = window.innerWidth
+  columnCount.value = width <= 420 ? 3 : width <= 760 ? 4 : width <= 1100 ? 6 : 9
+}
+
+onMounted(() => {
+  updateColumnCount()
+  window.addEventListener('resize', updateColumnCount, { passive: true })
+})
+onBeforeUnmount(() => window.removeEventListener('resize', updateColumnCount))
 
 function handleCategoryImageError(categoryId) {
   failedCategoryImages.value.add(String(categoryId))
@@ -39,9 +56,9 @@ function getCategoryImage(category) {
       <h2 id="homepage-categories-title">Categories</h2>
     </div>
 
-    <div class="category-grid">
+    <div id="homepage-category-grid" class="category-grid">
       <button
-        v-for="category in props.categories"
+        v-for="category in visibleCategories"
         :key="category.id"
         type="button"
         class="category-card"
@@ -65,6 +82,18 @@ function getCategoryImage(category) {
 
         <span class="category-name">{{ category.name }}</span>
       </button>
+
+      <button
+        v-if="!showAll && props.categories.length > initialCount"
+        type="button"
+        class="category-card view-more-card"
+        aria-controls="homepage-category-grid"
+        :aria-expanded="showAll"
+        @click="showAll = true"
+      >
+        <span class="view-more-icon" aria-hidden="true">＋</span>
+        <span class="category-name">View More</span>
+      </button>
     </div>
   </section>
 </template>
@@ -87,8 +116,9 @@ function getCategoryImage(category) {
 }
 
 .category-grid {
+  --category-columns: 9;
   display: grid;
-  grid-template-columns: repeat(9, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--category-columns), minmax(0, 1fr));
   border-top: 1px solid var(--color-border-soft);
   border-left: 1px solid var(--color-border-soft);
   background: var(--color-surface);
@@ -113,6 +143,9 @@ function getCategoryImage(category) {
 .category-card:hover {
   background: var(--color-surface-muted);
 }
+
+.view-more-card { justify-content: center; color: var(--color-primary); }
+.view-more-icon { display: grid; place-items: center; width: 44%; max-width: 56px; aspect-ratio: 1; border: 1px solid var(--color-border); border-radius: 50%; font-size: 28px; line-height: 1; }
 
 .category-image-wrap {
   display: grid;
@@ -147,19 +180,19 @@ function getCategoryImage(category) {
 
 @media (max-width: 1100px) {
   .category-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    --category-columns: 6;
   }
 }
 
 @media (max-width: 760px) {
   .category-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    --category-columns: 4;
   }
 }
 
 @media (max-width: 420px) {
   .category-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    --category-columns: 3;
   }
 }
 </style>

@@ -2,7 +2,7 @@
 
 const { Op } = require('sequelize');
 const { ItemVariant, ItemPrice } = require('../models');
-const { getVariantsWithStockEvidence, getProductsWithValidImages } = require('./productStockHistory');
+const { getProductsWithValidImages } = require('./productStockHistory');
 
 async function getEligibleCustomerVariantIds(variantIds, now = new Date()) {
     const ids = [...new Set((variantIds || []).filter(id => id != null).map(String))];
@@ -27,9 +27,9 @@ async function getEligibleCustomerVariantIds(variantIds, now = new Date()) {
             raw: true,
         }),
     ]);
-    const withHistory = await getVariantsWithStockEvidence(variants.map(row => row.id));
+    const activeVariantIds = new Set(variants.map(row => String(row.id)));
     const priced = new Set(prices.map(row => String(row.variant_id)));
-    return new Set([...withHistory].filter(id => priced.has(id)));
+    return new Set([...activeVariantIds].filter(id => priced.has(id)));
 }
 
 async function hasCustomerVisibleProduct(itemId, now = new Date()) {

@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 import SiteHeader from './layouts/AppHeader.vue'
 import AppFooter from './layouts/AppFooter.vue'
@@ -10,6 +11,8 @@ import AnalyticsConsent from './components/AnalyticsConsent.vue'
 import { useWebsiteTheme } from './composables/useWebsiteTheme'
 
 const { loadActiveTheme } = useWebsiteTheme()
+const route = useRoute()
+const isStandaloneAuthPage = () => ['customer-login', 'customer-register'].includes(route.name)
 
 onMounted(() => {
   loadActiveTheme()
@@ -18,11 +21,11 @@ onMounted(() => {
 
 <template>
   <RouteProgress />
-  <SiteHeader />
+  <SiteHeader v-if="!isStandaloneAuthPage()" />
 
   <RouterView />
-<FloatingWhatsApp />
+  <FloatingWhatsApp v-if="!isStandaloneAuthPage()" />
   <AnalyticsConsent />
-  <AppFooter />
+  <AppFooter v-if="!isStandaloneAuthPage()" />
 
 </template>

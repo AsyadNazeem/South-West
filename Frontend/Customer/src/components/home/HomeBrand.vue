@@ -1,7 +1,7 @@
 
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 
@@ -11,6 +11,12 @@ const loading = ref(true)
 const loadError = ref(false)
 const showAll = ref(false)
 const failedBrandImages = ref(new Set())
+const columnCount = ref(10)
+
+function updateColumnCount() {
+  const width = window.innerWidth
+  columnCount.value = width <= 420 ? 3 : width <= 760 ? 5 : width <= 1100 ? 6 : 10
+}
 
 function handleBrandImageError(brandId) {
   failedBrandImages.value.add(String(brandId))
@@ -24,7 +30,7 @@ import {
 const visibleBrands = computed(() =>
   showAll.value
     ? brands.value
-    : brands.value.slice(0, 20)
+    : brands.value.slice(0, columnCount.value * 2)
 )
 
 function getBrandImage(brand) {
@@ -76,7 +82,12 @@ function selectBrand(brand) {
   })
 }
 
-onMounted(loadBrands)
+onMounted(() => {
+  updateColumnCount()
+  window.addEventListener('resize', updateColumnCount, { passive: true })
+  loadBrands()
+})
+onBeforeUnmount(() => window.removeEventListener('resize', updateColumnCount))
 </script>
 
 
@@ -91,7 +102,17 @@ onMounted(loadBrands)
         <h2 id="homepage-brands-title">Brands</h2>
         <p>Shop your favourite brands</p>
       </div>
-
+      <button
+        v-if="brands.length > columnCount * 2 && !showAll"
+        type="button"
+        class="view-all-brands"
+        aria-controls="homepage-brand-grid"
+        :aria-expanded="showAll"
+        @click="showAll = true"
+      >
+        View More
+        <span aria-hidden="true">→</span>
+      </button>
     </div>
 
     <p v-if="loading && !brands.length" class="brands-loading">
@@ -127,17 +148,6 @@ onMounted(loadBrands)
       </button>
     </div>
 
-    <button
-      v-if="brands.length > 20 && !showAll"
-      type="button"
-      class="view-all-brands"
-      aria-controls="homepage-brand-grid"
-      :aria-expanded="showAll"
-      @click="showAll = true"
-    >
-      Show More
-      <span aria-hidden="true">→</span>
-    </button>
   </section>
 </template>
 
@@ -174,7 +184,7 @@ onMounted(loadBrands)
   justify-content: center;
   width: fit-content;
   gap: 8px;
-  margin: var(--space-4) auto 0;
+  margin: 0 0 var(--space-1);
   padding: 9px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);

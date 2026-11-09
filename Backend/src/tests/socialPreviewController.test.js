@@ -100,19 +100,23 @@ test('generates product-specific Open Graph and Twitter metadata', async () => {
     assert.equal(state.itemQuery.where.is_active, true);
 });
 
-test('does not expose social metadata for a product that has never been stocked', async () => {
-    const controller = proxyquire('../controllers/socialPreviewController', {
-        '../models': {
-            Item: { findOne: async () => ({ id: 22, item_name: 'Hidden product' }) },
-            ItemImage: { findAll: async () => [] },
+test('exposes social metadata for a never-stocked product when otherwise customer eligible', async () => {
+    const state = {
+        image: {
+            file_path: 'items/images/never-stocked.jpg',
+            alt_text: 'Never stocked product',
         },
-        '../utils/fileStorage': { buildFileUrl: () => null, isValidUploadedImagePath: async () => true },
-        '../utils/customerProductEligibility': { hasCustomerVisibleProduct: async () => false },
-    });
+    };
+
+    const { getProductSocialPreview } = loadController(state);
     const res = responseMock();
-    await controller.getProductSocialPreview({ params: { slug: `hidden-${UUID}` } }, res);
-    assert.equal(res.statusCode, 404);
-    assert.equal(res.body, 'Product not found');
+
+    await getProductSocialPreview({
+        params: { slug: `kingston-fury-${UUID}` },
+    }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /property="og:title"/);
 });
 
 test('rejects product URLs without a public UUID', async () => {

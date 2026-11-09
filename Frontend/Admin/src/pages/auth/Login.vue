@@ -50,7 +50,7 @@ const login = async () => {
     <div class="login-card">
 
       <div class="login-header">
-        <h1>South West</h1>
+        <img class="login-logo" src="/SWLogoBlack.webp" alt="South West" />
         <p>Admin Portal</p>
       </div>
 
@@ -129,6 +129,14 @@ const login = async () => {
 .login-header {
   margin-bottom: 28px;
   text-align: center;
+}
+
+.login-logo {
+  display: block;
+  width: clamp(170px, 52vw, 230px);
+  height: 64px;
+  margin: 0 auto;
+  object-fit: contain;
 }
 
 .login-header h1 {

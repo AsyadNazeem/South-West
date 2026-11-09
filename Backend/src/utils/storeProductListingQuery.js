@@ -25,20 +25,6 @@ const ELIGIBLE_VARIANT_CONDITION = `
          AND (eligible_price.effective_to IS NULL OR eligible_price.effective_to >= :now)
         WHERE eligible_variant.item_id = items.id
           AND eligible_variant.is_active = 1
-          AND (
-              EXISTS (SELECT 1 FROM inventory_stock AS eligible_stock
-                      WHERE eligible_stock.variant_id = eligible_variant.id
-                        AND eligible_stock.quantity_on_hand > 0)
-              OR EXISTS (SELECT 1 FROM inventory_stock_movements AS eligible_receipt
-                         WHERE eligible_receipt.variant_id = eligible_variant.id
-                           AND eligible_receipt.quantity > 0
-                           AND eligible_receipt.movement_type IN ('purchase','goods_receipt','customer_return','transfer_in'))
-              OR EXISTS (SELECT 1 FROM inventory_stock_movements AS eligible_adjustment
-                         WHERE eligible_adjustment.variant_id = eligible_variant.id
-                           AND eligible_adjustment.movement_type = 'adjustment'
-                           AND eligible_adjustment.quantity > 0
-                           AND CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(eligible_adjustment.notes, 'Signed difference: ', -1), ' | ', 1) AS DECIMAL(15,3)) > 0)
-          )
     )
 `;
 
@@ -72,20 +58,6 @@ function buildListingExpressions(campaigns, replacements) {
         WHERE priced_variants.item_id = items.id
           AND priced_variants.is_active = 1
           AND selected_prices.price > 0
-          AND (
-              EXISTS (SELECT 1 FROM inventory_stock AS price_stock
-                      WHERE price_stock.variant_id = priced_variants.id
-                        AND price_stock.quantity_on_hand > 0)
-              OR EXISTS (SELECT 1 FROM inventory_stock_movements AS price_receipt
-                         WHERE price_receipt.variant_id = priced_variants.id
-                           AND price_receipt.quantity > 0
-                           AND price_receipt.movement_type IN ('purchase','goods_receipt','customer_return','transfer_in'))
-              OR EXISTS (SELECT 1 FROM inventory_stock_movements AS price_adjustment
-                         WHERE price_adjustment.variant_id = priced_variants.id
-                           AND price_adjustment.movement_type = 'adjustment'
-                           AND price_adjustment.quantity > 0
-                           AND CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(price_adjustment.notes, 'Signed difference: ', -1), ' | ', 1) AS DECIMAL(15,3)) > 0)
-          )
     `;
 
     const basePrice = `

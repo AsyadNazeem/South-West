@@ -18,7 +18,6 @@ const {
     getEligibleProductPage,
     getEligibleBrandIds,
 } = require('../utils/storeProductListingQuery');
-const { getProductsWithStockEvidence } = require('../utils/productStockHistory');
 const { getAllProductsWithValidImages, getProductsWithValidImages } = require('../utils/productStockHistory');
 const { getEligibleCustomerVariantIds, hasCustomerVisibleProduct } = require('../utils/customerProductEligibility');
 const {
@@ -286,11 +285,6 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
 
         const validImageIds = await getProductsWithValidImages(items.map(item => item.id));
         items = items.filter(item => validImageIds.has(String(item.id)));
-        if (!paginationEnabled) {
-            const visibleIds = await getProductsWithStockEvidence(items.map(item => item.id));
-            items = items.filter(item => visibleIds.has(String(item.id)));
-        }
-
         const ids = items.map(item => item.id);
 
         if (!ids.length) {

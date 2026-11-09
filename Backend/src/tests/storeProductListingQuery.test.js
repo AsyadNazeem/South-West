@@ -29,9 +29,7 @@ test('queries only eligible active products with valid selling prices', async ()
 
     assert.match(captured.sql, /items\.is_active = 1/);
     assert.match(captured.sql, /items\.id IN \(:imageItemIds\)/);
-    assert.match(captured.sql, /eligible_stock\.quantity_on_hand > 0/);
-    assert.match(captured.sql, /eligible_receipt\.movement_type IN \([\s\S]*goods_receipt/);
-    assert.match(captured.sql, /eligible_adjustment\.movement_type = 'adjustment'/);
+    assert.doesNotMatch(captured.sql, /inventory_stock_movements|inventory_stock/);
     assert.match(captured.sql, /item_variants/);
     assert.match(captured.sql, /eligible_price\.price_type = 'selling'/);
     assert.match(captured.sql, /eligible_price\.currency = 'LKR'/);
@@ -172,7 +170,7 @@ test('eligible brand ids use the same active-product and current selling-price r
     assert.match(captured.sql, /SELECT DISTINCT items\.brand_id/);
     assert.match(captured.sql, /items\.is_active = 1/);
     assert.match(captured.sql, /items\.brand_id IS NOT NULL/);
-    assert.match(captured.sql, /eligible_receipt\.movement_type IN \([\s\S]*goods_receipt/);
+    assert.doesNotMatch(captured.sql, /inventory_stock_movements|inventory_stock/);
     assert.match(captured.sql, /items\.id IN \(:imageItemIds\)/);
     assert.match(captured.sql, /eligible_variant\.is_active = 1/);
     assert.match(captured.sql, /eligible_price\.price_type = 'selling'/);
