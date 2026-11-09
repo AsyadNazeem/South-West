@@ -22,13 +22,9 @@
 </template>
 
 <script setup>
-const whatsappNumber = '94773029614'
+import { getWhatsAppLink } from '@/utils/whatsapp'
 
-const whatsappMessage = encodeURIComponent(
-  'Hi South West! I would like to make an inquiry.'
-)
-
-const whatsappLink = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`
+const whatsappLink = getWhatsAppLink()
 </script>
 
 <style scoped>

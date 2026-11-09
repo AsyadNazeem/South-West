@@ -13,11 +13,15 @@ import SimilarProducts from '@/components/products/SimilarProducts.vue'
 import { setPageMeta } from '@/composables/usePageMeta'
 import { trackAddToCart, trackProductView } from '@/services/analytics'
 import { breadcrumbSchema, productSchema, setStructuredData } from '@/utils/structuredData'
+import { getWhatsAppLink } from '@/utils/whatsapp'
 
 const route = useRoute()
 const router = useRouter()
 
 const product = ref(null)
+const wholesaleWhatsAppLink = computed(() => getWhatsAppLink(
+  `Hi South West, I'm interested in buying ${product.value?.name || 'this product'} wholesale. Could you please share your pricing and minimum order quantity?`
+))
 const loading = ref(true)
 let latestProductLoadId = 0
 const error = ref('')
@@ -1821,6 +1825,40 @@ onMounted(loadProduct)
             </div>
           </div>
 
+<div class="bulk-card">
+  <span class="bulk-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M20 12.5 12.5 20a2 2 0 0 1-2.8 0L3 13.3V4h9.3l7.7 7.7a1 1 0 0 1 0 .8Z"
+        stroke="currentColor"
+        stroke-width="1.7"
+        stroke-linejoin="round"
+      />
+      <circle cx="8" cy="8.5" r="1.3" fill="currentColor" />
+    </svg>
+  </span>
+ 
+  <div class="bulk-text">
+    <strong>Buying in bulk?</strong>
+    <span>Message us on WhatsApp for wholesale pricing.</span>
+  </div>
+ 
+  <a
+    :href="wholesaleWhatsAppLink"
+    class="bulk-button"
+    target="_blank"
+    rel="noopener noreferrer"
+    aria-label="Chat with us on WhatsApp about wholesale pricing (opens in a new tab)"
+  >
+    <!-- Official WhatsApp logo shape (Simple Icons, CC0) -->
+    <svg class="bulk-wa" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+    </svg>
+    Chat on WhatsApp
+  </a>
+</div>
+ 
+
           <p v-if="cartMessage" class="feedback success">
             {{ cartMessage }}
           </p>
@@ -2727,6 +2765,108 @@ onMounted(loadProduct)
   text-align: center;
   font-size: 14px;
   font-weight: 600;
+}
+
+/* ---------- Wholesale / bulk callout ---------- */
+.bulk-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid #f0dc9c;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fffbea 0%, #fff3c9 100%);
+}
+ 
+.bulk-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #ffe8a0;
+  color: #7a5700;
+}
+ 
+.bulk-icon svg {
+  width: 21px;
+  height: 21px;
+}
+ 
+.bulk-text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+ 
+.bulk-text strong {
+  color: #3f3208;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+ 
+.bulk-text span {
+  color: #6a5a20;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+ 
+/* WhatsApp button: brand teal-green keeps the white text readable */
+.bulk-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #128c7e;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgb(18 140 126 / 30%);
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+ 
+.bulk-wa {
+  width: 19px;
+  height: 19px;
+}
+ 
+.bulk-button:hover {
+  background: #0e7266;
+  box-shadow: 0 4px 12px rgb(18 140 126 / 38%);
+}
+ 
+.bulk-button:active {
+  transform: translateY(1px);
+}
+ 
+.bulk-button:focus-visible {
+  outline: 2px solid #0e7266;
+  outline-offset: 3px;
+}
+ 
+@media (max-width: 520px) {
+  .bulk-card {
+    flex-wrap: wrap;
+  }
+ 
+  .bulk-text {
+    flex-basis: calc(100% - 58px);
+  }
+ 
+  .bulk-button {
+    width: 100%;
+    padding: 12px 16px;
+  }
 }
 
 .action-buttons {
@@ -4476,5 +4616,10 @@ onMounted(loadProduct)
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .bulk-button {
+    transition: none;
+  }
+}
 
 </style>

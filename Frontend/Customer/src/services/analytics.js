@@ -1,4 +1,6 @@
 const MEASUREMENT_ID = import.meta.env?.VITE_GA_MEASUREMENT_ID
+const GTM_CONTAINER_ID = import.meta.env?.VITE_GTM_CONTAINER_ID ?? 'GTM-WVVWN69R'
+export const analyticsConfigured = Boolean(GTM_CONTAINER_ID || MEASUREMENT_ID)
 const CONSENT_KEY = 'southwestAnalyticsConsent'
 const CAMPAIGN_KEY = 'southwestCampaign'
 const CAMPAIGN_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']
@@ -46,7 +48,7 @@ export function setAnalyticsConsent(accepted) {
 }
 
 function initializeAnalytics() {
-  if (!MEASUREMENT_ID || !hasAnalyticsConsent() || typeof window === 'undefined' || typeof document === 'undefined') return
+  if (!analyticsConfigured || !hasAnalyticsConsent() || typeof window === 'undefined' || typeof document === 'undefined') return
 
   if (!window.dataLayer) window.dataLayer = []
   if (typeof window.gtag !== 'function') {
@@ -62,11 +64,20 @@ function initializeAnalytics() {
   window.gtag('js', new Date())
   window.gtag('consent', 'default', { analytics_storage: 'denied' })
   window.gtag('consent', 'update', { analytics_storage: 'granted' })
-  window.gtag('config', MEASUREMENT_ID, { send_page_view: false })
 
-  const scriptUrl = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(MEASUREMENT_ID)}`
+  const useTagManager = Boolean(GTM_CONTAINER_ID)
+  if (!useTagManager && MEASUREMENT_ID) {
+    window.gtag('config', MEASUREMENT_ID, { send_page_view: false })
+  }
+
+  const scriptUrl = useTagManager
+    ? `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(GTM_CONTAINER_ID)}`
+    : `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(MEASUREMENT_ID)}`
   const existingScript = document.querySelector?.(`script[src="${scriptUrl}"]`)
   if (!existingScript) {
+    if (useTagManager) {
+      window.dataLayer.push({ 'gtm.start': Date.now(), event: 'gtm.js' })
+    }
     const script = document.createElement('script')
     script.async = true
     script.src = scriptUrl

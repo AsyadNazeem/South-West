@@ -1,10 +1,10 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { getAnalyticsChoice, setAnalyticsConsent } from '@/services/analytics'
+import { analyticsConfigured, getAnalyticsChoice, setAnalyticsConsent } from '@/services/analytics'
 
 const choice = ref(getAnalyticsChoice())
 const settingsOpen = ref(!choice.value)
-const enabled = Boolean(import.meta.env.VITE_GA_MEASUREMENT_ID)
+const enabled = analyticsConfigured
 const visible = computed(() => settingsOpen.value && enabled)
 
 function choose(accepted) {

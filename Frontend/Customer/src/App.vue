@@ -6,7 +6,6 @@ import SiteHeader from './layouts/AppHeader.vue'
 import AppFooter from './layouts/AppFooter.vue'
 import FloatingWhatsApp from './components/FloatingWhatsApp.vue'
 import RouteProgress from './components/RouteProgress.vue'
-import AnalyticsConsent from './components/AnalyticsConsent.vue'
 
 import { useWebsiteTheme } from './composables/useWebsiteTheme'
 
@@ -25,7 +24,6 @@ onMounted(() => {
 
   <RouterView />
   <FloatingWhatsApp v-if="!isStandaloneAuthPage()" />
-  <AnalyticsConsent />
   <AppFooter v-if="!isStandaloneAuthPage()" />
 
 </template>
