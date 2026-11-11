@@ -118,7 +118,6 @@ const getMyWishlist = async (req, res) => {
     order: [['created_at', 'DESC']]
 });
 
-        await auditWishlist(req, 'CUSTOMER_WISHLIST_VIEWED');
 
         const responsiveImageCache = new Map();
 

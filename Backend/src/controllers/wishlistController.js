@@ -156,10 +156,6 @@ const getCustomerWishlist = async (req, res) => {
             order: [['created_at', 'DESC']]
         });
 
-        await auditWishlist(req, {
-            action: 'CUSTOMER_WISHLIST_VIEWED',
-            description: 'Retrieved customer wishlist'
-        });
 
         return res.status(200).json({
             message: 'Customer wishlist retrieved successfully',
