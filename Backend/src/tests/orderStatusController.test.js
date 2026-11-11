@@ -20,6 +20,8 @@ function resetState(overrides = {}) {
         auditCalls: [],
         statusEmails: [],
         trackingEmails: [],
+        statusItems: [],
+        statusPayments: [],
         commitCalls: 0,
         rollbackCalls: 0,
         emailError: null,
@@ -53,6 +55,7 @@ const sequelize = {
 const order = {
     id: 501,
     order_number: 'TEST-ORDER-501',
+    total_amount: '1250.00',
     customer_id: null,
 
     get status() {
@@ -80,6 +83,11 @@ const models = {
             return order;
         }
     },
+
+    OrderItem: { async findAll() { return state.statusItems; } },
+    Item: {},
+    ItemVariant: {},
+    Payment: { async findAll() { return state.statusPayments; } },
 
     Customer: {
         async findByPk() {
@@ -198,6 +206,7 @@ function makeDelivery(overrides = {}) {
         order_id: 501,
         delivery_status: 'pending',
         tracking_number: null,
+        tracking_url: null,
         courier_name: null,
         expected_delivery_date: null,
         dispatched_at: null,
@@ -339,6 +348,14 @@ test('courier handover requires courier and tracking details', async () => {
 
 test('courier handover updates delivery, history and tracking email', async () => {
     state.orderStatus = 'processing';
+    state.paymentStatus = 'paid';
+    state.statusPayments = [{ payment_method: 'card', payment_status: 'paid' }];
+    state.statusItems = [{
+        item: { item_name: 'Device' },
+        variant: { variant_name: 'Blue' },
+        quantity: 2,
+        line_total: '1250.00'
+    }];
     state.customer = {
         id: 7,
         first_name: 'Test',
@@ -355,7 +372,8 @@ test('courier handover updates delivery, history and tracking email', async () =
         makeRequest({
             status: 'shipped',
             courier_name: ' Test Courier ',
-            tracking_number: ' TRACK-123 '
+            tracking_number: ' TRACK-123 ',
+            tracking_url: 'http://courier.example/track/123'
         }),
         res
     );
@@ -365,14 +383,32 @@ test('courier handover updates delivery, history and tracking email', async () =
     assert.equal(state.deliveries[0].delivery_status, 'dispatched');
     assert.equal(state.deliveries[0].courier_name, 'Test Courier');
     assert.equal(state.deliveries[0].tracking_number, 'TRACK-123');
+    assert.equal(state.deliveries[0].tracking_url, 'http://courier.example/track/123');
     assert.ok(state.deliveries[0].dispatched_at instanceof Date);
 
     assert.equal(state.histories.length, 1);
     assert.equal(state.histories[0].status, 'dispatched');
     assert.equal(state.notifications.length, 1);
     assert.equal(state.trackingEmails.length, 1);
+    assert.equal(state.trackingEmails[0].trackingUrl, 'http://courier.example/track/123');
+    assert.deepEqual(state.trackingEmails[0].orderDetails, {
+        paymentMethod: 'card',
+        paymentStatus: 'paid',
+        totalAmount: 'LKR 1250.00',
+        items: [{ name: 'Device', variantName: 'Blue', quantity: 2, lineTotal: 'LKR 1250.00' }]
+    });
     assert.equal(state.statusEmails.length, 0);
     assert.equal(state.commitCalls, 1);
+
+    const repeatedRes = makeResponse();
+    await controller.updateOrderStatus(makeRequest({
+        status: 'shipped',
+        courier_name: 'Test Courier',
+        tracking_number: 'TRACK-123',
+        tracking_url: 'http://courier.example/track/123'
+    }), repeatedRes);
+    assert.equal(repeatedRes.statusCode, 200);
+    assert.equal(state.trackingEmails.length, 1);
 });
 
 test('courier handover creates a delivery from the saved shipping address', async () => {
@@ -402,7 +438,8 @@ test('courier handover creates a delivery from the saved shipping address', asyn
         makeRequest({
             status: 'shipped',
             courier_name: 'Test Courier',
-            tracking_number: 'TRACK-NEW-123'
+            tracking_number: 'TRACK-NEW-123',
+            tracking_url: 'https://courier.example/track/NEW-123'
         }),
         res
     );
@@ -426,6 +463,7 @@ test('courier handover creates a delivery from the saved shipping address', asyn
     assert.equal(delivery.country, 'Sri Lanka');
     assert.equal(delivery.courier_name, 'Test Courier');
     assert.equal(delivery.tracking_number, 'TRACK-NEW-123');
+    assert.equal(delivery.tracking_url, 'https://courier.example/track/NEW-123');
     assert.ok(delivery.dispatched_at instanceof Date);
 
     assert.equal(state.histories.length, 1);
@@ -434,6 +472,45 @@ test('courier handover creates a delivery from the saved shipping address', asyn
     assert.equal(state.trackingEmails.length, 1);
     assert.equal(state.commitCalls, 1);
     assert.equal(state.rollbackCalls, 0);
+});
+
+test('courier handover rejects invalid and non-HTTP tracking URLs', async () => {
+    state.orderStatus = 'processing';
+    state.deliveries = [makeDelivery()];
+
+    for (const trackingUrl of [
+        'not a url',
+        'ftp://courier.example/track/123',
+        'javascript:alert(1)'
+    ]) {
+        const res = makeResponse();
+        await controller.updateOrderStatus(makeRequest({
+            status: 'shipped',
+            courier_name: 'Courier',
+            tracking_number: 'TRACK-123',
+            tracking_url: trackingUrl
+        }), res);
+        assert.equal(res.statusCode, 400);
+        assert.equal(state.orderStatus, 'processing');
+    }
+    assert.equal(state.commitCalls, 0);
+    assert.equal(state.trackingEmails.length, 0);
+});
+
+test('unrelated order status changes preserve the saved delivery tracking URL', async () => {
+    state.orderStatus = 'pending';
+    const delivery = makeDelivery({ tracking_url: 'https://courier.example/track/saved' });
+    state.deliveries = [delivery];
+    const res = makeResponse();
+
+    await controller.updateOrderStatus(makeRequest({
+        status: 'confirmed',
+        tracking_url: 'https://courier.example/track/other'
+    }), res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(delivery.tracking_url, 'https://courier.example/track/saved');
+    assert.equal(state.trackingEmails.length, 0);
 });
 
 test('courier handover is rejected when a new delivery has no saved shipping address', async () => {

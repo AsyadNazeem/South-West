@@ -57,7 +57,7 @@ async function register() {
   loading.value = true
 
   try {
-    await api.post('/customer-auth/register', {
+    const response = await api.post('/customer-auth/register', {
       first_name: form.value.first_name.trim(),
       last_name: form.value.last_name.trim(),
       email: form.value.email.trim(),
@@ -70,7 +70,10 @@ async function register() {
     // Keep only the email needed for the next verification step.
     sessionStorage.setItem('pendingCustomerVerificationEmail', email)
 
-    await router.push({ path: '/verify-email', query: { email } })
+    await router.push({
+      path: '/verify-email',
+      query: { email, ...(response.data?.verification_required ? { pending: '1' } : {}) },
+    })
   } catch (error) {
     errorMessage.value =
         error.response?.data?.message || 'Unable to register. Please try again.'

@@ -10,6 +10,7 @@ const router = useRouter()
 
 const loading = ref(true)
 const submitting = ref(false)
+const downloadingDocument = ref(false)
 const error = ref('')
 const notice = ref('')
 
@@ -327,6 +328,49 @@ function formatPrice(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })}`
+}
+
+function paymentMethodLabel(method) {
+  const labels = { cash: 'Cash on Delivery', cod: 'Cash on Delivery', card: 'Card', koko: 'Koko', mintpay: 'Mintpay' }
+  return labels[String(method || '').toLowerCase()] || 'Payment pending'
+}
+
+function formatOrderDate(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('en-LK', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+const canDownloadOrderDocument = computed(() => {
+  if (!order.value) return false
+  const method = String(order.value.payment_method || '').toLowerCase()
+  const status = String(order.value.payment_status || '').toLowerCase()
+  return method === 'cash' || status === 'paid'
+})
+
+async function downloadOrderDocument() {
+  const id = order.value?.id
+  if (!id || downloadingDocument.value) return
+  downloadingDocument.value = true
+  try {
+    const path = isGuest.value
+      ? `/guest-checkout/orders/${id}/document`
+      : `/customer-orders/${id}/document`
+    const response = await api.get(path, {
+      responseType: 'blob',
+      headers: isGuest.value ? { 'x-guest-checkout-token': guestToken.value } : undefined
+    })
+    const blobUrl = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+    const anchor = document.createElement('a')
+    anchor.href = blobUrl
+    anchor.download = `South-West-Order-${order.value.order_number || id}-${order.value.payment_status === 'paid' ? '' : 'Draft-'}Invoice.pdf`
+    anchor.click()
+    URL.revokeObjectURL(blobUrl)
+  } catch (error) {
+    notice.value = 'The order document could not be downloaded. Please try again later.'
+  } finally {
+    downloadingDocument.value = false
+  }
 }
 
 function addressBody(address) {
@@ -981,6 +1025,9 @@ const payload = {
 
     order.value = {
       ...createdOrder,
+      payment_method: createdOrder.payment_method || responseData?.payment?.method || responseData?.data?.payment?.method || paymentMethod.value?.value,
+      normal_delivery_amount: createdOrder.normal_delivery_amount ?? responseData?.normal_delivery_amount ?? responseData?.data?.normal_delivery_amount ?? quote.value?.normal_delivery_amount,
+      additional_shipping_amount: createdOrder.additional_shipping_amount ?? responseData?.additional_shipping_amount ?? responseData?.data?.additional_shipping_amount ?? quote.value?.additional_shipping_amount,
       subtotal: createdOrder.subtotal ?? quote.value?.subtotal,
       shipping_amount:
         createdOrder.shipping_amount ?? quote.value?.shipping_amount,
@@ -1011,9 +1058,8 @@ const payload = {
       sessionStorage.removeItem(guestAddressStorageKey.value)
 
       // A Buy Now session must not clear the customer's normal guest cart.
-      if (!directPurchase.value) {
-        sessionStorage.removeItem('guestCheckoutToken')
-      }
+      // Keep the guest session token until the order document can be
+      // downloaded; the consumed session cannot be used to place another order.
 
       guestCart.value = { ...guestCart.value, items: [] }
     } else if (!directPurchase.value) {
@@ -1188,12 +1234,12 @@ onMounted(loadCheckout)
 
   <h2>Thank you for your order!</h2>
   <p class="muted">
-    Your order has been placed successfully. You can pay in cash when it is delivered.
+    Your order has been placed successfully.
   </p>
 
   <div class="cod-banner">
-    <strong>Cash on Delivery</strong>
-    <span>Please pay the delivery person when your order arrives.</span>
+    <strong>{{ paymentMethodLabel(order.payment_method || paymentMethod?.value) }}</strong>
+    <span>{{ order.payment_status === 'paid' ? 'Payment confirmed.' : (order.payment_method === 'cash' ? 'Payment has not yet been collected.' : 'Payment status: ' + (order.payment_status || 'Pending')) }}</span>
   </div>
 
   <section class="confirmation-section">
@@ -1209,8 +1255,12 @@ onMounted(loadCheckout)
         <dd>{{ order.status || 'Pending' }}</dd>
       </div>
       <div>
+        <dt>Order date</dt>
+        <dd>{{ formatOrderDate(order.order_date || order.created_at) }}</dd>
+      </div>
+      <div>
         <dt>Payment method</dt>
-        <dd>Cash on Delivery</dd>
+        <dd>{{ paymentMethodLabel(order.payment_method || paymentMethod?.value) }}</dd>
       </div>
       <div>
         <dt>Payment status</dt>
@@ -1260,10 +1310,18 @@ onMounted(loadCheckout)
       </div>
       <div>
         <dt>Delivery charge</dt>
-        <dd>{{ formatPrice(order.shipping_amount) }}</dd>
+        <dd>{{ formatPrice(order.normal_delivery_amount ?? quote?.normal_delivery_amount ?? order.shipping_amount) }}</dd>
+      </div>
+      <div v-if="Number(order.additional_shipping_amount ?? quote?.additional_shipping_amount) > 0">
+        <dt>Additional shipping</dt>
+        <dd>{{ formatPrice(order.additional_shipping_amount ?? quote?.additional_shipping_amount) }}</dd>
+      </div>
+      <div v-if="Number(order.discount_amount || 0) > 0">
+        <dt>Discount</dt>
+        <dd>− {{ formatPrice(order.discount_amount) }}</dd>
       </div>
       <div class="confirmation-grand-total">
-        <dt>Total to pay on delivery</dt>
+        <dt>Order total</dt>
         <dd>{{ formatPrice(order.total_amount) }}</dd>
       </div>
     </dl>
@@ -1293,6 +1351,16 @@ onMounted(loadCheckout)
   </p>
 
   <div class="actions">
+    <button
+      v-if="canDownloadOrderDocument"
+      type="button"
+      class="primary-button"
+      :disabled="downloadingDocument"
+      @click="downloadOrderDocument"
+    >
+      {{ downloadingDocument ? 'Preparing document…' : 'Download Order Document' }}
+    </button>
+
     <button
       v-if="!isGuest"
       type="button"
@@ -1646,14 +1714,18 @@ onMounted(loadCheckout)
 </div>
 
   <div>
-    <dt>Delivery</dt>
+    <dt>Delivery charge</dt>
     <dd>
       <span v-if="quoteLoading">Calculating…</span>
       <span v-else-if="quote">
-        {{ formatPrice(quote.shipping_amount) }}
+        {{ formatPrice(quote.normal_delivery_amount ?? quote.shipping_amount) }}
       </span>
       <span v-else>—</span>
     </dd>
+  </div>
+  <div v-if="quote && Number(quote.additional_shipping_amount || 0) > 0">
+    <dt>Additional shipping</dt>
+    <dd>{{ formatPrice(quote.additional_shipping_amount) }}</dd>
   </div>
 
   <div>

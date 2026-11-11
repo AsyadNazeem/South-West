@@ -132,6 +132,13 @@ google_id: {
             as: 'emailVerifications',
         });
 
+        Customer.hasMany(models.CustomerPasswordResetToken, {
+            foreignKey: 'customer_id',
+            as: 'passwordResetTokens',
+            onDelete: 'CASCADE',
+            onUpdate: 'CASCADE',
+        });
+
         Customer.hasMany(models.CustomerPasswordSetupToken, {
             foreignKey: 'customer_id',
             as: 'passwordSetupTokens',

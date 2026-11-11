@@ -116,6 +116,11 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true
             },
 
+            tracking_url: {
+                type: DataTypes.STRING(2048),
+                allowNull: true
+            },
+
             courier_name: {
                 type: DataTypes.STRING(150),
                 allowNull: true

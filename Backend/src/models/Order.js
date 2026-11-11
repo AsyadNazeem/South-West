@@ -175,6 +175,16 @@ module.exports = (sequelize, DataTypes) => {
                 defaultValue: 0
             },
 
+            normal_delivery_amount: {
+                type: DataTypes.DECIMAL(15, 2),
+                allowNull: true
+            },
+
+            additional_shipping_amount: {
+                type: DataTypes.DECIMAL(15, 2),
+                allowNull: true
+            },
+
             total_amount: {
                 type: DataTypes.DECIMAL(15, 2),
                 allowNull: false,

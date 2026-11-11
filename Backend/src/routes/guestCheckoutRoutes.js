@@ -12,6 +12,7 @@ const {
     updateGuestCartItem,
     removeGuestCartItem
 } = require('../controllers/guestCheckoutController');
+const { getGuestOrderDocument } = require('../controllers/orderDocumentController');
 const {
     createGuestCheckoutSessionLimiter,
     guestCheckoutQuoteLimiter,
@@ -22,6 +23,7 @@ const {
 router.post('/session', createGuestCheckoutSessionLimiter, createSession);
 router.post('/quote', guestCheckoutQuoteLimiter, quoteGuestCheckout);
 router.post('/', guestCheckoutSubmitLimiter, checkoutGuest);
+router.get('/orders/:orderId/document', guestCheckoutCartLimiter, getGuestOrderDocument);
 router.get('/session', guestCheckoutCartLimiter, getGuestCart);
 router.post('/session/items', guestCheckoutCartLimiter, addGuestCartItem);
 router.patch('/session/items', guestCheckoutCartLimiter, updateGuestCartItem);

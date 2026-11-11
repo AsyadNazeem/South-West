@@ -7,15 +7,19 @@ const {
     Customer,
     CustomerSession,
     CustomerEmailVerification,
+    CustomerPasswordResetToken,
 } = db;
 
 const { Op } = require('sequelize');
-const { sendVerificationCode } = require('../services/emailService');
+const { sendVerificationCode, sendCustomerPasswordReset } = require('../services/emailService');
 const { recordAuditLog } = require('../services/auditLogService');
 
 const CODE_EXPIRY_MINUTES = 10;
 const MAX_CODE_ATTEMPTS = 5;
 const BCRYPT_ROUNDS = 12;
+const PASSWORD_RESET_EXPIRY_MINUTES = 20;
+const PASSWORD_RESET_COOLDOWN_MS = 60 * 1000;
+const REGISTRATION_CODE_COOLDOWN_MS = 60 * 1000;
 
 // ============================================================
 // HELPERS
@@ -44,6 +48,10 @@ function hashVerificationCode(code) {
         .createHmac('sha256', secret)
         .update(code)
         .digest('hex');
+}
+
+function hashPasswordResetToken(token) {
+    return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 function generateVerificationCode() {
@@ -139,7 +147,7 @@ async function auditCustomerAuthSafely({
     }
 }
 
-async function issueVerificationCode(customer, purpose) {
+async function createVerificationCode(customer, purpose, transaction) {
     const email = normalizeEmail(customer.email);
 
     if (!email) {
@@ -157,15 +165,17 @@ async function issueVerificationCode(customer, purpose) {
     );
 
     // Invalidate earlier unused codes for this customer and purpose.
+    const options = {
+        where: {
+            customer_id: customer.id,
+            purpose,
+            consumed_at: null,
+        },
+        ...(transaction ? { transaction } : {}),
+    };
     await CustomerEmailVerification.update(
         { consumed_at: now },
-        {
-            where: {
-                customer_id: customer.id,
-                purpose,
-                consumed_at: null,
-            },
-        }
+        options
     );
 
     const verification = await CustomerEmailVerification.create({
@@ -176,8 +186,12 @@ async function issueVerificationCode(customer, purpose) {
         expires_at: expiresAt,
         attempts: 0,
         consumed_at: null,
-    });
+    }, transaction ? { transaction } : undefined);
 
+    return { verification, email, code };
+}
+
+async function deliverVerificationCode({ verification, email, code }, purpose) {
     // Never log or return the verification code.
     try {
         await sendVerificationCode(email, code, purpose);
@@ -186,6 +200,55 @@ async function issueVerificationCode(customer, purpose) {
         await verification.update({ consumed_at: new Date() });
         throw emailError;
     }
+}
+
+async function issueVerificationCode(customer, purpose) {
+    const prepared = await createVerificationCode(customer, purpose);
+    await deliverVerificationCode(prepared, purpose);
+}
+
+async function resendRegistrationCode(customer) {
+    let transaction;
+    let prepared;
+    try {
+        transaction = await db.sequelize.transaction();
+        const lockedCustomer = await Customer.findByPk(customer.id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+        });
+        if (!lockedCustomer || !lockedCustomer.is_active || lockedCustomer.email_verified_at) {
+            await transaction.rollback();
+            return false;
+        }
+
+        const latestRegistrationCode = await CustomerEmailVerification.findOne({
+            where: {
+                customer_id: lockedCustomer.id,
+                purpose: 'registration',
+            },
+            order: [['created_at', 'DESC']],
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+        });
+
+        const latestCreatedAt = latestRegistrationCode
+            ? new Date(latestRegistrationCode.created_at).getTime()
+            : NaN;
+        if (Number.isFinite(latestCreatedAt) && Date.now() - latestCreatedAt < REGISTRATION_CODE_COOLDOWN_MS) {
+            await transaction.commit();
+            return false;
+        }
+
+        prepared = await createVerificationCode(lockedCustomer, 'registration', transaction);
+        await transaction.commit();
+        transaction = null;
+    } catch (error) {
+        if (transaction) await transaction.rollback().catch(() => {});
+        throw error;
+    }
+
+    await deliverVerificationCode(prepared, 'registration');
+    return true;
 }
 
 // ============================================================
@@ -273,11 +336,34 @@ exports.register = async (req, res) => {
 
         const existingEmail = await Customer.findAll({
             where: { email },
-            attributes: ['id'],
             limit: 2,
         });
 
         if (existingEmail.length > 0) {
+            const pending = existingEmail.length === 1 &&
+                existingEmail[0].is_active &&
+                !existingEmail[0].email_verified_at &&
+                existingEmail[0].password_hash;
+
+            if (pending) {
+                try {
+                    await resendRegistrationCode(existingEmail[0]);
+                } catch (emailError) {
+                    console.error('Customer registration recovery email failed:', emailError.message);
+                    return res.status(503).json({
+                        message: 'Registration is pending verification, but we could not send a code. Please try again shortly.',
+                        verification_required: true,
+                        customer: { email },
+                    });
+                }
+
+                return res.status(200).json({
+                    message: 'Registration is already pending verification. Check your email for a verification code.',
+                    verification_required: true,
+                    customer: { email },
+                });
+            }
+
             await auditCustomerAuthSafely({
                 action: 'CUSTOMER_REGISTER_FAILED',
                 req,
@@ -411,6 +497,184 @@ exports.register = async (req, res) => {
         return res.status(500).json({
             message: 'Unable to register customer.',
         });
+    }
+};
+
+// ============================================================
+// REGISTRATION OTP RECOVERY
+// ============================================================
+
+exports.resendRegistrationCode = async (req, res) => {
+    const email = normalizeEmail(req.body.email);
+    const genericMessage = 'If registration is pending for this email, a verification code has been sent.';
+
+    if (email && email.length <= 255) {
+        try {
+            const matches = await Customer.findAll({ where: { email }, limit: 2 });
+            if (matches.length === 1) {
+                const customer = matches[0];
+                if (customer.is_active && customer.password_hash && !customer.email_verified_at) {
+                    await resendRegistrationCode(customer);
+                }
+            }
+        } catch (error) {
+            // Keep the public response identical for unknown, verified and failed requests.
+            console.error('Customer registration recovery error:', error.message);
+        }
+    }
+
+    return res.status(200).json({ message: genericMessage, verification_required: true, email });
+};
+
+// ============================================================
+// PASSWORD RESET
+// ============================================================
+
+exports.forgotPassword = async (req, res) => {
+    const email = normalizeEmail(req.body.email);
+    const genericMessage = 'If an account exists with this email address, you will receive instructions to reset your password.';
+
+    if (!email || email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ message: 'Enter a valid email address.' });
+    }
+
+    let transaction;
+    let resetRecord;
+    let rawToken;
+    let recipient;
+
+    try {
+        transaction = await db.sequelize.transaction();
+        const customer = await Customer.findOne({
+            where: { email },
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+        });
+
+        if (customer && customer.is_active && customer.email_verified_at) {
+            const cooldownSince = new Date(Date.now() - PASSWORD_RESET_COOLDOWN_MS);
+            const recentRequest = await CustomerPasswordResetToken.findOne({
+                where: { customer_id: customer.id, created_at: { [Op.gt]: cooldownSince } },
+                transaction,
+                lock: transaction.LOCK.UPDATE,
+            });
+
+            if (!recentRequest) {
+                const now = new Date();
+                rawToken = crypto.randomBytes(32).toString('base64url');
+                const tokenHash = hashPasswordResetToken(rawToken);
+                await CustomerPasswordResetToken.update(
+                    { used_at: now },
+                    { where: { customer_id: customer.id, used_at: null }, transaction }
+                );
+                resetRecord = await CustomerPasswordResetToken.create({
+                    customer_id: customer.id,
+                    token_hash: tokenHash,
+                    expires_at: new Date(now.getTime() + PASSWORD_RESET_EXPIRY_MINUTES * 60 * 1000),
+                    used_at: null,
+                }, { transaction });
+                recipient = email;
+            }
+        }
+
+        await transaction.commit();
+        transaction = null;
+
+        if (resetRecord) {
+            // Do not make the public response wait on SMTP; that would create
+            // an account-existence timing signal. Delivery failures consume
+            // the token so an undelivered link cannot be used.
+            void sendCustomerPasswordReset(recipient, rawToken).catch(async () => {
+                try {
+                    await resetRecord.update({ used_at: new Date() });
+                } catch {
+                    // Keep the response generic and avoid logging token data.
+                }
+                console.error('Customer password reset email delivery failed.');
+            });
+        }
+
+        return res.status(200).json({ message: genericMessage });
+    } catch (error) {
+        if (transaction) await transaction.rollback().catch(() => {});
+        console.error('Customer forgot-password request failed.');
+        return res.status(200).json({ message: genericMessage });
+    }
+};
+
+exports.resetPassword = async (req, res) => {
+    const token = typeof req.body.token === 'string' ? req.body.token.trim() : '';
+    const newPassword = req.body.newPassword;
+
+    if (!/^[A-Za-z0-9_-]{40,100}$/.test(token)) {
+        return res.status(400).json({ message: 'This password reset link is invalid or expired.' });
+    }
+    if (!validatePassword(newPassword)) {
+        return res.status(400).json({ message: 'Password must be at least 8 characters and no more than 72 UTF-8 bytes.' });
+    }
+
+    let transaction;
+    try {
+        const tokenHash = hashPasswordResetToken(token);
+        const tokenCandidate = await CustomerPasswordResetToken.findOne({
+            where: {
+                token_hash: tokenHash,
+                used_at: null,
+                expires_at: { [Op.gt]: new Date() },
+            },
+        });
+        if (!tokenCandidate) {
+            return res.status(400).json({ message: 'This password reset link is invalid or expired.' });
+        }
+
+        transaction = await db.sequelize.transaction();
+        const customer = await Customer.findByPk(tokenCandidate.customer_id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+        });
+        if (!customer || !customer.is_active || !customer.email_verified_at) {
+            await transaction.rollback();
+            transaction = null;
+            return res.status(400).json({ message: 'This password reset link is invalid or expired.' });
+        }
+
+        const now = new Date();
+        const resetRecord = await CustomerPasswordResetToken.findOne({
+            where: {
+                token_hash: tokenHash,
+                customer_id: customer.id,
+                used_at: null,
+                expires_at: { [Op.gt]: now },
+            },
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+        });
+
+        if (!resetRecord) {
+            await transaction.rollback();
+            transaction = null;
+            return res.status(400).json({ message: 'This password reset link is invalid or expired.' });
+        }
+
+        const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+        await customer.update({ password_hash: passwordHash }, { transaction });
+        await resetRecord.update({ used_at: now }, { transaction });
+        await CustomerPasswordResetToken.update(
+            { used_at: now },
+            { where: { customer_id: customer.id, used_at: null }, transaction }
+        );
+        await CustomerSession.update(
+            { revoked_at: now },
+            { where: { customer_id: customer.id, revoked_at: null }, transaction }
+        );
+
+        await transaction.commit();
+        transaction = null;
+        return res.status(200).json({ message: 'Your password has been reset. You can now sign in.' });
+    } catch (error) {
+        if (transaction) await transaction.rollback().catch(() => {});
+        console.error('Customer password reset failed.');
+        return res.status(500).json({ message: 'Unable to reset your password. Please try again.' });
     }
 };
 
@@ -801,12 +1065,7 @@ exports.login = async (req, res) => {
             limit: 2,
         });
 
-        if (
-            customers.length !== 1 ||
-            !customers[0].password_hash ||
-            !customers[0].is_active ||
-            !customers[0].email_verified_at
-        ) {
+        if (customers.length !== 1 || !customers[0].password_hash) {
             await auditCustomerAuthSafely({
                 action: 'CUSTOMER_LOGIN_FAILED',
                 req,
@@ -821,6 +1080,24 @@ exports.login = async (req, res) => {
 
         const customer = customers[0];
 
+        const passwordMatches = await bcrypt.compare(password, customer.password_hash);
+
+        if (!customer.email_verified_at) {
+            if (isEmail && passwordMatches && customer.is_active) {
+                return res.status(403).json({
+                    code: 'EMAIL_VERIFICATION_REQUIRED',
+                    verification_required: true,
+                    message: 'Verify your email before logging in.',
+                    email: normalizeEmail(customer.email),
+                });
+            }
+            return res.status(401).json({ message: 'Invalid credentials or account not activated.' });
+        }
+
+        if (!customer.is_active) {
+            return res.status(401).json({ message: 'Invalid credentials or account not activated.' });
+        }
+
         if (!isEmail && !customer.phone_verified_at) {
             await auditCustomerAuthSafely({
                 action: 'CUSTOMER_LOGIN_FAILED',
@@ -834,11 +1111,6 @@ exports.login = async (req, res) => {
                 message: 'Verify your phone number before logging in with it.',
             });
         }
-
-        const passwordMatches = await bcrypt.compare(
-            password,
-            customer.password_hash
-        );
 
         if (!passwordMatches) {
             await auditCustomerAuthSafely({

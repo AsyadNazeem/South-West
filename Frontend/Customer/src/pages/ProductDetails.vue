@@ -32,6 +32,7 @@ const selectedColor = ref('')
 const selectedVariantGroupKey = ref('')
 const quantity = ref(1)
 const addingToCart = ref(false)
+const buyNowLoading = ref(false)
 const cartMessage = ref('')
 const cartError = ref('')
 
@@ -904,8 +905,8 @@ const paymentPrices = computed(() => {
   const mintpay = getPrice('mintpay', 'mintpay_price', 'mintPayPrice')
 
   return [
-    { id: 'cash', label: 'CASH PRICE', price: cash, badge: 'FLAT 10% OFF', type: 'cash' },
-    { id: 'card', label: 'CARD PAYMENTS', price: card, badge: 'FLAT 10% OFF', type: 'card' },
+    { id: 'cash', label: 'CASH PRICE', price: cash, type: 'cash' },
+    { id: 'card', label: 'CARD PAYMENTS', price: card, type: 'card' },
     { id: 'koko', label: 'KOKO', price: koko, type: 'koko' },
     { id: 'mintpay', label: 'MINTPAY', price: mintpay, type: 'mintpay' }
   ].filter(option => option.price !== null)
@@ -1436,6 +1437,7 @@ async function addToCart() {
 
 
 async function buyNow() {
+  if (buyNowLoading.value || addingToCart.value) return
   cartMessage.value = ''
   cartError.value = ''
 
@@ -1468,6 +1470,7 @@ async function buyNow() {
     return
   }
 
+  buyNowLoading.value = true
   try {
     const payload = {
       item_id: product.value.id,
@@ -1529,6 +1532,8 @@ async function buyNow() {
     cartError.value =
       error.response?.data?.message ||
       'Unable to start checkout. Please try again.'
+  } finally {
+    buyNowLoading.value = false
   }
 }
 
@@ -1870,16 +1875,16 @@ onMounted(loadProduct)
             <button
               type="button"
               class="buy-button"
-              :disabled="!inStock"
+              :disabled="!inStock || buyNowLoading || addingToCart"
               @click="buyNow"
             >
-              Buy Now
+              {{ buyNowLoading ? 'Starting checkout…' : 'Buy Now' }}
             </button>
 
             <button
               type="button"
               class="cart-button"
-              :disabled="!inStock || addingToCart"
+              :disabled="!inStock || addingToCart || buyNowLoading"
               @click="addToCart"
             >
               {{ addingToCart ? 'Adding...' : 'Add to Cart' }}

@@ -5,6 +5,11 @@ const crypto = require('crypto');
 const {
     sequelize,
     Order,
+    Invoice,
+    OrderItem,
+    Item,
+    ItemVariant,
+    Payment,
     OrderAddress,
     Customer,
     Delivery,
@@ -19,6 +24,7 @@ const {
     sendDeliveryTrackingEmail,
     sendOrderStatusEmail
 } = require('../services/emailService');
+const { loadOrderInvoiceData, generateInvoicePdf, invoiceFilename } = require('../services/invoicePdfService');
 
 const STATUS_LABELS = {
     confirmed: 'Order Confirmed',
@@ -54,6 +60,33 @@ function customerName(customer) {
     return [customer?.first_name, customer?.last_name]
         .filter(Boolean)
         .join(' ');
+}
+
+async function getStatusEmailDetails(snapshot) {
+    if (snapshot.status !== 'delivered') return snapshot.orderDetails;
+    const order = await loadOrderInvoiceData(snapshot.id);
+    if (!order || order.payment_status !== 'paid') return snapshot.orderDetails;
+    const payment = order.payments?.find(record => record.payment_status === 'paid') || order.payments?.[0];
+    const invoice = order.invoices?.find(record => record.status === 'paid');
+    const invoiceAttachment = invoice
+        ? {
+            filename: invoiceFilename(order.order_number),
+            content: await generateInvoicePdf({ ...order.toJSON(), invoice_number: invoice.invoice_number }),
+            contentType: 'application/pdf'
+        }
+        : null;
+    return {
+        paymentMethod: payment?.payment_method || 'Not provided',
+        paymentStatus: order.payment_status,
+        totalAmount: `LKR ${Number(order.total_amount || 0).toFixed(2)}`,
+        items: (order.items || []).map(item => ({
+            name: item.item?.item_name || 'Product',
+            variantName: item.variant?.variant_name || '',
+            quantity: item.quantity,
+            lineTotal: `LKR ${Number(item.line_total || 0).toFixed(2)}`
+        })),
+        invoiceAttachment
+    };
 }
 
 function getStatusMessage(status, reason, delivery) {
@@ -127,6 +160,7 @@ exports.updateOrderStatus = async (req, res) => {
             'reason',
             'courier_name',
             'tracking_number',
+            'tracking_url',
             'expected_delivery_date'
         ];
 
@@ -149,6 +183,34 @@ exports.updateOrderStatus = async (req, res) => {
             return res.status(400).json({
                 message: 'Invalid order status.'
             });
+        }
+
+        let trackingUrl = null;
+        if (body.tracking_url !== undefined) {
+            if (typeof body.tracking_url !== 'string') {
+                return res.status(400).json({
+                    message: 'Tracking link must be a valid HTTP or HTTPS URL.'
+                });
+            }
+            const suppliedUrl = body.tracking_url.trim();
+            if (suppliedUrl.length > 2048) {
+                return res.status(400).json({
+                    message: 'Tracking link must not exceed 2048 characters.'
+                });
+            }
+            if (suppliedUrl) {
+                try {
+                    const parsedUrl = new URL(suppliedUrl);
+                    if (!['http:', 'https:'].includes(parsedUrl.protocol) || !parsedUrl.hostname) {
+                        throw new Error('unsupported protocol');
+                    }
+                    trackingUrl = suppliedUrl;
+                } catch {
+                    return res.status(400).json({
+                        message: 'Tracking link must be a valid HTTP or HTTPS URL.'
+                    });
+                }
+            }
         }
 
         let reason = null;
@@ -332,6 +394,7 @@ exports.updateOrderStatus = async (req, res) => {
                     delivery_charge: order.shipping_amount ?? 0,
                     courier_name: courierName,
                     tracking_number: trackingNumber,
+                    tracking_url: trackingUrl,
                     dispatched_at: new Date(),
                     expected_delivery_date:
                         body.expected_delivery_date !== undefined
@@ -357,6 +420,10 @@ exports.updateOrderStatus = async (req, res) => {
                 delivery.delivery_status = 'dispatched';
                 delivery.courier_name = courierName;
                 delivery.tracking_number = trackingNumber;
+
+                if (trackingUrl) {
+                    delivery.tracking_url = trackingUrl;
+                }
 
                 if (!delivery.dispatched_at) {
                     delivery.dispatched_at = new Date();
@@ -418,6 +485,19 @@ exports.updateOrderStatus = async (req, res) => {
                         delivery => delivery.id
                     )
                 });
+            }
+
+            const fullInvoice = await Invoice.findOne({
+                where: { order_id: order.id },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+            if (fullInvoice && fullInvoice.status !== 'paid') {
+                await fullInvoice.update({
+                    status: 'paid',
+                    paid_amount: order.total_amount,
+                    balance_amount: 0
+                }, { transaction });
             }
         }
 
@@ -529,8 +609,33 @@ exports.updateOrderStatus = async (req, res) => {
             reason,
             courierName: deliveries[0]?.courier_name || null,
             trackingNumber: deliveries[0]?.tracking_number || null,
+            trackingUrl: deliveries[0]?.tracking_url || null,
             expectedDeliveryDate:
                 deliveries[0]?.expected_delivery_date || null
+        };
+
+        const [statusItems, statusPayments] = await Promise.all([
+            OrderItem.findAll({
+                where: { order_id: order.id },
+                include: [
+                    { model: Item, as: 'item', attributes: ['item_name'] },
+                    { model: ItemVariant, as: 'variant', attributes: ['variant_name'] }
+                ],
+                transaction
+            }),
+            Payment.findAll({ where: { order_id: order.id }, transaction })
+        ]);
+        const selectedPayment = statusPayments.find(payment => payment.payment_status === 'paid') || statusPayments[0];
+        orderSnapshot.orderDetails = {
+            paymentMethod: selectedPayment?.payment_method || 'Not provided',
+            paymentStatus: order.payment_status,
+            totalAmount: `LKR ${Number(order.total_amount || 0).toFixed(2)}`,
+            items: statusItems.map(item => ({
+                name: item.item?.item_name || 'Product',
+                variantName: item.variant?.variant_name || '',
+                quantity: item.quantity,
+                lineTotal: `LKR ${Number(item.line_total || 0).toFixed(2)}`
+            }))
         };
 
         await transaction.commit();
@@ -547,9 +652,11 @@ exports.updateOrderStatus = async (req, res) => {
                         customerName: orderSnapshot.customerName,
                         orderNumber: orderSnapshot.order_number,
                         trackingNumber: orderSnapshot.trackingNumber,
+                        trackingUrl: orderSnapshot.trackingUrl,
                         courierName: orderSnapshot.courierName,
                         expectedDeliveryDate:
-                            orderSnapshot.expectedDeliveryDate
+                            orderSnapshot.expectedDeliveryDate,
+                        orderDetails: orderSnapshot.orderDetails
                     });
                 } else {
                     await sendOrderStatusEmail({
@@ -557,7 +664,11 @@ exports.updateOrderStatus = async (req, res) => {
                         customerName: orderSnapshot.customerName,
                         orderNumber: orderSnapshot.order_number,
                         statusLabel: STATUS_LABELS[nextStatus],
-                        reason: orderSnapshot.reason
+                        reason: orderSnapshot.reason,
+                        trackingNumber: orderSnapshot.trackingNumber,
+                        courierName: orderSnapshot.courierName,
+                        expectedDeliveryDate: orderSnapshot.expectedDeliveryDate,
+                        orderDetails: await getStatusEmailDetails(orderSnapshot)
                     });
                 }
 

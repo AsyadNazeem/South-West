@@ -74,6 +74,10 @@ async function calculateDeliveryCharge({
 
     return {
         deliveryCharge,
+        normalDeliveryCharge: roundMoney(firstKgCharge),
+        additionalShippingAmount: roundMoney(
+            (billableKg - 1) * additionalKgCharge
+        ),
         billableKg,
         firstKgCharge: roundMoney(firstKgCharge),
         additionalKgCharge: roundMoney(additionalKgCharge)

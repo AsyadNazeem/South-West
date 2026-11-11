@@ -319,7 +319,7 @@ test('Customer login: rejects inactive customer without creating a session', asy
     assert.equal(sessionCalls.length, 0);
 });
 
-test('Customer login: rejects customer with unverified email', async () => {
+test('Customer login: identifies pending email verification without creating a session', async () => {
     const customer = verifiedCustomer();
     customer.email_verified_at = null;
 
@@ -334,7 +334,10 @@ test('Customer login: rejects customer with unverified email', async () => {
         res
     );
 
-    assert.equal(res.statusCode, 401);
+    assert.equal(res.statusCode, 403);
+    assert.equal(res.body.code, 'EMAIL_VERIFICATION_REQUIRED');
+    assert.equal(res.body.verification_required, true);
+    assert.equal(res.body.email, customer.email);
     assert.equal(sessionCalls.length, 0);
 });
 

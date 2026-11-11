@@ -306,6 +306,7 @@ function createHarness(options = {}) {
 
         Invoice: {
             async create(values, config) {
+                calls.invoiceValues = values;
                 assert.equal(config.transaction, transaction);
                 return values;
             }
@@ -435,6 +436,9 @@ test(
         assert.equal(h.calls.priceQueries.length, 1);
         assert.equal(h.calls.priceQueries[0].variant_id, 9);
         assert.equal(h.calls.orderItems[0].unit_price, 1200);
+        assert.equal(h.calls.invoiceValues.status, 'draft');
+        assert.equal(h.calls.orderValues.normal_delivery_amount, 300);
+        assert.equal(h.calls.orderValues.additional_shipping_amount, 0);
     }
 );
 

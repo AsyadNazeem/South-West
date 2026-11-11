@@ -11,6 +11,8 @@ const loading = ref(false)
 const googleLoading = ref(false)
 const errorMessage = ref('')
 const showPassword = ref(false)
+const verificationEmail = ref('')
+const resendLoading = ref(false)
 
 async function login() {
   errorMessage.value = ''
@@ -52,12 +54,30 @@ async function login() {
 
     await router.push('/')
   } catch (error) {
+    if (error.response?.data?.verification_required) {
+      verificationEmail.value = error.response.data.email || identifier.value.trim().toLowerCase()
+      sessionStorage.setItem('pendingCustomerVerificationEmail', verificationEmail.value)
+    }
     errorMessage.value =
         error.response?.data?.message ||
         error.message ||
         'Unable to log in. Please try again.'
   } finally {
     loading.value = false
+  }
+}
+
+async function resendVerificationCode() {
+  if (!verificationEmail.value || resendLoading.value) return
+  resendLoading.value = true
+  try {
+    await api.post('/customer-auth/registration/resend-code', { email: verificationEmail.value })
+    sessionStorage.setItem('pendingCustomerVerificationEmail', verificationEmail.value)
+    await router.push({ path: '/verify-email', query: { email: verificationEmail.value, pending: '1' } })
+  } catch (error) {
+    errorMessage.value = error.response?.data?.message || 'Unable to request a verification code. Please try again later.'
+  } finally {
+    resendLoading.value = false
   }
 }
 
@@ -128,6 +148,7 @@ function loginWithGoogle() {
                 :disabled="loading"
             />
           </div>
+          <RouterLink class="forgot-link" to="/forgot-password">Forgot Password?</RouterLink>
         </div>
 
         <div class="field">
@@ -167,6 +188,10 @@ function loginWithGoogle() {
         <p v-if="errorMessage" class="form-error" role="alert">
           {{ errorMessage }}
         </p>
+
+        <button v-if="verificationEmail" class="recovery-button" type="button" :disabled="resendLoading" @click="resendVerificationCode">
+          {{ resendLoading ? 'Sending code…' : 'Resend OTP' }}
+        </button>
 
         <button class="submit-button" type="submit" :disabled="loading || googleLoading">
           {{ loading ? 'Signing in…' : 'Sign in' }}
@@ -428,6 +453,11 @@ function loginWithGoogle() {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
 }
+
+.recovery-button { width: 100%; min-height: var(--control-height); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-primary); font: inherit; font-weight: var(--font-weight-semibold); cursor: pointer; }
+.recovery-button:disabled { opacity: .6; cursor: wait; }
+.forgot-link { align-self: flex-end; color: var(--color-primary); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); text-decoration: none; }
+.forgot-link:hover { text-decoration: underline; }
 
 /* Footer */
 .footer {

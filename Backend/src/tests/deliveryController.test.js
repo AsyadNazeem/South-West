@@ -29,6 +29,7 @@ function resetState(overrides = {}) {
         orderUpdateCalls: [],
         notificationCalls: [],
         completionEmailCalls: [],
+        invoiceUpdates: [],
         ...overrides
     });
 }
@@ -97,6 +98,18 @@ const models = {
         }
     },
 
+    Invoice: {
+        async findOne() {
+            return {
+                status: 'draft',
+                async update(changes) {
+                    state.invoiceUpdates.push({ ...changes });
+                    Object.assign(this, changes);
+                }
+            };
+        }
+    },
+
     Order: {
         async findByPk() {
             if (!state.orderExists) return null;
@@ -162,7 +175,23 @@ const emailService = {
 const controller = proxyquire('../controllers/deliveryController', {
     '../models': models,
     '../services/auditLogService': auditService,
-    '../services/emailService': emailService
+    '../services/emailService': emailService,
+    '../services/invoicePdfService': {
+        async loadOrderInvoiceData() {
+            return {
+                order_number: 'TEST-ORDER-501',
+                invoice_number: 'SWI-TEST-501',
+                payment_status: 'paid',
+                total_amount: '1000.00',
+                payments: [{ payment_method: 'cash', payment_status: 'paid' }],
+                invoices: [{ invoice_number: 'SWI-TEST-501', status: 'paid' }],
+                items: [],
+                toJSON() { return { order_number: this.order_number }; }
+            };
+        },
+        async generateInvoicePdf() { return Buffer.from('%PDF-test'); },
+        invoiceFilename() { return 'test-invoice.pdf'; }
+    }
 });
 
 function makeResponse() {
@@ -405,8 +434,9 @@ test('invalid delivery status is rejected without changing the delivery', async 
 });
 
 test('marking a COD delivery as delivered automatically confirms payment and completes the order', async () => {
-    const codPayment = makePayment();
-    state.paymentRecords = [codPayment];
+    const codPayment = makePayment({ id: 1, amount: '500.00' });
+    const secondCodPayment = makePayment({ id: 2, amount: '500.00' });
+    state.paymentRecords = [codPayment, secondCodPayment];
 
     const res = makeResponse();
 
@@ -420,6 +450,7 @@ test('marking a COD delivery as delivered automatically confirms payment and com
     assert.equal(codPayment.updateCalls.length, 1);
     assert.ok(codPayment.payment_date instanceof Date);
     assert.equal(codPayment.processed_by, 42);
+    assert.equal(secondCodPayment.payment_status, 'paid');
 
     assert.equal(state.order.payment_status, 'paid');
     assert.equal(state.order.status, 'delivered');
@@ -431,9 +462,30 @@ test('marking a COD delivery as delivered automatically confirms payment and com
             entry => entry.action === 'COD_PAYMENT_AUTO_CONFIRMED'
         )
     );
+    const orderPaymentAudits = state.auditCalls.filter(
+        entry => entry.action === 'ORDER_PAYMENT_STATUS_AUTO_UPDATED'
+    );
+    assert.equal(orderPaymentAudits.length, 1);
+    assert.deepEqual(orderPaymentAudits[0].oldValues, { payment_status: 'unpaid' });
+    assert.deepEqual(orderPaymentAudits[0].newValues, {
+        payment_status: 'paid',
+        trigger: 'cod_delivery_confirmation'
+    });
+    assert.ok(orderPaymentAudits[0].transaction);
+    assert.equal(state.auditCalls.filter(entry => entry.action === 'COD_PAYMENT_AUTO_CONFIRMED').length, 2);
     assert.equal(state.notificationCalls.length, 1);
     assert.equal(state.completionEmailCalls.length, 1);
+    assert.deepEqual(state.invoiceUpdates, [{ status: 'paid', paid_amount: '1000.00', balance_amount: 0 }]);
+    assert.equal(state.completionEmailCalls[0].orderDetails.invoiceAttachment.contentType, 'application/pdf');
     assert.equal(res.body.order_status_update.updated, true);
+
+    const repeated = makeResponse();
+    await controller.updateDelivery(
+        makeRequest({ delivery_status: 'delivered' }),
+        repeated
+    );
+    assert.equal(state.invoiceUpdates.length, 1);
+    assert.equal(state.completionEmailCalls.length, 1);
 });
 
 test('marking a delivery as delivered does not manually confirm an online payment', async () => {
@@ -455,6 +507,7 @@ test('marking a delivery as delivered does not manually confirm an online paymen
     assert.equal(onlinePayment.updateCalls.length, 0);
     assert.equal(state.order.payment_status, 'unpaid');
     assert.equal(state.order.status, 'shipped');
+    assert.equal(state.auditCalls.filter(entry => entry.action === 'ORDER_PAYMENT_STATUS_AUTO_UPDATED').length, 0);
     assert.equal(state.notificationCalls.length, 0);
     assert.equal(state.commitCalls, 1);
 });

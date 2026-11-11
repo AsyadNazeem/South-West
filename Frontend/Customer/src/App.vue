@@ -11,7 +11,13 @@ import { useWebsiteTheme } from './composables/useWebsiteTheme'
 
 const { loadActiveTheme } = useWebsiteTheme()
 const route = useRoute()
-const isStandaloneAuthPage = () => ['customer-login', 'customer-register'].includes(route.name)
+const isStandaloneAuthPage = () => [
+  'customer-login',
+  'customer-register',
+  'customer-verify-email',
+  'customer-forgot-password',
+  'customer-reset-password',
+].includes(route.name)
 
 onMounted(() => {
   loadActiveTheme()

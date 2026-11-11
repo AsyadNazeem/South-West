@@ -5,6 +5,7 @@ const {
     sendOrderConfirmationEmail,
     sendAdminNewOrderEmail
 } = require('../services/emailService');
+const { generateInvoicePdf, invoiceFilename } = require('../services/invoicePdfService');
 const { Op } = require('sequelize');
 const { notifyAdmins } = require('./adminNotificationController');
 const { recordAuditLog } = require('../services/auditLogService');
@@ -74,6 +75,27 @@ function isValidId(value) {
 
 function isValidQuantity(value) {
     return Number.isSafeInteger(Number(value)) && Number(value) > 0;
+}
+
+function parseStoredCartItems(items) {
+    if (Array.isArray(items)) return items;
+    if (typeof items !== 'string') return null;
+
+    try {
+        const parsed = JSON.parse(items);
+        return Array.isArray(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+function requireStoredCartItems(items) {
+    const parsed = parseStoredCartItems(items);
+    if (parsed) return parsed;
+    throw Object.assign(
+        new Error('Cart must contain between 1 and 100 items.'),
+        { statusCode: 400 }
+    );
 }
 
 async function getSession(req, transaction = undefined, lock = false) {
@@ -231,6 +253,8 @@ async function resolveVariant(itemId, variantId, transaction) {
 }
 
 async function validateCartItems(items, transaction) {
+    items = parseStoredCartItems(items);
+
     if (
         !Array.isArray(items) ||
         items.length < 1 ||
@@ -581,16 +605,15 @@ async function getGuestCart(req, res) {
 
         let items;
 
-        if (
-            Array.isArray(session.cart_items) &&
-            session.cart_items.length === 0
-        ) {
+        const storedItems = parseStoredCartItems(session.cart_items);
+
+        if (Array.isArray(storedItems) && storedItems.length === 0) {
             // An empty cart is valid when retrieving the cart.
             items = [];
         } else {
             // Validate normally when the cart contains items.
             items = await sequelize.transaction(async transaction => {
-                return validateCartItems(session.cart_items, transaction);
+                return validateCartItems(storedItems, transaction);
             });
         }
 
@@ -641,9 +664,7 @@ async function addGuestCartItem(req, res) {
                 };
             }
 
-            const currentItems = Array.isArray(session.cart_items)
-                ? [...session.cart_items]
-                : [];
+            const currentItems = requireStoredCartItems(session.cart_items);
 
             const existing = currentItems.find(entry =>
                 Number(entry.item_id) === Number(item_id) &&
@@ -741,9 +762,7 @@ async function updateGuestCartItem(req, res) {
                 };
             }
 
-            const items = Array.isArray(session.cart_items)
-                ? [...session.cart_items]
-                : [];
+            const items = requireStoredCartItems(session.cart_items);
 
             const index = items.findIndex(entry =>
                 Number(entry.item_id) === Number(item_id) &&
@@ -811,9 +830,7 @@ async function removeGuestCartItem(req, res) {
                 };
             }
 
-            const items = Array.isArray(session.cart_items)
-                ? [...session.cart_items]
-                : [];
+            const items = requireStoredCartItems(session.cart_items);
 
             const nextItems = items.filter(entry => !(
                 Number(entry.item_id) === Number(item_id) &&
@@ -1099,6 +1116,8 @@ async function quoteGuestCheckout(req, res) {
                 discount_amount: discountAmount,
                 tax_amount: taxAmount,
                 shipping_amount: shippingAmount,
+                normal_delivery_amount: deliveryPricing.normalDeliveryCharge,
+                additional_shipping_amount: deliveryPricing.additionalShippingAmount,
                 total_weight_kg: money(totalWeightKg),
                 billable_weight_kg: deliveryPricing.billableKg,
                 total_amount: totalAmount,
@@ -1332,6 +1351,8 @@ async function checkoutGuest(req, res) {
             );
         }
 
+        const sessionItems = parseStoredCartItems(session.cart_items);
+
         const requestHash = hashGuestCheckoutRequest(
             session.id,
             {
@@ -1341,7 +1362,7 @@ async function checkoutGuest(req, res) {
                 billing_same_as_shipping: useShippingAsBilling,
                 billing_address: billingAddress
             },
-            session.cart_items
+            sessionItems ?? session.cart_items
         );
 
         const existing = await GuestCheckoutIdempotency.findOne({
@@ -1412,10 +1433,7 @@ async function checkoutGuest(req, res) {
             );
         }
 
-        if (
-            !Array.isArray(session.cart_items) ||
-            session.cart_items.length === 0
-        ) {
+        if (!Array.isArray(sessionItems) || sessionItems.length === 0) {
             throw createCheckoutError(
                 'Your guest cart is empty.',
                 400
@@ -1513,7 +1531,7 @@ async function checkoutGuest(req, res) {
         }
 
         const validatedItems = await validateCartItems(
-            session.cart_items,
+            sessionItems,
             transaction
         );
 
@@ -1572,6 +1590,7 @@ async function checkoutGuest(req, res) {
                 unitPrice,
                 lineDiscount,
                 lineTotal,
+                variantName: entry.variant_name,
                 discountPercentage: unitPrice > 0
                     ? money((unitDiscount / unitPrice) * 100)
                     : 0
@@ -1703,6 +1722,8 @@ async function checkoutGuest(req, res) {
             discount_amount: discountAmount,
             tax_amount: taxAmount,
             shipping_amount: shippingAmount,
+            normal_delivery_amount: deliveryPricing.normalDeliveryCharge,
+            additional_shipping_amount: deliveryPricing.additionalShippingAmount,
             total_amount: totalAmount,
             notes: null,
             created_by: null
@@ -1772,7 +1793,7 @@ async function checkoutGuest(req, res) {
             order_id: order.id,
             customer_id: null,
             invoice_date: new Date(),
-            status: 'issued',
+            status: 'draft',
             subtotal,
             discount_amount: discountAmount,
             tax_amount: taxAmount,
@@ -1876,6 +1897,7 @@ async function checkoutGuest(req, res) {
                 address,
                 items: preparedItems.map(entry => ({
                     name: entry.item.item_name || entry.item.name || 'Product',
+                    variantName: entry.variantName,
                     quantity: entry.quantity,
                     unitPrice: entry.unitPrice,
                     lineTotal: entry.lineTotal
@@ -1883,9 +1905,39 @@ async function checkoutGuest(req, res) {
                 subtotal,
                 discountAmount,
                 shippingAmount,
+                normalDeliveryAmount: deliveryPricing.normalDeliveryCharge,
+                additionalShippingAmount: deliveryPricing.additionalShippingAmount,
                 totalAmount,
                 paymentMethod,
-                paymentStatus: 'Unpaid'
+                paymentStatus: 'Unpaid',
+                invoiceAttachment: paymentMethod === 'cash'
+                    ? {
+                        filename: invoiceFilename(orderNumber, true),
+                        content: await generateInvoicePdf({
+                            order_number: orderNumber,
+                            invoice_number: invoiceNumber,
+                            order_date: order.order_date,
+                            payment_status: 'unpaid',
+                            subtotal,
+                            discount_amount: discountAmount,
+                            shipping_amount: shippingAmount,
+                            normal_delivery_amount: deliveryPricing.normalDeliveryCharge,
+                            additional_shipping_amount: deliveryPricing.additionalShippingAmount,
+                            total_amount: totalAmount,
+                            customer_email: email,
+                            addresses: [{ ...address, address_type: 'shipping' }],
+                            payments: [{ payment_method: paymentMethod, payment_status: 'unpaid' }],
+                            items: preparedItems.map(entry => ({
+                                name: entry.item.item_name,
+                                variant_name: entry.variantName,
+                                quantity: entry.quantity,
+                                unit_price: entry.unitPrice,
+                                line_total: entry.lineTotal
+                            }))
+                        }, { draft: true }),
+                        contentType: 'application/pdf'
+                    }
+                    : null
             };
 
             const results = await Promise.allSettled([
@@ -1912,6 +1964,8 @@ async function checkoutGuest(req, res) {
             data: {
                 order,
                 payment,
+                normal_delivery_amount: deliveryPricing.normalDeliveryCharge,
+                additional_shipping_amount: deliveryPricing.additionalShippingAmount,
                 replayed: false
             }
         });

@@ -16,6 +16,8 @@ const code = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const resendMessage = ref('')
+const resendLoading = ref(false)
 
 const validCode = computed(() => /^\d{6}$/.test(code.value.trim()))
 
@@ -28,6 +30,7 @@ onMounted(() => {
 async function verifyEmail() {
   errorMessage.value = ''
   successMessage.value = ''
+  resendMessage.value = ''
 
   if (!email.value || !validCode.value) {
     errorMessage.value = 'Enter the six-digit code sent to your email.'
@@ -58,19 +61,34 @@ async function verifyEmail() {
     loading.value = false
   }
 }
+
+async function resendCode() {
+  errorMessage.value = ''
+  resendMessage.value = ''
+  resendLoading.value = true
+  try {
+    await api.post('/customer-auth/registration/resend-code', { email: email.value })
+    resendMessage.value = 'If registration is still pending, check your email for a code. If you requested one recently, wait a little and try again.'
+  } catch (error) {
+    errorMessage.value = error.response?.data?.message || 'Unable to resend the code. Please try again later.'
+  } finally {
+    resendLoading.value = false
+  }
+}
 </script>
 
 <template>
   <main class="auth-page">
     <section class="auth-card" aria-labelledby="verify-title">
-      <RouterLink to="/" class="wordmark" aria-label="South West home">
-        SOUTH<span>WEST</span>
+      <RouterLink to="/" class="brand-link" aria-label="South West home">
+        <img src="/SWLogoBlack.webp" class="auth-logo" alt="South West" />
       </RouterLink>
 
       <header class="heading">
         <h1 id="verify-title">Verify your email</h1>
+        <p v-if="route.query.pending === '1'" class="pending-notice" role="status">Registration is pending verification. Check your email for a code, or try again later if you requested one recently.</p>
         <p>
-          Enter the six-digit code sent to
+          Enter the six-digit code from
           <strong class="email">{{ email || 'your email address' }}</strong>.
         </p>
       </header>
@@ -104,12 +122,17 @@ async function verifyEmail() {
           {{ successMessage }} Redirecting to sign in…
         </p>
 
+        <p v-if="resendMessage" class="form-success" role="status">{{ resendMessage }}</p>
+
         <button
             class="submit-button"
             type="submit"
             :disabled="loading || !!successMessage"
         >
           {{ loading ? 'Verifying…' : 'Verify email' }}
+        </button>
+        <button class="resend-button" type="button" :disabled="loading || resendLoading || !!successMessage" @click="resendCode">
+          {{ resendLoading ? 'Sending…' : 'Resend code' }}
         </button>
       </form>
 
@@ -133,28 +156,15 @@ async function verifyEmail() {
 
 .auth-card {
   width: min(var(--container-auth), 100%);
-  padding: var(--space-8) var(--space-10);
+  padding: var(--space-8);
   background: var(--color-surface);
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
 
-.wordmark {
-  display: inline-block;
-  margin-bottom: var(--space-6);
-  color: var(--color-primary);
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.16em;
-  text-decoration: none;
-}
-
-.wordmark span {
-  color: var(--color-accent-deep);
-  font-weight: var(--font-weight-medium);
-}
+.brand-link { display: inline-block; text-decoration: none; }
+.auth-logo { display: block; width: clamp(160px, 28vw, 210px); height: 54px; object-fit: contain; object-position: left center; margin-bottom: var(--space-4); }
 
 .heading {
   margin-bottom: var(--space-5);
@@ -310,6 +320,11 @@ async function verifyEmail() {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
 }
+
+.pending-notice { margin: var(--space-3) 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); background: var(--color-info-bg, var(--color-surface-muted)); color: var(--color-text); font-size: var(--font-size-xs); }
+
+.resend-button { width: 100%; min-height: var(--control-height); margin-top: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-primary); font: inherit; font-weight: var(--font-weight-semibold); cursor: pointer; }
+.resend-button:disabled { opacity: .6; cursor: wait; }
 
 .footer {
   margin: var(--space-5) 0 0;

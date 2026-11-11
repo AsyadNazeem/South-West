@@ -18,7 +18,12 @@ const modalStatus = ref('')
 const statusReason = ref('')
 const courierName = ref('')
 const trackingNumber = ref('')
+const trackingUrl = ref('')
 const expectedDeliveryDate = ref('')
+
+watch(modalStatus, nextStatus => {
+  if (nextStatus !== 'shipped') trackingUrl.value = ''
+})
 
 const statuses = [
   { value: 'pending', label: 'Pending' },
@@ -122,6 +127,15 @@ const formatLabel = (value) => {
     .replace(/\b\w/g, character => character.toUpperCase())
 }
 
+const isHttpUrl = value => {
+  try {
+    const parsed = new URL(value)
+    return ['http:', 'https:'].includes(parsed.protocol) && Boolean(parsed.hostname)
+  } catch {
+    return false
+  }
+}
+
 const formatAddress = (address) => {
   if (!address) return []
 
@@ -204,6 +218,7 @@ const resetStatusDialog = () => {
   statusReason.value = ''
   courierName.value = ''
   trackingNumber.value = ''
+  trackingUrl.value = ''
   expectedDeliveryDate.value = ''
   statusError.value = ''
 }
@@ -241,6 +256,14 @@ const confirmOrderStatus = async () => {
 
     payload.courier_name = courierName.value.trim()
     payload.tracking_number = trackingNumber.value.trim()
+
+    if (trackingUrl.value.trim()) {
+      if (!isHttpUrl(trackingUrl.value.trim())) {
+        statusError.value = 'Enter a valid HTTP or HTTPS tracking link.'
+        return
+      }
+      payload.tracking_url = trackingUrl.value.trim()
+    }
 
     if (expectedDeliveryDate.value) {
       payload.expected_delivery_date = expectedDeliveryDate.value
@@ -300,7 +323,10 @@ const loadOrder = async () => {
 
 const goBack = () => router.push('/admin/sales/orders')
 
-watch(() => route.params.id, loadOrder)
+watch(() => route.params.id, () => {
+  resetStatusDialog()
+  loadOrder()
+})
 
 onMounted(loadOrder)
 </script>
@@ -725,6 +751,17 @@ onMounted(loadOrder)
               type="text"
               maxlength="150"
               placeholder="Enter tracking number"
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="tracking-url">Courier Tracking Link</label>
+            <input
+              id="tracking-url"
+              v-model="trackingUrl"
+              type="url"
+              maxlength="2048"
+              placeholder="https://courier-company.com/track/..."
             />
           </div>
 

@@ -19,6 +19,9 @@ const {
     customerRegistrationLimiter,
     customerVerificationLimiter,
     customerActivationLimiter,
+    customerRegistrationRecoveryLimiter,
+    customerForgotPasswordLimiter,
+    customerResetPasswordLimiter,
     customerPasswordSetupValidationLimiter,
     customerPasswordSetupLimiter,
     customerPasswordChangeCodeLimiter,
@@ -37,6 +40,15 @@ router.post(
     customerVerificationLimiter,
     customerAuthController.verifyEmail
 );
+
+router.post(
+    '/registration/resend-code',
+    customerRegistrationRecoveryLimiter,
+    customerAuthController.resendRegistrationCode
+);
+
+router.post('/forgot-password', customerForgotPasswordLimiter, customerAuthController.forgotPassword);
+router.post('/reset-password', customerResetPasswordLimiter, customerAuthController.resetPassword);
 
 router.post(
     '/activate',

@@ -7,6 +7,8 @@ const Login = () => import('@/pages/auth/Login.vue')
 const Register = () => import('@/pages/auth/Register.vue')
 const SetPassword = () => import('@/pages/auth/SetPassword.vue')
 const VerifyEmail = () => import('@/pages/auth/VerifyEmail.vue')
+const ForgotPassword = () => import('@/pages/auth/ForgotPassword.vue')
+const ResetPassword = () => import('@/pages/auth/ResetPassword.vue')
 const Home = () => import('@/pages/Home.vue')
 const InformationPage = () => import('@/pages/InformationPage.vue')
 const StoreListing = () => import('@/pages/StoreListing.vue')
@@ -114,6 +116,18 @@ const routes = [
         name: 'customer-verify-email',
         component: VerifyEmail,
     meta: { title: 'Verify Email', index: false, noAnalytics: true },
+    },
+    {
+        path: '/forgot-password',
+        name: 'customer-forgot-password',
+        component: ForgotPassword,
+        meta: { title: 'Forgot Password', index: false, noAnalytics: true },
+    },
+    {
+        path: '/reset-password',
+        name: 'customer-reset-password',
+        component: ResetPassword,
+        meta: { title: 'Reset Password', index: false, noAnalytics: true },
     },
 
 

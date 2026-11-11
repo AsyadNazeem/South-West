@@ -90,6 +90,10 @@ test('Mailpit uses local SMTP without authentication', async (t) => {
     assert.equal(context.sentMessages.length, 1);
     assert.equal(context.sentMessages[0].to, 'customer@example.com');
     assert.match(context.sentMessages[0].text, /123456/);
+    assert.match(context.sentMessages[0].html, /southwest\.lk\/SWLogo\.png/);
+    assert.match(context.sentMessages[0].html, /123456/);
+    assert.match(context.sentMessages[0].html, /If you did not request it/);
+    assert.doesNotMatch(context.sentMessages[0].html, /If youdid not request it/);
 });
 
 test('Mailpit accepts custom host and port', async (t) => {
@@ -209,6 +213,21 @@ test('password invitation retains the customer setup URL and token', async (t) =
     );
 });
 
+test('password reset email uses a fragment token and describes expiry and safe disregard', async (t) => {
+    const context = loadEmailService({
+        EMAIL_PROVIDER: 'mailpit',
+        CUSTOMER_APP_URL: 'https://shop.example.test',
+    });
+    t.after(context.restoreEnv);
+
+    await context.service.sendCustomerPasswordReset('customer@example.com', 'secure-token');
+    const message = context.sentMessages[0];
+    assert.equal(message.to, 'customer@example.com');
+    assert.match(message.text, /https:\/\/shop\.example\.test\/reset-password#token=secure-token/);
+    assert.match(message.text, /expires in 20 minutes/i);
+    assert.match(message.text, /ignore this email/i);
+});
+
 test('delivery tracking email retains courier and tracking details', async (t) => {
     const context = loadEmailService({
         EMAIL_PROVIDER: 'mailpit',
@@ -221,6 +240,7 @@ test('delivery tracking email retains courier and tracking details', async (t) =
         orderNumber: 'SW-1001',
         trackingNumber: 'TRACK-123',
         courierName: 'Test Courier',
+        trackingUrl: 'https://courier.example/track/TRACK-123',
     });
 
     const message = context.sentMessages[0];
@@ -228,6 +248,24 @@ test('delivery tracking email retains courier and tracking details', async (t) =
     assert.match(message.subject, /SW-1001/);
     assert.match(message.text, /Test Courier/);
     assert.match(message.text, /TRACK-123/);
+    assert.match(message.text, /Track Your Order: https:\/\/courier\.example\/track\/TRACK-123/);
+    assert.match(message.html, /href="https:\/\/courier\.example\/track\/TRACK-123"/);
+    assert.match(message.html, /Track Your Order/);
+    assert.match(message.html, /handed over to the courier/);
+    assert.doesNotMatch(message.html, /handed over tothe courier/);
+});
+
+test('tracking email omits the link button when no tracking URL is available', async (t) => {
+    const context = loadEmailService({ EMAIL_PROVIDER: 'mailpit' });
+    t.after(context.restoreEnv);
+    await context.service.sendDeliveryTrackingEmail({
+        email: 'customer@example.com',
+        orderNumber: 'SW-1004',
+        trackingNumber: 'TRACK-456',
+        courierName: 'Courier'
+    });
+    assert.doesNotMatch(context.sentMessages[0].html, /Track Your Order/);
+    assert.doesNotMatch(context.sentMessages[0].text, /Track Your Order:/);
 });
 
 test('order status email retains status and optional reason', async (t) => {
@@ -302,7 +340,12 @@ test('order confirmation uses orders sender and includes order details', async (
         shippingAmount: 500,
         totalAmount: 95500,
         paymentMethod: 'cash',
-        paymentStatus: 'Unpaid'
+        paymentStatus: 'Unpaid',
+        invoiceAttachment: {
+            filename: 'SWO-TEST-001-Draft-Invoice.pdf',
+            content: Buffer.from('%PDF-test'),
+            contentType: 'application/pdf'
+        }
     });
 
     const message = context.sentMessages[0];
@@ -311,7 +354,11 @@ test('order confirmation uses orders sender and includes order details', async (
     assert.equal(message.to, 'customer@example.com');
     assert.match(message.subject, /SWO-TEST-001/);
     assert.match(message.text, /Test Laptop/);
+    assert.match(message.html, /Your order has been received/);
+    assert.match(message.html, /Payment status/);
     assert.match(message.text, /95500\.00/);
+    assert.equal(message.attachments[0].contentType, 'application/pdf');
+    assert.equal(message.attachments[0].filename, 'SWO-TEST-001-Draft-Invoice.pdf');
 });
 
 test('admin notification uses admin sender and configured Gmail recipient', async (t) => {

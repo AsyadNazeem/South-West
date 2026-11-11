@@ -40,6 +40,24 @@ const customerActivationLimiter = rateLimit({
     limit: 5,
 });
 
+const customerRegistrationRecoveryLimiter = rateLimit({
+    ...commonOptions,
+    windowMs: 15 * 60 * 1000,
+    limit: 3,
+});
+
+const customerForgotPasswordLimiter = rateLimit({
+    ...commonOptions,
+    windowMs: 15 * 60 * 1000,
+    limit: 3,
+});
+
+const customerResetPasswordLimiter = rateLimit({
+    ...commonOptions,
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+});
+
 const customerPasswordSetupValidationLimiter = rateLimit({
     ...commonOptions,
     windowMs: 15 * 60 * 1000,
@@ -71,6 +89,9 @@ module.exports = {
     customerRegistrationLimiter,
     customerVerificationLimiter,
     customerActivationLimiter,
+    customerRegistrationRecoveryLimiter,
+    customerForgotPasswordLimiter,
+    customerResetPasswordLimiter,
     customerPasswordSetupValidationLimiter,
     customerPasswordSetupLimiter,
     customerPasswordChangeCodeLimiter,

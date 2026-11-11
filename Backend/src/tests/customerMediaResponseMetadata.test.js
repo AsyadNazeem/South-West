@@ -174,7 +174,7 @@ function guestCheckoutController(images) {
         sequelize: { async transaction(callback) { return callback(tx); } },
         GuestCheckoutSession: {
             async findOne() { return session; },
-            async create(values) { return values; },
+            async create(values) { Object.assign(session, values); return session; },
         },
         Item: { async findByPk() { return item; } },
         ItemVariant: { async findOne() { return { id: 10, variant_name: 'Default' }; } },
@@ -202,6 +202,50 @@ function guestCheckoutController(images) {
     });
     return { controller, session };
 }
+
+test('guest checkout preserves Buy Now and normal cart items when MySQL returns stored JSON as text', async () => {
+    const images = await makeImages(1);
+    const { controller, session } = guestCheckoutController(images);
+    const token = 'b'.repeat(64);
+
+    const buyNowResponse = mockResponse();
+    await controller.createSession({
+        body: { item_id: 1, variant_id: 10, quantity: 2 },
+    }, buyNowResponse);
+
+    assert.equal(buyNowResponse.statusCode, 201);
+    assert.deepEqual(session.cart_items, [
+        { item_id: 1, variant_id: 10, quantity: 2 },
+    ]);
+
+    // MariaDB may expose its JSON alias (LONGTEXT) as a string through mysql2.
+    session.cart_items = JSON.stringify(session.cart_items);
+    const cartResponse = mockResponse();
+    await controller.getGuestCart({ get: () => token }, cartResponse);
+
+    assert.equal(cartResponse.statusCode, 200);
+    assert.equal(cartResponse.body.data.items.length, 1);
+    assert.equal(cartResponse.body.data.items[0].quantity, 2);
+
+    const { controller: normalCartController, session: normalCartSession } = guestCheckoutController(images);
+    normalCartSession.cart_items = JSON.stringify([
+        { item_id: 1, variant_id: 10, quantity: 1 },
+    ]);
+    const addResponse = mockResponse();
+    await normalCartController.addGuestCartItem({
+        body: { item_id: 1, variant_id: 10, quantity: 1 },
+        get: () => token,
+    }, addResponse);
+    assert.equal(addResponse.statusCode, 200);
+    assert.deepEqual(normalCartSession.cart_items, [
+        { item_id: 1, variant_id: 10, quantity: 2 },
+    ]);
+
+    const emptyResponse = mockResponse();
+    await controller.createSession({ body: { items: [] } }, emptyResponse);
+    assert.equal(emptyResponse.statusCode, 400);
+    assert.equal(emptyResponse.body.message, 'Cart must contain between 1 and 100 items.');
+});
 
 test('customer cart retrieval, add, and update preserve structure and attach multiple image variants', async () => {
     const images = await makeImages(2);

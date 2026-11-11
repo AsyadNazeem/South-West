@@ -6,6 +6,7 @@ const {
     sequelize,
     Delivery,
     Order,
+    Invoice,
     Payment,
     Customer,
     DeliveryStatusHistory,
@@ -17,6 +18,7 @@ const {
     sendDeliveryTrackingEmail,
     sendOrderStatusEmail
 } = require('../services/emailService');
+const { loadOrderInvoiceData, generateInvoicePdf, invoiceFilename } = require('../services/invoicePdfService');
 
 const ORDER_DELIVERED_LABEL = 'Order Completed';
 
@@ -453,7 +455,8 @@ exports.updateDelivery = async (req, res) => {
                         attributes: ['id', 'first_name', 'last_name', 'email']
                     }
                 ],
-                transaction
+                transaction,
+                lock: transaction.LOCK.UPDATE
             });
 
             if (order) {
@@ -523,10 +526,28 @@ exports.updateDelivery = async (req, res) => {
                     }
 
                     if (order.payment_status !== nextPaymentStatus) {
+                        const previousPaymentStatus = order.payment_status;
                         await order.update(
                             { payment_status: nextPaymentStatus },
                             { transaction, fields: ['payment_status'] }
                         );
+                        await recordAuditLog({
+                            userId: getActorId(req),
+                            action: 'ORDER_PAYMENT_STATUS_AUTO_UPDATED',
+                            module: 'orders',
+                            entityType: 'order',
+                            entityId: order.id,
+                            description: `Order ${order.order_number} payment status changed after COD delivery confirmation`,
+                            oldValues: { payment_status: previousPaymentStatus },
+                            newValues: {
+                                payment_status: nextPaymentStatus,
+                                trigger: 'cod_delivery_confirmation'
+                            },
+                            ipAddress: req.ip || null,
+                            userAgent: req.get('user-agent') || null,
+                            requestId: req.id || req.requestId || null,
+                            transaction
+                        });
                     }
 
                     for (const codPayment of codPayments) {
@@ -573,6 +594,19 @@ exports.updateDelivery = async (req, res) => {
                     order.payment_status === 'paid'
                 ) {
                     const previousOrderStatus = order.status;
+
+                    const invoice = await Invoice.findOne({
+                        where: { order_id: order.id },
+                        transaction,
+                        lock: transaction.LOCK.UPDATE
+                    });
+                    if (invoice && invoice.status !== 'paid') {
+                        await invoice.update({
+                            status: 'paid',
+                            paid_amount: order.total_amount,
+                            balance_amount: 0
+                        }, { transaction });
+                    }
 
                     await order.update(
                         { status: 'delivered' },
@@ -631,7 +665,8 @@ exports.updateDelivery = async (req, res) => {
                             customerName: completedOrderSnapshot.customer_name,
                             orderNumber: order.order_number,
                             statusLabel: ORDER_DELIVERED_LABEL,
-                            reason: null
+                            reason: null,
+                            orderId: order.id
                         };
                     }
                 }
@@ -662,7 +697,8 @@ exports.updateDelivery = async (req, res) => {
                     orderNumber: order.order_number,
                     trackingNumber: delivery.tracking_number,
                     courierName: delivery.courier_name,
-                    expectedDeliveryDate: delivery.expected_delivery_date
+                    expectedDeliveryDate: delivery.expected_delivery_date,
+                    orderId: order.id
                 };
             } else {
                 console.warn(
@@ -689,7 +725,35 @@ exports.updateDelivery = async (req, res) => {
 
         if (completionEmailPayload) {
             try {
-                await sendOrderStatusEmail(completionEmailPayload);
+                const invoiceOrder = await loadOrderInvoiceData(completionEmailPayload.orderId);
+                const paidInvoice = invoiceOrder?.payment_status === 'paid';
+                const payment = invoiceOrder?.payments?.find(record => record.payment_status === 'paid') || invoiceOrder?.payments?.[0];
+                const invoice = invoiceOrder?.invoices?.find(record => record.status === 'paid');
+                const invoiceAttachment = paidInvoice && invoice
+                    ? {
+                        filename: invoiceFilename(invoiceOrder.order_number),
+                        content: await generateInvoicePdf({
+                            ...invoiceOrder.toJSON(),
+                            invoice_number: invoice.invoice_number
+                        }),
+                        contentType: 'application/pdf'
+                    }
+                    : null;
+                await sendOrderStatusEmail({
+                    ...completionEmailPayload,
+                    orderDetails: invoiceOrder ? {
+                        paymentMethod: payment?.payment_method || 'Not provided',
+                        paymentStatus: invoiceOrder.payment_status,
+                        totalAmount: `LKR ${Number(invoiceOrder.total_amount || 0).toFixed(2)}`,
+                        items: (invoiceOrder.items || []).map(item => ({
+                            name: item.item?.item_name || 'Product',
+                            variantName: item.variant?.variant_name || '',
+                            quantity: item.quantity,
+                            lineTotal: `LKR ${Number(item.line_total || 0).toFixed(2)}`
+                        })),
+                        invoiceAttachment
+                    } : undefined
+                });
                 orderEmailStatus = 'sent';
             } catch (emailError) {
                 orderEmailStatus = 'failed';
@@ -712,7 +776,22 @@ exports.updateDelivery = async (req, res) => {
 
         if (isNewDispatch && emailPayload) {
             try {
-                await sendDeliveryTrackingEmail(emailPayload);
+                const trackingOrder = await loadOrderInvoiceData(emailPayload.orderId);
+                const trackingPayment = trackingOrder?.payments?.find(record => record.payment_status === 'paid') || trackingOrder?.payments?.[0];
+                await sendDeliveryTrackingEmail({
+                    ...emailPayload,
+                    orderDetails: trackingOrder ? {
+                        paymentMethod: trackingPayment?.payment_method || 'Not provided',
+                        paymentStatus: trackingOrder.payment_status,
+                        totalAmount: `LKR ${Number(trackingOrder.total_amount || 0).toFixed(2)}`,
+                        items: (trackingOrder.items || []).map(item => ({
+                            name: item.item?.item_name || 'Product',
+                            variantName: item.variant?.variant_name || '',
+                            quantity: item.quantity,
+                            lineTotal: `LKR ${Number(item.line_total || 0).toFixed(2)}`
+                        }))
+                    } : undefined
+                });
                 emailStatus = 'sent';
             } catch (emailError) {
                 emailStatus = 'failed';

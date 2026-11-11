@@ -76,6 +76,7 @@ const modalStatus = ref('')
 const statusReason = ref('')
 const courierName = ref('')
 const trackingNumber = ref('')
+const trackingUrl = ref('')
 const expectedDeliveryDate = ref('')
 
 const resetStatusDialog = () => {
@@ -85,6 +86,7 @@ const resetStatusDialog = () => {
   statusReason.value = ''
   courierName.value = ''
   trackingNumber.value = ''
+  trackingUrl.value = ''
   expectedDeliveryDate.value = ''
 }
 
@@ -109,6 +111,7 @@ const saveOrderStatus = (order) => {
   statusReason.value = ''
   courierName.value = ''
   trackingNumber.value = ''
+  trackingUrl.value = ''
   expectedDeliveryDate.value = ''
   statusDialogOpen.value = true
 }
@@ -139,6 +142,14 @@ const confirmOrderStatus = async () => {
     payload.courier_name = courierName.value.trim()
     payload.tracking_number = trackingNumber.value.trim()
 
+    if (trackingUrl.value.trim()) {
+      if (!isHttpUrl(trackingUrl.value.trim())) {
+        statusError.value = 'Enter a valid HTTP or HTTPS tracking link.'
+        return
+      }
+      payload.tracking_url = trackingUrl.value.trim()
+    }
+
     if (expectedDeliveryDate.value) {
       payload.expected_delivery_date = expectedDeliveryDate.value
     }
@@ -168,6 +179,15 @@ const confirmOrderStatus = async () => {
       `Failed to update order ${order.order_number}.`
   } finally {
     savingOrderId.value = null
+  }
+}
+
+const isHttpUrl = value => {
+  try {
+    const parsed = new URL(value)
+    return ['http:', 'https:'].includes(parsed.protocol) && Boolean(parsed.hostname)
+  } catch {
+    return false
   }
 }
 
@@ -637,6 +657,17 @@ const formatType = (type) => {
               maxlength="150"
               required
               placeholder="Enter tracking number"
+            />
+          </div>
+
+          <div class="modal-field">
+            <label for="tracking-url">Courier Tracking Link</label>
+            <input
+              id="tracking-url"
+              v-model="trackingUrl"
+              type="url"
+              maxlength="2048"
+              placeholder="https://courier-company.com/track/..."
             />
           </div>
 

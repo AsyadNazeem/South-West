@@ -7,6 +7,27 @@ const { recordAuditLog } = require('../services/auditLogService');
 
 const TYPES = ['new_orders', 'payments', 'deliveries', 'reviews', 'customer_requests'];
 const notificationListAttributes = ['id', 'user_id', 'type', 'title', 'message', 'reference_type', 'reference_id', 'is_read', 'read_at', 'created_at', 'updated_at'];
+const notificationDismissalAttributes = [...notificationListAttributes, 'is_dismissed'];
+
+async function auditFeedChange(req, notification, action, wasRead, wasDismissed) {
+    try {
+        await recordAuditLog({
+            userId: req.user.id,
+            action,
+            module: 'notifications',
+            entityType: 'admin_notification',
+            entityId: notification.id,
+            description: action === 'ADMIN_NOTIFICATION_DISMISSED' ? 'Admin notification dismissed' : 'Admin notification marked as read',
+            oldValues: { is_read: wasRead, is_dismissed: wasDismissed },
+            newValues: { type: notification.type, reference_type: notification.reference_type, reference_id: notification.reference_id, is_read: notification.is_read, is_dismissed: notification.is_dismissed ?? null },
+            ipAddress: req.ip,
+            userAgent: req.get?.('user-agent') || null,
+            requestId: req.id || null
+        });
+    } catch (error) {
+        console.error('Unable to write admin notification audit event:', error);
+    }
+}
 
 function isMissingDismissalColumn(error) {
     const databaseError = error?.original || error?.parent || error;
@@ -60,17 +81,41 @@ async function unreadCount(req, res) {
 }
 
 async function markRead(req, res) {
-    const notification = await AdminNotification.findOne({ attributes: notificationListAttributes, where: { id: req.params.id, user_id: req.user.id } });
+    let notification;
+    try {
+        notification = await AdminNotification.findOne({ attributes: notificationDismissalAttributes, where: { id: req.params.id, user_id: req.user.id } });
+    } catch (error) {
+        if (!isMissingDismissalColumn(error)) throw error;
+        notification = await AdminNotification.findOne({ attributes: notificationListAttributes, where: { id: req.params.id, user_id: req.user.id } });
+    }
     if (!notification) return res.status(404).json({ message: 'Notification not found' });
+    const previousRead = notification.is_read;
+    const previousDismissed = notification.is_dismissed ?? null;
     await notification.update({ is_read: true, read_at: new Date() });
+    notification.is_read = true;
+    if (previousRead !== true) {
+        await auditFeedChange(req, notification, 'ADMIN_NOTIFICATION_MARKED_READ', previousRead, previousDismissed);
+    }
     return res.json({ data: notification });
 }
 
 async function dismiss(req, res) {
     try {
-        const notification = await AdminNotification.findOne({ where: { id: req.params.id, user_id: req.user.id } });
+        let notification;
+        try {
+            notification = await AdminNotification.findOne({ attributes: notificationDismissalAttributes, where: { id: req.params.id, user_id: req.user.id } });
+        } catch (error) {
+            if (!isMissingDismissalColumn(error)) throw error;
+            notification = await AdminNotification.findOne({ attributes: notificationListAttributes, where: { id: req.params.id, user_id: req.user.id } });
+        }
         if (!notification) return res.status(404).json({ message: 'Notification not found' });
+        const previousRead = notification.is_read;
+        const previousDismissed = notification.is_dismissed ?? null;
         await notification.update({ is_dismissed: true });
+        notification.is_dismissed = true;
+        if (previousDismissed !== true) {
+            await auditFeedChange(req, notification, 'ADMIN_NOTIFICATION_DISMISSED', previousRead, previousDismissed);
+        }
         return res.json({ data: notification });
     } catch (error) {
         if (isMissingDismissalColumn(error)) {
