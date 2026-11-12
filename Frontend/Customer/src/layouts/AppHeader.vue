@@ -57,6 +57,9 @@ async function loadCustomer() {
     return
   }
 
+  // Reuse the profile already stored after login or Google sign-in.
+  if (customer.value) return
+
   try {
     const response = await api.get('/customer-auth/me')
     customer.value =

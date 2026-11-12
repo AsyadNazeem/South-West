@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { getCustomerWishlistItemIds, updateCustomerWishlistItem } from '@/services/customerWishlist'
 import { analyticsItem, trackAddToCart, trackEvent } from '@/services/analytics'
 import {
   getMediaUrl,
@@ -141,13 +142,6 @@ const wishlisted = ref(
   Boolean(props.product.is_wishlisted ?? props.product.in_wishlist)
 )
 
-function getWishlistItemId(entry) {
-  return entry?.item?.id ??
-    entry?.Item?.id ??
-    entry?.item_id ??
-    null
-}
-
 async function loadWishlistStatus() {
   if (!sessionStorage.getItem('customerToken')) {
     wishlisted.value = false
@@ -155,14 +149,8 @@ async function loadWishlistStatus() {
   }
 
   try {
-    const response = await api.get('/customer-wishlist')
-    const entries = Array.isArray(response.data?.data)
-      ? response.data.data
-      : []
-
-    wishlisted.value = entries.some(
-      entry => String(getWishlistItemId(entry)) === String(props.product.id)
-    )
+    const itemIds = await getCustomerWishlistItemIds(api)
+    wishlisted.value = itemIds.has(String(props.product.id))
   } catch (error) {
     // Keep the current state if the wishlist request fails.
     console.error('Unable to load wishlist status:', error)
@@ -214,6 +202,8 @@ async function handleWishlist() {
     } else {
       await wishlistApi.remove()
     }
+
+    updateCustomerWishlistItem(props.product.id, next)
 
     window.dispatchEvent(
       new CustomEvent('customer-wishlist-updated', {
