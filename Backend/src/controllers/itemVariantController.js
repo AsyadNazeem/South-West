@@ -240,6 +240,7 @@ const getAdminItemVariants = async (req, res) => {
     try {
         const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
         const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25));
+        const sortOrder = req.query.sortOrder === 'oldest' ? 'ASC' : 'DESC';
         const where = {};
         const search = String(req.query.search || '').trim();
 
@@ -265,7 +266,7 @@ const getAdminItemVariants = async (req, res) => {
                 required: true
             }],
             distinct: true,
-            order: [['variant_sku', 'ASC'], ['id', 'ASC']],
+            order: [['created_at', sortOrder], ['id', sortOrder]],
             limit: pageSize,
             offset: (page - 1) * pageSize
         });
@@ -825,6 +826,7 @@ const updateItemVariant = async (req, res) => {
                 {
                     where: {
                         item_id: id,
+                        id: { [Op.ne]: variantId },
                         is_default: true
                     },
                     transaction

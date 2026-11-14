@@ -151,7 +151,12 @@ const loadItems = async () => {
 
     const response = await api.get('/items')
 
-    items.value = response.data.data || []
+    items.value = (response.data.data || []).sort((a, b) => {
+      const dateA = new Date(a.created_at || 0).getTime()
+      const dateB = new Date(b.created_at || 0).getTime()
+
+      return dateB - dateA
+    })
   } catch (error) {
     console.error('Failed to load items:', error)
 
@@ -183,6 +188,12 @@ const loadExistingMedia = async () => {
   existingImages.value = (imageResult.value.data.data || [])
       .filter(sameItem)
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+
+  const altTextImage =
+      existingImages.value.find(image => image.is_primary) ||
+      existingImages.value[0]
+
+  form.value.alt_text = altTextImage?.alt_text || ''
 
   existingVideo.value =
       videoResult.status === 'fulfilled'

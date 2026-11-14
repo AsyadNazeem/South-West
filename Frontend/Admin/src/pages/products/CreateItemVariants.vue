@@ -147,6 +147,22 @@ function buildAttributes(variant) {
   return result
 }
 
+function normalizeVariantAttributes(value) {
+  let parsed = value
+
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch {
+      return {}
+    }
+  }
+
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? { ...parsed }
+    : {}
+}
+
 async function loadItemSpecifications(id) {
   specifications.value = []
   if (!id) return
@@ -357,29 +373,62 @@ async function saveVariants() {
 
   try {
     if (isBulkEditing.value) {
-      const ordered = [
-        ...payload.filter(v => !v.is_default),
-        ...payload.filter(v => v.is_default)
+      const existingVariants = payload.filter(v => v.id)
+      const newVariants = payload.filter(v => !v.id)
+
+      const orderedExisting = [
+        ...existingVariants.filter(v => !v.is_default),
+        ...existingVariants.filter(v => v.is_default)
       ]
 
-      for (const variant of ordered) {
-        if (!variant.id) throw new Error('A variant ID is missing. Reload and try again.')
-
-        await api.put(`/items/${itemId.value}/variants/${variant.id}`, {
-          variant_name: variant.variant_name,
-          qb_item_code: variant.qb_item_code,
-          attributes: variant.attributes,
-          is_default: variant.is_default,
-          is_active: variant.is_active
-        })
+      // Update existing variants first, preserving default ordering.
+      for (const variant of orderedExisting) {
+        const variantId = variant.id
 
         await api.put(
-          `/items/${itemId.value}/variants/${variant.id}/colors`,
+          `/items/${itemId.value}/variants/${variantId}`,
+          {
+            variant_name: variant.variant_name,
+            qb_item_code: variant.qb_item_code,
+            attributes: variant.attributes,
+            is_default: variant.is_default,
+            is_active: variant.is_active
+          }
+        )
+
+        await api.put(
+          `/items/${itemId.value}/variants/${variantId}/colors`,
           { color_ids: variant.color_ids }
         )
       }
 
-      success.value = `${payload.length} variants updated successfully.`
+      // Create newly added variants through the bulk endpoint.
+      // This generates SKUs using the selected colour names.
+      if (newVariants.length) {
+        const response = await api.post(
+          `/items/${itemId.value}/variants/bulk`,
+          {
+            variants: newVariants.map(variant => ({
+              variant_name: variant.variant_name,
+              qb_item_code: variant.qb_item_code,
+              attributes: variant.attributes,
+              color_ids: variant.color_ids,
+              is_default: variant.is_default,
+              is_active: variant.is_active
+            }))
+          }
+        )
+
+        const created = response.data?.data
+
+        if (!Array.isArray(created) || created.length !== newVariants.length) {
+          throw new Error(
+            'Please verify the server response before submitting again.'
+          )
+        }
+      }
+
+      success.value = `${payload.length} variants saved successfully.`
     } else if (isEditing.value) {
       const variant = payload[0]
       const variantId = editingVariantId.value
@@ -422,6 +471,8 @@ async function saveVariants() {
     colorForm.value = { color_name: '', hex_code: '#000000' }
     colorError.value = ''
     colorSuccess.value = ''
+
+    await router.push('/admin/products/item-variants')
   } catch (error) {
     formError.value =
       error.response?.data?.message ||
@@ -466,8 +517,7 @@ async function loadBulkVariantsForEdit(targetItemId) {
         color_ids: assigned
           .map(c => String(c.color_id ?? c.color?.id ?? c.id))
           .filter(id => colors.value.some(c => String(c.id) === id)),
-        attributes: variant.attributes && typeof variant.attributes === 'object'
-          ? { ...variant.attributes } : {},
+        attributes: normalizeVariantAttributes(variant.attributes),
         is_default: Boolean(variant.is_default),
         is_active: Boolean(variant.is_active)
       }

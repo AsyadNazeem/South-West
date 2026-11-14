@@ -816,6 +816,195 @@ button:disabled {
     opacity: .78;
 }
 
+/* ==========================================================================
+   BUTTONS  (paste at the very END of your <style scoped>)
+   CSS only: no template or script changes. These rules replace the look of the
+   old `button`, `.primary-button`, `.secondary-button` and `.danger-button`
+   rules. You can delete those old rules afterwards to keep the file tidy.
+   ========================================================================== */
+
+/* ---------- Base ---------- */
+button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 38px;
+    padding: 8px 16px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md, 8px);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        background-color var(--transition-fast, 0.15s ease),
+        border-color var(--transition-fast, 0.15s ease),
+        color var(--transition-fast, 0.15s ease),
+        box-shadow var(--transition-fast, 0.15s ease),
+        transform 0.1s ease;
+}
+
+button:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+button:focus-visible {
+    outline: 2px solid var(--color-primary, #2563eb);
+    outline-offset: 2px;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* ---------- Primary (Upload frame, Save) ---------- */
+.primary-button {
+    border-color: var(--color-primary, #2563eb);
+    background: var(--color-primary, #2563eb);
+    color: var(--color-text-light, #fff);
+    box-shadow: 0 1px 2px rgb(16 24 40 / 14%);
+}
+
+.primary-button:hover:not(:disabled) {
+    border-color: var(--color-primary-hover, #1d4ed8);
+    background: var(--color-primary-hover, #1d4ed8);
+    box-shadow: 0 4px 12px rgb(37 99 235 / 28%);
+}
+
+/* The main upload button is a little larger */
+.upload-actions .primary-button {
+    min-height: 42px;
+    padding: 0 26px;
+    font-size: 14px;
+}
+
+/* ---------- Secondary (Refresh, Edit, Deactivate, Activate, Cancel) ---------- */
+.secondary-button {
+    border-color: var(--color-border, #d1d5db);
+    background: var(--color-surface, #fff);
+    color: var(--color-text-secondary, #374151);
+    box-shadow: 0 1px 2px rgb(16 24 40 / 5%);
+}
+
+.secondary-button:hover:not(:disabled) {
+    border-color: var(--color-text-muted, #9ca3af);
+    background: var(--color-hover-bg, #f3f4f6);
+    color: var(--color-text-primary, #111827);
+}
+
+/* ---------- Danger (Delete) ---------- */
+.danger-button {
+    border-color: var(--color-danger-light, #fecaca);
+    background: var(--color-surface, #fff);
+    color: var(--color-danger, #b91c1c);
+    box-shadow: 0 1px 2px rgb(16 24 40 / 5%);
+}
+
+.danger-button:hover:not(:disabled) {
+    border-color: var(--color-danger, #b91c1c);
+    background: var(--color-danger-bg, #fef2f2);
+}
+
+.danger-button:focus-visible {
+    outline-color: var(--color-danger, #b91c1c);
+}
+
+/* Delete is blocked while a frame is used by campaigns: make that clear */
+.danger-button:disabled {
+    border-color: #f1dcdc;
+    background: var(--color-surface, #fff);
+    color: #c9a0a0;
+    box-shadow: none;
+    opacity: 1;
+}
+
+/* ---------- Buttons inside cards share the row evenly ---------- */
+.card-actions {
+    gap: 8px;
+}
+
+.card-actions button {
+    flex: 1 1 0;
+    min-width: max-content;
+    padding: 8px 10px;
+}
+
+/* Header refresh button */
+.page-header .secondary-button {
+    min-height: 40px;
+    padding: 0 18px;
+}
+
+/* ---------- Search + status filter (these were unstyled) ---------- */
+.frame-pagination-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.frame-pagination-filters input[type='search'],
+.frame-pagination-filters select {
+    height: 40px;
+    border: 1px solid var(--color-border, #d1d5db);
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface, #fff);
+    color: inherit;
+    font-family: inherit;
+    font-size: 13px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.frame-pagination-filters input[type='search'] {
+    flex: 1;
+    min-width: 200px;
+    max-width: 360px;
+    padding: 0 14px;
+}
+
+.frame-pagination-filters select {
+    min-width: 140px;
+    padding: 0 12px;
+    cursor: pointer;
+}
+
+.frame-pagination-filters input[type='search']:focus,
+.frame-pagination-filters select:focus {
+    outline: none;
+    border-color: var(--color-primary, #2563eb);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, #2563eb) 18%, transparent);
+}
+
+@media (max-width: 650px) {
+    .page-header .secondary-button {
+        min-height: 38px;
+    }
+
+    .upload-actions .primary-button {
+        width: 100%;
+    }
+
+    .frame-pagination-filters input[type='search'],
+    .frame-pagination-filters select {
+        flex: 1 1 100%;
+        max-width: none;
+        font-size: 16px; /* stops iOS zooming into the field */
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    button,
+    .frame-pagination-filters input[type='search'],
+    .frame-pagination-filters select {
+        transition: none;
+    }
+}
+
 @media (max-width: 650px) {
     .frames-page {
         padding: 16px;

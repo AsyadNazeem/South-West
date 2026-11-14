@@ -1279,10 +1279,26 @@ const found = publicId
     // IMPORTANT:
     // Do not request the colour endpoint again here.
     // Doing so can overwrite a valid colour with null.
-    const variantsWithColors = variantsPayload.map(variant => ({
-      ...variant,
-      color: variant.color || null
-    }))
+    const variantsWithColors = variantsPayload.map(variant => {
+      let attributes = variant.attributes
+
+      if (typeof attributes === 'string') {
+        try {
+          attributes = JSON.parse(attributes)
+        } catch {
+          attributes = {}
+        }
+      }
+
+      return {
+        ...variant,
+        attributes:
+          attributes && typeof attributes === 'object' && !Array.isArray(attributes)
+            ? attributes
+            : {},
+        color: variant.color || null
+      }
+    })
 
     
 

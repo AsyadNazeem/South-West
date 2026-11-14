@@ -17,6 +17,7 @@ const success = ref('')
 const search = ref('')
 const statusFilter = ref('all')
 const defaultFilter = ref('all')
+const sortOrder = ref('newest')
 const page = ref(1)
 const pageSize = ref(25)
 const pagination = ref({ total: 0, totalPages: 1 })
@@ -97,7 +98,7 @@ function resetFilters() {
   defaultFilter.value = 'all'
 }
 
-watch([search, statusFilter, defaultFilter], () => {
+watch([search, statusFilter, defaultFilter, sortOrder], () => {
   page.value = 1
   loadAllVariants()
 })
@@ -164,11 +165,19 @@ async function loadAllVariants() {
         status: statusFilter.value === 'all' ? undefined : statusFilter.value,
         default: defaultFilter.value === 'all'
           ? undefined
-          : defaultFilter.value === 'default' ? 'default' : 'non_default'
+          : defaultFilter.value === 'default' ? 'default' : 'non_default',
+        sortOrder: sortOrder.value
       }
     })
     if (!paginationRequestSequence.isCurrent(requestId)) return
     variants.value = getData(response)
+
+    expandedItemIds.value = new Set(
+      variants.value
+        .map(variant => String(variant.item_id ?? variant.item?.id ?? ''))
+        .filter(Boolean)
+    )
+
     pagination.value = response.data?.pagination || { total: variants.value.length, totalPages: 1 }
   } catch (e) {
     if (!paginationRequestSequence.isCurrent(requestId)) return
@@ -283,6 +292,14 @@ onMounted(loadAllVariants)
         <option value="all">All Variants</option>
         <option value="default">Default Only</option>
         <option value="nondefault">Non-default</option>
+      </select>
+
+      <select
+        v-model="sortOrder"
+        aria-label="Sort variants by creation date"
+      >
+        <option value="newest">New to Old</option>
+        <option value="oldest">Old to New</option>
       </select>
 
       <button
@@ -450,7 +467,9 @@ onMounted(loadAllVariants)
               :class="{ 'row-inactive': !variant.is_active }"
             >
 
-              <td class="col-toggle">{{ (page - 1) * pageSize + variants.findIndex(entry => entry.id === variant.id) + 1 }}</td>
+              <td class="col-toggle">
+                {{ (page - 1) * pageSize + filteredVariants.findIndex(entry => entry.id === variant.id) + 1 }}
+              </td>
 
               <td>
                 <strong>{{ variant.variant_sku }}</strong>
@@ -589,14 +608,15 @@ onMounted(loadAllVariants)
 .action-buttons {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
+  flex-wrap: nowrap;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .action-button {
   display: inline-flex;
   align-items: center;
-  padding: 6px var(--spacing-md);
+  padding: 4px 9px;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
   background: var(--color-surface);
@@ -734,7 +754,7 @@ th {
 }
 
 td {
-  padding: 14px var(--spacing-lg);
+  padding: 7px var(--spacing-lg);
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   border-bottom: 1px solid var(--color-border-light);
@@ -767,8 +787,8 @@ tbody tr:last-child td {
 }
 
 .item-group-row td {
-  padding-top: 12px;
-  padding-bottom: 12px;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 /* Accent bar on the left of an expanded group */
@@ -864,7 +884,7 @@ tbody tr:last-child td {
 .count-pill {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: var(--radius-full);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
