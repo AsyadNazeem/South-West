@@ -15,6 +15,7 @@ const UNIT_RULES = [
   { test: /volt/i, unit: 'V' },
   { test: /amp|current/i, unit: 'A' },
   { test: /weight/i, unit: 'kg' },
+  { test: /ram.*(?:speed|frequency)|(?:speed|frequency).*ram|bus\s*speed|memory.*(?:speed|frequency)/i, unit: 'MHz' },
   { test: /frequency/i, unit: 'Hz' },
   { test: /battery/i, unit: 'mAh' },
   { test: /\bram\b|memory|storage|capacity/i, unit: 'GB' }

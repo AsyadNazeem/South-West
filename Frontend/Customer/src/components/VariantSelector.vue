@@ -65,10 +65,6 @@ const hasChoices = computed(() => props.showChoices && props.choices.length > 0)
 
           <span class="vs-choice-title">{{ choice.name }}</span>
 
-          <span v-if="choiceCaption(choice)" class="vs-choice-caption">
-            {{ choiceCaption(choice) }}
-          </span>
-
           <span v-if="!isChoiceAvailable(choice)" class="vs-choice-stock">
             Out of stock
           </span>
@@ -156,22 +152,24 @@ const hasChoices = computed(() => props.showChoices && props.choices.length > 0)
 
 /* Specification / length cards */
 
+/* Specification / length chips: size follows the text */
 .vs-choices {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .vs-choice {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  min-height: 72px;
-  padding: 14px 16px;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-height: 0;
+  padding: 7px 14px;
   border: 1px solid var(--color-border-soft, #d8dee8);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--color-surface, #fff);
   color: var(--color-text, #172033);
   font: inherit;
@@ -182,6 +180,44 @@ const hasChoices = computed(() => props.showChoices && props.choices.length > 0)
     background 0.15s ease,
     box-shadow 0.15s ease;
 }
+
+.vs-choice-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Small tick inside the chip instead of a corner badge */
+.vs-check {
+  position: static;
+  display: none;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-primary, #1f4a8a);
+  opacity: 1;
+  transform: none;
+}
+
+.vs-check svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vs-choice.selected .vs-check {
+  display: grid;
+}
+
 
 @media (hover: hover) {
   .vs-choice:hover:not(:disabled):not(.selected) {
@@ -198,15 +234,6 @@ const hasChoices = computed(() => props.showChoices && props.choices.length > 0)
 .vs-choice:focus-visible {
   outline: 2px solid var(--color-primary, #1f4a8a);
   outline-offset: 2px;
-}
-
-.vs-choice-title {
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
 }
 
 .vs-choice.selected .vs-choice-title {
@@ -229,21 +256,6 @@ const hasChoices = computed(() => props.showChoices && props.choices.length > 0)
 }
 
 /* Check badge on the selected card */
-
-.vs-check {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--color-primary, #1f4a8a);
-  opacity: 0;
-  transform: scale(0.6);
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
 
 .vs-check svg {
   width: 12px;

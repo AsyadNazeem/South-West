@@ -419,6 +419,7 @@ const emit = defineEmits([
 .sidebar {
   width: var(--sidebar-width);
   height: 100vh;
+  height: 100dvh;   /* correct height under mobile browser bars */
 
   background: var(--color-sidebar);
   color: var(--color-text-light);
@@ -868,6 +869,7 @@ const emit = defineEmits([
         width var(--transition-normal);
 
     z-index: 1000;
+
   }
 
   .sidebar.mobile-open {

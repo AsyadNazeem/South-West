@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from "vue"
+import { ref, watch, onBeforeUnmount } from "vue"
 import Sidebar from "./Sidebar.vue"
 import Topbar from "./Header.vue"
 
@@ -17,6 +17,11 @@ const toggleMobileSidebar = () => {
 const closeMobileSidebar = () => {
   mobileSidebarOpen.value = false
 }
+
+watch(mobileSidebarOpen, open => {
+  document.body.style.overflow = open ? "hidden" : ""
+})
+onBeforeUnmount(() => { document.body.style.overflow = "" })
 </script>
 
 <template>
@@ -63,11 +68,14 @@ const closeMobileSidebar = () => {
   min-height: 100vh;
   display: flex;
   background: var(--color-background);
+  min-height: 100dvh;
+  overflow-x: clip;
 }
 
 .main-section {
   flex: 1;
   min-width: 0;
+  width: 100%;
   margin-left: var(--sidebar-width);
   transition: margin-left var(--transition-normal);
 }
@@ -87,6 +95,7 @@ const closeMobileSidebar = () => {
 .page-content {
   padding: var(--content-padding);
   min-height: calc(100vh - var(--topbar-height));
+  min-width: 0;
 }
 
 /* Tablet */

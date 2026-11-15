@@ -9,6 +9,7 @@ import ProductSort from '@/components/products/ProductSort.vue'
 import HomeCategory from '@/components/home/HomeCategory.vue'
 import HomeBrand from '@/components/home/HomeBrand.vue'
 import HomeDiscount from '@/components/home/HomeDiscount.vue'
+import HomeCategoryRails from '@/components/home/HomeCategoryRails.vue'
 import { organizationSchema, setStructuredData, websiteSchema } from '@/utils/structuredData'
 
 const route = useRoute()
@@ -759,6 +760,12 @@ onBeforeUnmount(() => {
   :products="products"
 />
 
+<HomeCategoryRails
+  v-if="categories.length"
+  :categories="homepageCategories"
+  :all-categories="categories"
+  @select-category="selectCategory"
+/>
 
       </template>
 

@@ -262,11 +262,16 @@ onMounted(loadDashboard)
         <table>
           <thead><tr><th>Order</th><th>Customer</th><th>Date</th><th>Amount</th><th>Status</th><th><span class="sr-only">Open order</span></th></tr></thead>
           <tbody>
-            <tr v-for="(order, index) in recentOrders" :key="`${order.order}-${index}`">
-              <td><strong>{{ order.order }}</strong></td><td>{{ order.customer || 'Guest' }}</td><td>{{ order.date || '—' }}</td><td class="amount-cell">{{ formatCurrency(order.amount) }}</td>
-              <td><span class="status" :class="String(order.status || '').toLowerCase()">{{ order.status || 'Unknown' }}</span></td>
-              <td><router-link to="/admin/sales/orders" class="row-link" :aria-label="`View orders for ${order.order}`"><ArrowUpRight :size="16" /></router-link></td>
-            </tr>
+         <tr v-for="(order, index) in recentOrders" :key="`${order.order}-${index}`">
+  <td data-label="Order"><strong>{{ order.order }}</strong></td>
+  <td data-label="Customer">{{ order.customer || 'Guest' }}</td>
+  <td data-label="Date">{{ order.date || '—' }}</td>
+  <td data-label="Amount" class="amount-cell">{{ formatCurrency(order.amount) }}</td>
+  <td data-label="Status"><span class="status" :class="String(order.status || '').toLowerCase()">{{ order.status || 'Unknown' }}</span></td>
+  <td class="row-action">
+    <router-link to="/admin/sales/orders" class="row-link" :aria-label="`View orders for ${order.order}`"><ArrowUpRight :size="16" /></router-link>
+  </td>
+</tr>
           </tbody>
         </table>
       </div>
@@ -326,6 +331,61 @@ onMounted(loadDashboard)
 .table-container { overflow-x: auto; }table { width: 100%; border-collapse: collapse; white-space: nowrap; }th { padding: 10px 12px; background: var(--color-hover-bg); color: var(--color-text-secondary); font-size: 10px; font-weight: 650; text-align: left; }td { padding: 12px; border-bottom: 1px solid var(--color-border-light); color: var(--color-text-secondary); font-size: 11px; }td strong, .amount-cell { color: var(--color-text-primary); font-weight: 650; }.status { display: inline-flex; padding: 4px 8px; border-radius: 20px; background: var(--color-hover-bg); color: var(--color-text-secondary); font-size: 9px; font-weight: 650; text-transform: capitalize; }.status.completed, .status.delivered { background: var(--color-success-bg); color: var(--color-success); }.status.processing, .status.confirmed { background: var(--color-info-bg); color: var(--color-info); }.status.pending { background: var(--color-warning-bg); color: var(--color-warning); }.status.cancelled, .status.returned { background: var(--color-danger-bg); color: var(--color-danger); }.row-link { display: inline-grid; width: 28px; height: 28px; place-items: center; border-radius: 7px; color: var(--color-text-muted); }.row-link:hover { background: var(--color-hover-bg); color: var(--color-primary); }
 .error-state { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 12px 14px; border-radius: 10px; background: var(--color-danger-bg); color: var(--color-danger); font-size: 12px; }.error-state span { flex: 1; }.error-state button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.dashboard,
+.dashboard > * { min-width: 0; max-width: 100%; }
+.stat-value, .sales-summary strong { overflow-wrap: anywhere; }
+
+@media (max-width: 650px) {
+  .header-date { width: 100%; white-space: normal; }
+  .select-wrap, .period-select { width: 100%; }
+  .card-header p { margin-left: 0; }
+  .sales-summary { margin-top: 14px; }
+  .chart-y-axis { width: 32px; }
+
+  /* Orders table becomes a list of cards */
+  .table-container { overflow: visible; }
+  table, tbody { display: block; white-space: normal; }
+  thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  tbody tr {
+    position: relative;
+    display: grid;
+    gap: 8px;
+    padding: 14px 40px 14px 0;
+    border-bottom: 1px solid var(--color-border-light);
+  }
+  tbody tr:last-child { border-bottom: 0; }
+
+  td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0;
+    border: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: var(--color-text-muted);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .04em;
+    text-align: left;
+    text-transform: uppercase;
+  }
+  .row-action { position: absolute; top: 10px; right: 0; }
+  .row-action::before { content: none; }
+  .row-link { width: 32px; height: 32px; }
+  .stock-info strong { white-space: normal; }
+}
+
+@media (max-width: 380px) {
+  .dashboard-card { padding: 12px; }
+  .sales-summary strong { font-size: 19px; }
+}
 @media (max-width: 1120px) { .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.dashboard-grid { grid-template-columns: 1fr; } }
 @media (max-width: 650px) { .page-header { align-items: flex-start; flex-direction: column; }.header-date { font-size: 11px; }.stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }.stat-card { padding: 14px; }.stat-topline { font-size: 11px; }.stat-icon { width: 32px; height: 32px; }.stat-value { margin-top: 11px; font-size: 19px; }.dashboard-card { padding: 15px; }.sales-header { flex-direction: column; }.sales-summary { margin-left: 0; }.chart-wrap { height: 190px; }.sales-svg { height: 162px; }.chart-permission { min-height: 145px; padding: 8px; }.status-overview { margin-left: 0; }.status-caption { width: 100%; margin-left: 0; }.error-state { align-items: flex-start; flex-wrap: wrap; } }
 @media (max-width: 380px) { .stats-grid { grid-template-columns: 1fr; }.header-date { white-space: normal; } }

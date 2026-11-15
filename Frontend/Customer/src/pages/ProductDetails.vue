@@ -718,6 +718,11 @@ const variantChoices = computed(() => {
   )
 })
 
+// Cards show only the name (e.g. "DDR4 · 2666 MHz"), without the spec label lines.
+const displayChoices = computed(() =>
+  variantChoices.value.map(choice => ({ ...choice, specs: [] }))
+)
+
 const variantSelectorLabel = computed(() => {
   const labels = variantChoices.value[0]?.specs.map(spec => spec.label) || []
 
@@ -855,16 +860,21 @@ const selectedColour = computed(() => {
     const colors = selectedVariant.value.colors
 
     if (Array.isArray(colors) && colors.length > 0) {
-      return colors
-        .map(color => color.color_name)
-        .filter(Boolean)
-        .join(' and ')
+      const names = colors
+        .map(color => typeof color === 'string'
+          ? color
+          : color?.color_name || color?.name || ''
+        )
+        .map(color => String(color).trim())
+        .filter(color => color && color.toLowerCase() !== 'default')
+
+      if (names.length) return names.join(' and ')
     }
 
-    return getVariantColour(selectedVariant.value) || 'Not specified'
+    return getVariantColour(selectedVariant.value)
   }
 
-  return product.value?.color || 'Not specified'
+  return String(product.value?.color || '').trim()
 })
 
 
@@ -1027,9 +1037,20 @@ const safeDescription = computed(() =>
 )
 
 const specifications = computed(() =>
-  Array.isArray(product.value?.specifications)
+  (Array.isArray(product.value?.specifications)
     ? product.value.specifications
     : []
+  ).filter(spec => {
+    const name = String(
+      spec.name || spec.specification?.name || ''
+    ).trim().toLowerCase()
+
+    const value = String(spec.value ?? '').trim().toLowerCase()
+
+    return name !== 'color' && name !== 'colour'
+      ? true
+      : value !== '' && value !== 'not specified'
+  })
 )
 
 const images = computed(() => {
@@ -1710,7 +1731,7 @@ onMounted(loadProduct)
 <VariantSelector
   v-if="variantChoices.length"
   :label="variantSelectorLabel"
-  :choices="variantChoices"
+  :choices="displayChoices"
   :show-choices="hasMultipleConfigurations && variantChoices.some(choice => choice.specs.length > 0)"
   :selected-key="selectedVariantChoice?.key || ''"
   :selected-name="selectedVariantChoice?.name || ''"
@@ -1793,7 +1814,7 @@ onMounted(loadProduct)
               <span>Warranty</span>
               <strong>{{ product.warranty || 'Check with seller' }}</strong>
             </div>
-<div>
+<div v-if="selectedColour">
   <span>Colour</span>
   <strong>{{ selectedColour }}</strong>
 </div>

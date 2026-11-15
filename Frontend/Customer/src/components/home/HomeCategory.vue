@@ -174,8 +174,13 @@ function getCategoryImage(category) {
 .category-name {
   width: 100%;
   color: var(--color-text);
-  font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
+  /* Scales with screen width: ~10px on small phones, up to the normal size on desktop */
+  font-size: clamp(10px, 2.6vw, var(--font-size-sm));
+  line-height: 1.3;
+  /* Wrap between words, and hyphenate only if a single word is still too long */
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: auto;
 }
 
 @media (max-width: 1100px) {
@@ -188,11 +193,24 @@ function getCategoryImage(category) {
   .category-grid {
     --category-columns: 4;
   }
+
+   .category-card {
+    padding: 12px 6px 10px;
+  }
 }
 
 @media (max-width: 420px) {
   .category-grid {
     --category-columns: 3;
+  }
+
+    .category-card {
+    gap: 6px;
+    padding: 10px 4px 8px;
+  }
+
+  .category-name {
+    font-size: clamp(9.5px, 2.8vw, 11px);
   }
 }
 </style>
