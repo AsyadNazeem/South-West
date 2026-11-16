@@ -26,6 +26,11 @@ const loading = ref(true)
 let latestProductLoadId = 0
 const error = ref('')
 const selectedImage = ref(0)
+const imageZoomActive = ref(false)
+const ZOOM_LEVEL = 3
+const ZOOM_PANE_RATIO = 1.5 // pane width / height (landscape)
+const zoomPoint = ref({ x: 0.5, y: 0.5 })
+const mainImageRef = ref(null)
 const selectedVariantId = ref('')
 const selectedLength = ref('')
 const selectedColor = ref('')
@@ -1286,7 +1291,86 @@ function formatPrice(value) {
 
 function selectImage(index) {
   selectedImage.value = index
+  imageZoomActive.value = false
 }
+
+function previousImage() {
+  if (images.value.length < 2) return
+  resetImageZoom()
+  selectImage((selectedImage.value - 1 + images.value.length) % images.value.length)
+}
+
+function nextImage() {
+  if (images.value.length < 2) return
+  resetImageZoom()
+  selectImage((selectedImage.value + 1) % images.value.length)
+}
+
+function isInsideMainImage(event) {
+  const el = mainImageRef.value
+  if (!el) return false
+
+  const r = el.getBoundingClientRect()
+  return (
+    event.clientX >= r.left && event.clientX <= r.right &&
+    event.clientY >= r.top && event.clientY <= r.bottom
+  )
+}
+
+function moveImageZoom(event) {
+  if (!currentImage.value?.resolvedUrl) return
+  if (event.pointerType && event.pointerType !== 'mouse') return
+
+  // Outside the image or over the arrows: no zoom
+  if (!isInsideMainImage(event) || event.target.closest('.gallery-nav')) {
+    resetImageZoom()
+    return
+  }
+
+  const rect = mainImageRef.value.getBoundingClientRect()
+  const halfX = 0.5 / ZOOM_LEVEL
+  const halfY = 0.5 / (ZOOM_LEVEL * ZOOM_PANE_RATIO)
+  const clamp = (value, half) => Math.min(1 - half, Math.max(half, value))
+
+  zoomPoint.value = {
+    x: clamp((event.clientX - rect.left) / rect.width, halfX),
+    y: clamp((event.clientY - rect.top) / rect.height, halfY)
+  }
+  imageZoomActive.value = true
+}
+
+function resetImageZoom() {
+  imageZoomActive.value = false
+  zoomPoint.value = { x: 0.5, y: 0.5 }
+}
+
+// Safety net: if the cursor is anywhere outside the image, close the preview
+function handleWindowPointerMove(event) {
+  if (imageZoomActive.value && !isInsideMainImage(event)) resetImageZoom()
+}
+
+const zoomLensStyle = computed(() => {
+  const width = 100 / ZOOM_LEVEL
+  const height = 100 / (ZOOM_LEVEL * ZOOM_PANE_RATIO)
+
+  return {
+    width: `${width}%`,
+    height: `${height}%`,
+    left: `${zoomPoint.value.x * 100 - width / 2}%`,
+    top: `${zoomPoint.value.y * 100 - height / 2}%`
+  }
+})
+
+const zoomPaneStyle = computed(() => ({
+  aspectRatio: `${ZOOM_PANE_RATIO} / 1`
+}))
+
+const zoomImageStyle = computed(() => ({
+  '--zoom': ZOOM_LEVEL,
+  width: `${ZOOM_LEVEL * 100}%`,
+  height: `${ZOOM_LEVEL * ZOOM_PANE_RATIO * 100}%`,
+  transform: `translate(${(0.5 / ZOOM_LEVEL - zoomPoint.value.x) * 100}%, ${(0.5 / (ZOOM_LEVEL * ZOOM_PANE_RATIO) - zoomPoint.value.y) * 100}%)`
+}))
 
 // --------------------------------------------------
 // Response helpers
@@ -1786,6 +1870,16 @@ watch(
 
 watch(() => route.params.productSlug, loadProduct)
 
+onMounted(() => {
+  window.addEventListener('pointermove', handleWindowPointerMove, { passive: true })
+  window.addEventListener('blur', resetImageZoom)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('pointermove', handleWindowPointerMove)
+  window.removeEventListener('blur', resetImageZoom)
+})
+
 onMounted(loadProduct)
 </script>
 
@@ -1813,7 +1907,13 @@ onMounted(loadProduct)
     <template v-else-if="product">
       <section class="product-layout">
         <div class="gallery">
-          <div class="main-image">
+         <div
+  ref="mainImageRef"
+  class="main-image"
+  :class="{ 'is-zoomed': imageZoomActive }"
+  @pointermove="moveImageZoom"
+  @pointerleave="resetImageZoom"
+>
             <img
               v-if="currentImage?.resolvedUrl"
               :src="currentImage.resolvedUrl"
@@ -1823,15 +1923,71 @@ onMounted(loadProduct)
               loading="eager"
               decoding="async"
             />
-            <div v-else class="image-placeholder">
-              <span>SW</span>
-              <p>Product image unavailable</p>
-            </div>
+
+<div
+  v-if="imageZoomActive && currentImage?.resolvedUrl"
+  class="zoom-lens"
+  :style="zoomLensStyle"
+  aria-hidden="true"
+/>
+
+<div v-if="!currentImage?.resolvedUrl" class="image-placeholder">
+  <span>SW</span>
+  <p>Product image unavailable</p>
+</div>
+
+<span
+  v-if="currentImage?.resolvedUrl && !imageZoomActive"
+  class="zoom-hint"
+  aria-hidden="true"
+>
+  <svg viewBox="0 0 24 24" fill="none">
+    <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+    <path d="m20 20-3.5-3.5M11 8v6M8 11h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+  Hover to zoom
+</span>
+
+
+           <button
+  v-if="images.length > 1"
+  type="button"
+  class="gallery-nav gallery-nav-previous"
+  aria-label="Previous product image"
+  @click.stop.prevent="previousImage"
+>
+  &#8249;
+</button>
+
+<button
+  v-if="images.length > 1"
+  type="button"
+  class="gallery-nav gallery-nav-next"
+  aria-label="Next product image"
+  @click.stop.prevent="nextImage"
+>
+  &#8250;
+</button>
 
             <span v-if="discount" class="discount-badge">
               -{{ discount }}%
             </span>
             <span v-if="product.is_new" class="new-product-badge">NEW!</span>
+          </div>
+
+<div
+  v-if="imageZoomActive && currentImage?.resolvedUrl"
+  class="zoom-pane"
+  :style="zoomPaneStyle"
+  aria-hidden="true"
+>
+            <img
+              :src="currentImage.resolvedUrl"
+              :srcset="currentImage.srcset || undefined"
+              sizes="100vw"
+              alt=""
+              :style="zoomImageStyle"
+            />
           </div>
 
           <div v-if="images.length > 1" class="thumbnails">
@@ -2665,8 +2821,159 @@ onMounted(loadProduct)
 .main-image > img {
   width: 100%;
   height: 100%;
+  box-sizing: border-box;
   object-fit: contain;
-  padding: 14px;
+  padding: 4%;
+}
+
+.gallery {
+  position: relative;
+}
+
+
+/* Lens: translucent tinted rectangle, same shape as the zoom pane */
+.zoom-lens {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid rgb(31 74 138 / 35%);
+  background: rgb(31 74 138 / 16%);
+  pointer-events: none;
+}
+
+/* Zoom pane: large landscape preview to the right of the gallery */
+.zoom-pane {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  left: calc(100% + 12px);
+  width: min(220%, 780px);
+  overflow: hidden;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 10px 36px rgb(16 24 40 / 22%), 0 2px 6px rgb(16 24 40 / 10%);
+  pointer-events: none;
+  animation: zoom-pane-in 0.15s ease-out;
+}
+
+.zoom-pane img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  box-sizing: border-box;
+  padding: calc(4% * var(--zoom, 1)); /* same 4% as the main image, scaled */
+  object-fit: contain;
+  will-change: transform;
+}
+
+@keyframes zoom-pane-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* "Hover to zoom" hint */
+.zoom-hint {
+  position: absolute;
+  z-index: 1;
+  bottom: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px 6px 9px;
+  border: 1px solid var(--color-border-soft, #e5e9f0);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 92%);
+  color: var(--color-text-muted, #687386);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+.zoom-hint svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* No hover on touch devices, so hide all zoom UI there */
+@media (hover: none), (pointer: coarse) {
+  .zoom-lens,
+  .zoom-pane,
+  .zoom-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 650px) {
+  .zoom-pane {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zoom-pane {
+    animation: none;
+  }
+}
+
+.gallery-nav {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 10%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 92%);
+  color: #172033;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  transform: translateY(-50%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.gallery-nav:hover {
+  background: #fff;
+  box-shadow: 0 3px 12px rgb(0 0 0 / 18%);
+}
+
+.gallery-nav-previous {
+  left: 10px;
+}
+
+.gallery-nav-next {
+  right: 10px;
+}
+
+.zoom-lens {
+  background: transparent;
+  border: 1px solid rgb(31 74 138 / 60%);
+}
+
+@media (max-width: 650px) {
+  .gallery-nav {
+    width: 34px;
+    height: 34px;
+    font-size: 25px;
+  }
+}
+
+.zoom-lens,
+.zoom-pane,
+.zoom-hint {
+  pointer-events: none;
+}
+
+.gallery-nav {
+  z-index: 5;
+  pointer-events: auto;
 }
 
 .image-placeholder {
