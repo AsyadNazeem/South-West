@@ -19,6 +19,12 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'order_id',
                 as: 'order'
             });
+
+            ProductReview.hasMany(models.ProductReviewImage, {
+                foreignKey: 'product_review_id',
+                as: 'images',
+                onDelete: 'CASCADE'
+            });
         }
     }
 

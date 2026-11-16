@@ -16,6 +16,14 @@ router.get(
     productReviewController.getAllProductReviews
 );
 
+// Get all review images matching the current filters
+router.get(
+    '/images',
+    authMiddleware,
+    requirePermission('product_reviews.view'),
+    productReviewController.getProductReviewImages
+);
+
 // Get review by ID
 router.get(
     '/:id',

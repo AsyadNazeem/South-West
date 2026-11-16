@@ -193,7 +193,7 @@ const removeStoredImage = async (filePath) => {
 
     let references;
     try {
-        const { ItemImage, Category, Brand, HomepageBanner, Sequelize } = require('../models');
+        const { ItemImage, Category, Brand, HomepageBanner, ProductReviewImage, Sequelize } = require('../models');
         const { Op } = Sequelize;
         const referencePattern = `%/${filename}`;
         references = await Promise.all([
@@ -207,6 +207,9 @@ const removeStoredImage = async (filePath) => {
                         { mobile_image_path: { [Op.like]: referencePattern } }
                     ]
                 }
+            }),
+            ProductReviewImage.count({
+                where: { file_path: { [Op.like]: referencePattern } }
             })
         ]);
     } catch (error) {

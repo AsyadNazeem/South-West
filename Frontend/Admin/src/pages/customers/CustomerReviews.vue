@@ -1,6 +1,6 @@
 
 <script setup>
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, onMounted, onUnmounted, ref, watch } from "vue"
 import api from "@/api/axios"
 import AppPagination from '@/components/common/AppPagination.vue'
 import { createRequestSequence } from '@/composables/useServerPagination.js'
@@ -14,6 +14,53 @@ const search = ref("")
 const ratingFilter = ref("all")
 const statusFilter = ref("pending")
 const processingId = ref(null)
+const ratingCounts = ref({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 })
+const imageItems = ref([])
+const selectedReviewImageIndex = ref(-1)
+const imageFeedRequestSequence = createRequestSequence()
+
+const currentReviewImage = computed(
+  () => imageItems.value[selectedReviewImageIndex.value] || null
+)
+
+const allRatingCount = computed(
+  () => Object.values(ratingCounts.value).reduce((total, count) => total + Number(count || 0), 0)
+)
+
+const openReviewImage = (review, image) => {
+  const index = imageItems.value.findIndex(
+    (item) =>
+      String(item.id) === String(review.id) &&
+      String(item.image.id) === String(image.id)
+  )
+
+  if (index !== -1) selectedReviewImageIndex.value = index
+}
+
+const closeReviewImage = () => {
+  selectedReviewImageIndex.value = -1
+}
+
+const previousReviewImage = () => {
+  if (selectedReviewImageIndex.value > 0) {
+    selectedReviewImageIndex.value -= 1
+  }
+}
+
+const nextReviewImage = () => {
+  if (selectedReviewImageIndex.value < imageItems.value.length - 1) {
+    selectedReviewImageIndex.value += 1
+  }
+}
+
+const handleReviewImageKeydown = (event) => {
+  if (selectedReviewImageIndex.value === -1) return
+
+  if (event.key === "Escape") closeReviewImage()
+  if (event.key === "ArrowLeft") previousReviewImage()
+  if (event.key === "ArrowRight") nextReviewImage()
+}
+
 const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 
 const statuses = [
@@ -98,6 +145,13 @@ const loadReviews = async () => {
     const data = response.data?.data
 
     reviews.value = Array.isArray(data) ? data : []
+    ratingCounts.value = {
+      1: Number(response.data?.ratingCounts?.[1] || 0),
+      2: Number(response.data?.ratingCounts?.[2] || 0),
+      3: Number(response.data?.ratingCounts?.[3] || 0),
+      4: Number(response.data?.ratingCounts?.[4] || 0),
+      5: Number(response.data?.ratingCounts?.[5] || 0),
+    }
     pagination.value = response.data?.pagination || { total: reviews.value.length, totalPages: 1 }
   } catch (error) {
     if (!paginationRequestSequence.isCurrent(requestId)) return
@@ -111,9 +165,57 @@ const loadReviews = async () => {
     loading.value = false
   }
 }
-const changePage = async (value) => { page.value = value; await loadReviews() }
-const changePageSize = async (value) => { pageSize.value = value; page.value = 1; await loadReviews() }
-watch([search, ratingFilter, statusFilter], () => { page.value = 1; loadReviews() })
+const loadReviewImages = async () => {
+  const requestId = imageFeedRequestSequence.begin()
+
+  try {
+    const params = {
+      status: statusFilter.value === "all" ? undefined : statusFilter.value,
+      rating: ratingFilter.value === "all" ? undefined : ratingFilter.value,
+      search: search.value.trim() || undefined,
+    }
+
+    const response = await api.get("/product-reviews/images", { params })
+
+    if (!imageFeedRequestSequence.isCurrent(requestId)) return
+
+    const matchingReviews = Array.isArray(response.data?.data)
+      ? response.data.data
+      : []
+
+    imageItems.value = matchingReviews.flatMap((review) =>
+      (review.images || []).map((image) => ({
+        ...review,
+        image,
+      }))
+    )
+  } catch (error) {
+    if (!imageFeedRequestSequence.isCurrent(requestId)) return
+    console.error("Review image loading error:", error)
+    imageItems.value = []
+  }
+}
+
+const refreshReviews = async () => {
+  await Promise.all([loadReviews(), loadReviewImages()])
+}
+
+const changePage = async (value) => {
+  page.value = value
+  await loadReviews()
+}
+
+const changePageSize = async (value) => {
+  pageSize.value = value
+  page.value = 1
+  await loadReviews()
+}
+
+watch([search, ratingFilter, statusFilter], () => {
+  page.value = 1
+  closeReviewImage()
+  refreshReviews()
+})
 
 const updateReviewStatus = async (review, newStatus) => {
   if (!review?.id || processingId.value !== null) return
@@ -153,7 +255,7 @@ const updateReviewStatus = async (review, newStatus) => {
         : "Review rejected successfully."
 
     // Refresh to keep the list and counts in sync with the backend.
-    await loadReviews()
+    await refreshReviews()
   } catch (error) {
     console.error("Review status update error:", error)
 
@@ -188,7 +290,8 @@ const deleteReview = async (review) => {
     )
 
     successMessage.value = "Review deleted successfully."
-    await loadReviews()
+    closeReviewImage()
+    await refreshReviews()
   } catch (error) {
     console.error("Delete review error:", error)
 
@@ -217,7 +320,14 @@ const formatDate = (date) => {
 const stars = (rating) =>
   Math.min(5, Math.max(0, Math.round(Number(rating) || 0)))
 
-onMounted(loadReviews)
+onMounted(() => {
+  refreshReviews()
+  window.addEventListener("keydown", handleReviewImageKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", handleReviewImageKeydown)
+})
 </script>
 
 <template>
@@ -232,7 +342,7 @@ onMounted(loadReviews)
         class="refresh-button"
         type="button"
         :disabled="loading"
-        @click="loadReviews"
+        @click="refreshReviews"
       >
         {{ loading ? "Loading..." : "Refresh Reviews" }}
       </button>
@@ -280,14 +390,27 @@ onMounted(loadReviews)
         />
       </div>
 
-      <select v-model="ratingFilter" aria-label="Filter by rating">
-        <option value="all">All Ratings</option>
-        <option value="5">5 Stars</option>
-        <option value="4">4 Stars</option>
-        <option value="3">3 Stars</option>
-        <option value="2">2 Stars</option>
-        <option value="1">1 Star</option>
-      </select>
+      <div class="rating-filters" role="group" aria-label="Filter reviews by rating">
+        <button
+          type="button"
+          class="rating-filter-button"
+          :class="{ active: ratingFilter === 'all' }"
+          @click="ratingFilter = 'all'"
+        >
+          All <span>{{ allRatingCount }}</span>
+        </button>
+
+        <button
+          v-for="rating in [5, 4, 3, 2, 1]"
+          :key="rating"
+          type="button"
+          class="rating-filter-button"
+          :class="{ active: ratingFilter === String(rating) }"
+          @click="ratingFilter = String(rating)"
+        >
+          {{ rating }} ★ <span>{{ ratingCounts[rating] }}</span>
+        </button>
+      </div>
     </div>
 
     <div class="results-info">
@@ -349,6 +472,27 @@ onMounted(loadReviews)
               <td class="review-column">
                 <strong>{{ review.review_title || "Untitled review" }}</strong>
                 <p>{{ review.review_text || "-" }}</p>
+
+                <div
+                  v-if="review.images?.length"
+                  class="review-image-gallery"
+                  aria-label="Review images"
+                >
+                  <button
+                    v-for="image in review.images"
+                    :key="image.id"
+                    class="review-image-button"
+                    type="button"
+                    title="View review image"
+                    @click="openReviewImage(review, image)"
+                  >
+                    <img
+                      :src="image.url"
+                      alt="Customer review attachment"
+                      loading="lazy"
+                    />
+                  </button>
+                </div>
               </td>
 
               <td>
@@ -422,6 +566,88 @@ onMounted(loadReviews)
         </table>
         <AppPagination :page="page" :page-size="pageSize" :total="pagination.total"
         :total-pages="pagination.totalPages" :loading="loading" @update:page="changePage" @update:page-size="changePageSize" />
+      </div>
+    </div>
+    <div
+      v-if="currentReviewImage"
+      class="review-image-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Customer review image viewer"
+      @click.self="closeReviewImage"
+    >
+      <div class="review-image-viewer" @click.stop>
+        <div class="review-image-toolbar">
+          <span class="image-counter">
+            Image {{ selectedReviewImageIndex + 1 }} of {{ imageItems.length }}
+          </span>
+
+          <button
+            class="review-image-close"
+            type="button"
+            aria-label="Close image preview"
+            @click="closeReviewImage"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div class="review-image-stage">
+          <button
+            class="review-image-nav previous"
+            type="button"
+            aria-label="Previous image"
+            :disabled="selectedReviewImageIndex === 0"
+            @click="previousReviewImage"
+          >
+            &#10094;
+          </button>
+
+          <img
+            :src="currentReviewImage.image.url"
+            alt="Customer review attachment"
+          />
+
+          <button
+            class="review-image-nav next"
+            type="button"
+            aria-label="Next image"
+            :disabled="selectedReviewImageIndex >= imageItems.length - 1"
+            @click="nextReviewImage"
+          >
+            &#10095;
+          </button>
+        </div>
+
+        <section class="review-image-details">
+          <div class="image-review-heading">
+            <div>
+              <strong>{{ customerName(currentReviewImage) }}</strong>
+              <span>{{ productName(currentReviewImage) }}</span>
+            </div>
+
+            <span class="status-badge" :class="reviewStatus(currentReviewImage)">
+              {{ reviewStatus(currentReviewImage) }}
+            </span>
+          </div>
+
+          <div class="image-review-rating">
+            <span class="rating">
+              {{ "★".repeat(stars(currentReviewImage.rating)) }}<span class="rating-empty">{{ "★".repeat(5 - stars(currentReviewImage.rating)) }}</span>
+            </span>
+            <span>{{ Number(currentReviewImage.rating) || 0 }}/5</span>
+            <span>{{ formatDate(currentReviewImage.created_at || currentReviewImage.createdAt) }}</span>
+            <span>Review #{{ currentReviewImage.id }}</span>
+          </div>
+
+          <strong class="image-review-title">
+            {{ currentReviewImage.review_title || "Untitled review" }}
+          </strong>
+
+          <p class="image-review-text">
+            {{ currentReviewImage.review_text || "No written review." }}
+          </p>
+        </section>
       </div>
     </div>
   </div>
@@ -524,8 +750,7 @@ onMounted(loadReviews)
   flex: 1;
 }
 
-.search-box input,
-.filter-card select {
+.search-box input {
   box-sizing: border-box;
   height: 42px;
   border: 1px solid var(--color-border);
@@ -542,13 +767,7 @@ onMounted(loadReviews)
   padding: 0 12px;
 }
 
-.filter-card select {
-  min-width: 145px;
-  padding: 0 10px;
-}
-
-.search-box input:focus,
-.filter-card select:focus {
+.search-box input:focus {
   border-color: var(--color-primary);
 }
 
@@ -751,6 +970,223 @@ td small {
   color: var(--color-success);
 }
 
+.review-image-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.review-image-button {
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: zoom-in;
+}
+
+.review-image-button img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.review-image-button:hover {
+  border-color: var(--color-primary);
+}
+
+.rating-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.rating-filter-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 7px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.rating-filter-button span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.rating-filter-button.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.review-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.92);
+}
+
+.review-image-viewer {
+  display: flex;
+  flex-direction: column;
+  width: min(1500px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-lg);
+  background: #151515;
+  color: white;
+}
+
+.review-image-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 5px 14px 5px 18px;
+}
+
+.image-counter {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: var(--font-size-sm);
+}
+
+.review-image-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.review-image-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  padding: 0 58px;
+  background: #080808;
+}
+
+.review-image-stage img {
+  display: block;
+  max-width: 100%;
+  max-height: min(65vh, 850px);
+  object-fit: contain;
+}
+
+.review-image-nav {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 52px;
+  transform: translateY(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.review-image-nav.previous {
+  left: 10px;
+}
+
+.review-image-nav.next {
+  right: 10px;
+}
+
+.review-image-nav:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.review-image-details {
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+  background: #1d1d1d;
+}
+
+.image-review-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.image-review-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.image-review-heading strong,
+.image-review-title {
+  color: white;
+}
+
+.image-review-heading > div > span,
+.image-review-rating {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: var(--font-size-xs);
+}
+
+.image-review-rating {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+}
+
+.image-review-rating .rating {
+  font-size: 15px;
+}
+
+.image-review-title {
+  display: block;
+  margin-bottom: 5px;
+  font-size: var(--font-size-sm);
+}
+
+.image-review-text {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 700px) {
   .page-header {
     align-items: flex-start;
@@ -763,8 +1199,47 @@ td small {
     padding: 14px;
   }
 
-  .filter-card select {
-    width: 100%;
+  .rating-filters {
+    gap: 6px;
+  }
+
+  .rating-filter-button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .review-image-lightbox {
+    padding: 8px;
+  }
+
+  .review-image-viewer {
+    max-height: calc(100vh - 16px);
+  }
+
+  .review-image-stage {
+    padding: 0 42px;
+  }
+
+  .review-image-stage img {
+    max-height: 55vh;
+  }
+
+  .review-image-details {
+    max-height: 220px;
+    padding: 13px;
+  }
+
+  .review-image-nav {
+    width: 34px;
+    height: 44px;
+  }
+
+  .review-image-nav.previous {
+    left: 4px;
+  }
+
+  .review-image-nav.next {
+    right: 4px;
   }
 
   .status-tabs {

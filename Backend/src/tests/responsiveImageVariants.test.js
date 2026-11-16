@@ -29,6 +29,7 @@ const fileStorage = proxyquire('../utils/fileStorage', {
         Category: noReferences,
         Brand: noReferences,
         HomepageBanner: noReferences,
+        ProductReviewImage: noReferences,
         Sequelize: { Op: { like: Symbol('like'), or: Symbol('or') } }
     }
 });
@@ -245,6 +246,7 @@ test('retains a shared image and its variants while another row references it', 
             Category: { count: async () => 1 },
             Brand: noReferences,
             HomepageBanner: noReferences,
+            ProductReviewImage: noReferences,
             Sequelize: { Op: { like: Symbol('like'), or: Symbol('or') } }
         }
     });

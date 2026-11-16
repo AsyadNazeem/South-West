@@ -56,10 +56,121 @@ const reviewMessage = ref('')
 const reviewSubmitError = ref('')
 const reviewSubmitted = ref(false)
 
+const reviewImages = ref([])
+const selectedReviewImageIndex = ref(-1)
+
+function handleReviewImageSelection(event) {
+  const files = Array.from(event.target.files || [])
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
+  let added = 0
+  const errors = []
+
+  for (const file of files) {
+    if (reviewImages.value.length >= 5) {
+      errors.push('You can upload a maximum of 5 images.')
+      break
+    }
+
+    if (!allowedTypes.includes(file.type)) {
+      errors.push(`${file.name}: only JPEG, PNG and WebP images are allowed.`)
+      continue
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      errors.push(`${file.name}: the maximum image size is 5 MB.`)
+      continue
+    }
+
+    reviewImages.value.push({
+      file,
+      previewUrl: URL.createObjectURL(file)
+    })
+
+    added++
+  }
+
+  if (errors.length) {
+    reviewSubmitError.value = errors.join(' ')
+  } else if (added) {
+    reviewSubmitError.value = ''
+  }
+
+  event.target.value = ''
+}
+
+function removeReviewImage(index) {
+  const image = reviewImages.value[index]
+  if (!image) return
+
+  URL.revokeObjectURL(image.previewUrl)
+  reviewImages.value.splice(index, 1)
+}
+
+function clearReviewImages() {
+  reviewImages.value.forEach(image => {
+    URL.revokeObjectURL(image.previewUrl)
+  })
+
+  reviewImages.value = []
+}
+
+const reviewImageItems = computed(() =>
+  sortedReviews.value.flatMap(review =>
+    (review.images || []).map(image => ({ review, image }))
+  )
+)
+
+const selectedReviewImage = computed(() =>
+  reviewImageItems.value[selectedReviewImageIndex.value] || null
+)
+
+function openReviewImage(review, image) {
+  const index = reviewImageItems.value.findIndex(item =>
+    String(item.review.id) === String(review.id) &&
+    String(item.image.id) === String(image.id)
+  )
+
+  if (index !== -1) selectedReviewImageIndex.value = index
+}
+
+function closeReviewImage() {
+  selectedReviewImageIndex.value = -1
+}
+
+function showPreviousReviewImage() {
+  const total = reviewImageItems.value.length
+  if (!total) return
+
+  selectedReviewImageIndex.value =
+    (selectedReviewImageIndex.value - 1 + total) % total
+}
+
+function showNextReviewImage() {
+  const total = reviewImageItems.value.length
+  if (!total) return
+
+  selectedReviewImageIndex.value =
+    (selectedReviewImageIndex.value + 1) % total
+}
+
+function handleReviewLightboxKeydown(event) {
+  if (!selectedReviewImage.value) return
+
+  if (event.key === 'Escape') {
+    closeReviewImage()
+  } else if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    showPreviousReviewImage()
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault()
+    showNextReviewImage()
+  }
+}
 
 // ---------- Review UI helpers ----------
 const hoverRating = ref(0)
 const reviewSort = ref('newest')
+const reviewRatingFilter = ref('all')
 
 const isGuestReviewer = ref(!sessionStorage.getItem('customerToken'))
 
@@ -69,10 +180,13 @@ function refreshReviewAuthState() {
 
 onMounted(() => {
   window.addEventListener('customer-auth-changed', refreshReviewAuthState)
+  window.addEventListener('keydown', handleReviewLightboxKeydown)
 })
 
 onUnmounted(() => {
   window.removeEventListener('customer-auth-changed', refreshReviewAuthState)
+  window.removeEventListener('keydown', handleReviewLightboxKeydown)
+  clearReviewImages()
 })
 
 const ratingLabels = {
@@ -100,8 +214,22 @@ const ratingBreakdown = computed(() => {
   })
 })
 
+const filteredReviews = computed(() => {
+  if (reviewRatingFilter.value === 'all') return reviews.value
+
+  return reviews.value.filter(
+    review => Number(review.rating) === Number(reviewRatingFilter.value)
+  )
+})
+
+function setReviewRatingFilter(rating) {
+  reviewRatingFilter.value =
+    reviewRatingFilter.value === rating ? 'all' : rating
+  closeReviewImage()
+}
+
 const sortedReviews = computed(() => {
-  const list = [...reviews.value]
+  const list = [...filteredReviews.value]
 
   if (reviewSort.value === 'highest') {
     return list.sort((a, b) => Number(b.rating) - Number(a.rating))
@@ -270,6 +398,7 @@ async function toggleWishlist() {
 }
 
 async function submitProductReview() {
+  console.log('[REVIEW] Submit function triggered')
   reviewMessage.value = ''
   reviewSubmitError.value = ''
 
@@ -295,18 +424,35 @@ async function submitProductReview() {
   submittingReview.value = true
 
   try {
-    const payload = {
-      item_id: product.value.id,
-      rating: Number(reviewRating.value),
-      review_title: reviewTitle.value.trim(),
-      review_text: reviewText.value.trim()
-    }
+    const payload = new FormData()
+
+    payload.append('item_id', product.value.id)
+    payload.append('rating', Number(reviewRating.value))
+    payload.append('review_title', reviewTitle.value.trim())
+    payload.append('review_text', reviewText.value.trim())
 
     if (customerToken) {
-      payload.display_name = displayReviewName.value
+      payload.append('display_name', String(displayReviewName.value))
     }
 
-    const response = await api.post('/customer-reviews', payload)
+    reviewImages.value.forEach(image => {
+      payload.append('images', image.file)
+    })
+
+    console.log('[REVIEW] Sending request', {
+      productId: product.value?.id,
+      imageCount: reviewImages.value.length,
+      payloadEntries: [...payload.entries()].map(([key, value]) => ({
+        key,
+        value: value instanceof File ? value.name : value
+      }))
+    })
+
+const response = await api.post('/customer-reviews', payload, {
+  headers: {
+    'Content-Type': 'multipart/form-data'
+  }
+})
 
     reviewMessage.value =
       response.data?.message ||
@@ -316,7 +462,19 @@ async function submitProductReview() {
     reviewTitle.value = ''
     reviewText.value = ''
     displayReviewName.value = false
+    clearReviewImages()
   } catch (err) {
+    console.error('[REVIEW] Submission failed:', err)
+    console.error('[REVIEW] Error details:', {
+      message: err.message,
+      code: err.code,
+      url: err.config?.url,
+      baseURL: err.config?.baseURL,
+      method: err.config?.method,
+      status: err.response?.status,
+      response: err.response?.data
+    })
+
     reviewSubmitError.value =
       err.response?.data?.message ||
       'Unable to submit your review. Please try again.'
@@ -1343,9 +1501,12 @@ trackProductView(product.value, price.value)
 reviews.value = []
 averageReviewRating.value = null
 approvedReviewCount.value = 0
+reviewRatingFilter.value = 'all'
 reviewSubmitted.value = false
 reviewMessage.value = ''
 reviewSubmitError.value = ''
+clearReviewImages()
+closeReviewImage()
 
 await Promise.all([
   loadWishlistStatus(),
@@ -1573,6 +1734,40 @@ async function buyNow() {
     buyNowLoading.value = false
   }
 }
+
+// Lock page scroll while the review image viewer is open
+let previousBodyOverflow = ''
+let previousBodyPaddingRight = ''
+
+function lockPageScroll() {
+  const body = document.body
+  previousBodyOverflow = body.style.overflow
+  previousBodyPaddingRight = body.style.paddingRight
+
+  // Keep the layout from jumping when the scrollbar disappears
+  const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+  if (scrollbarWidth > 0) {
+    body.style.paddingRight = `${scrollbarWidth}px`
+  }
+
+  body.style.overflow = 'hidden'
+}
+
+function unlockPageScroll() {
+  document.body.style.overflow = previousBodyOverflow
+  document.body.style.paddingRight = previousBodyPaddingRight
+}
+
+watch(
+  () => Boolean(selectedReviewImage.value),
+  (isOpen, wasOpen) => {
+    if (isOpen && !wasOpen) lockPageScroll()
+    else if (!isOpen && wasOpen) unlockPageScroll()
+  }
+)
+
+// Never leave the page locked if the user navigates away with the viewer open
+onUnmounted(unlockPageScroll)
 
 
 // --------------------------------------------------
@@ -2045,11 +2240,20 @@ onMounted(loadProduct)
 
     <ul class="rating-bars">
       <li v-for="row in ratingBreakdown" :key="row.star">
-        <span class="bar-label">{{ row.star }} ★</span>
-        <span class="bar-track">
-          <span class="bar-fill" :style="{ width: row.percent + '%' }"></span>
-        </span>
-        <span class="bar-count">{{ row.count }}</span>
+        <button
+          type="button"
+          class="rating-filter"
+          :class="{ active: reviewRatingFilter === row.star }"
+          :disabled="row.count === 0"
+          :aria-pressed="reviewRatingFilter === row.star"
+          @click="setReviewRatingFilter(row.star)"
+        >
+          <span class="bar-label">{{ row.star }} ★</span>
+          <span class="bar-track">
+            <span class="bar-fill" :style="{ width: row.percent + '%' }"></span>
+          </span>
+          <span class="bar-count">{{ row.count }}</span>
+        </button>
       </li>
     </ul>
   </div>
@@ -2074,8 +2278,17 @@ onMounted(loadProduct)
   <template v-else>
     <div class="review-toolbar">
       <span class="muted">
-        Showing {{ reviews.length }} review{{ reviews.length === 1 ? '' : 's' }}
+        Showing {{ filteredReviews.length }} of {{ reviews.length }} reviews
       </span>
+
+      <button
+        v-if="reviewRatingFilter !== 'all'"
+        type="button"
+        class="link-button"
+        @click="setReviewRatingFilter('all')"
+      >
+        Clear rating filter
+      </button>
 
       <label class="sort-control">
         <span class="sr-only">Sort reviews</span>
@@ -2085,6 +2298,14 @@ onMounted(loadProduct)
           <option value="lowest">Lowest rated</option>
         </select>
       </label>
+    </div>
+
+    <div v-if="!filteredReviews.length" class="empty-reviews">
+      <strong>No {{ reviewRatingFilter }}-star reviews</strong>
+      <p>Try another rating or clear the rating filter.</p>
+      <button type="button" class="link-button" @click="setReviewRatingFilter('all')">
+        Clear rating filter
+      </button>
     </div>
 
     <article
@@ -2121,6 +2342,27 @@ onMounted(loadProduct)
         <p v-if="review.review_text" class="review-body">
           {{ review.review_text }}
         </p>
+
+        <div
+          v-if="review.images?.length"
+          class="review-image-gallery"
+          aria-label="Review images"
+        >
+          <button
+            v-for="image in review.images"
+            :key="image.id"
+            type="button"
+            class="review-image-button"
+            :aria-label="`View review image ${image.id}`"
+            @click="openReviewImage(review, image)"
+          >
+            <img
+              :src="image.url"
+              alt="Customer review"
+              loading="lazy"
+            />
+          </button>
+        </div>
       </div>
     </article>
   </template>
@@ -2205,6 +2447,49 @@ onMounted(loadProduct)
         <small class="char-count">{{ reviewText.length }} / 5000</small>
       </div>
 
+      <div class="form-field review-image-upload">
+        <label for="review-images">
+          Add photos <span class="optional">(optional, maximum 5)</span>
+        </label>
+
+        <input
+          id="review-images"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          :disabled="submittingReview || reviewImages.length >= 5"
+          @change="handleReviewImageSelection"
+        />
+
+        <small class="muted">
+          JPEG, PNG or WebP. Maximum 5 MB per image.
+        </small>
+
+        <div v-if="reviewImages.length" class="review-image-previews">
+          <div
+            v-for="(image, index) in reviewImages"
+            :key="image.previewUrl"
+            class="review-image-preview"
+          >
+            <img :src="image.previewUrl" alt="Selected review image" />
+
+            <button
+              type="button"
+              class="review-image-remove"
+              :aria-label="`Remove image ${index + 1}`"
+              :disabled="submittingReview"
+              @click="removeReviewImage(index)"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <small class="muted">
+          {{ reviewImages.length }} / 5 images selected
+        </small>
+      </div>
+
       <button type="submit" class="btn-submit" :disabled="submittingReview">
         {{ submittingReview ? 'Submitting...' : 'Submit review' }}
       </button>
@@ -2222,6 +2507,88 @@ onMounted(loadProduct)
         :product-id="product.id"
       />
     </template>
+
+    <div
+      v-if="selectedReviewImage"
+      class="review-image-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Customer review image gallery"
+      @click.self="closeReviewImage"
+    >
+      <button
+        type="button"
+        class="review-lightbox-close"
+        aria-label="Close image viewer"
+        @click="closeReviewImage"
+      >
+        ×
+      </button>
+
+      <div class="review-lightbox-content">
+        <div class="review-lightbox-image-area">
+          <button
+            v-if="reviewImageItems.length > 1"
+            type="button"
+            class="review-lightbox-nav previous"
+            aria-label="Previous review image"
+            @click="showPreviousReviewImage"
+          >
+            ‹
+          </button>
+
+          <img
+            class="review-lightbox-image"
+            :src="selectedReviewImage.image.url"
+            alt="Customer review image"
+          />
+
+          <button
+            v-if="reviewImageItems.length > 1"
+            type="button"
+            class="review-lightbox-nav next"
+            aria-label="Next review image"
+            @click="showNextReviewImage"
+          >
+            ›
+          </button>
+        </div>
+
+        <div class="review-lightbox-details">
+          <div class="review-lightbox-counter">
+            Image {{ selectedReviewImageIndex + 1 }} of {{ reviewImageItems.length }}
+          </div>
+
+          <div class="review-lightbox-review-heading">
+            <strong>{{ reviewerName(selectedReviewImage.review) }}</strong>
+            <span
+              v-if="selectedReviewImage.review.is_verified_purchase"
+              class="verified-purchase"
+            >
+              ✓ Verified purchase
+            </span>
+            <span class="review-date">
+              {{ formatReviewDate(selectedReviewImage.review.created_at) }}
+            </span>
+          </div>
+
+          <span
+            class="star-rating"
+            :style="{ '--rating': Number(selectedReviewImage.review.rating) }"
+            role="img"
+            :aria-label="`Rated ${selectedReviewImage.review.rating} out of 5`"
+          ></span>
+
+          <h4 v-if="selectedReviewImage.review.review_title">
+            {{ selectedReviewImage.review.review_title }}
+          </h4>
+
+          <p v-if="selectedReviewImage.review.review_text">
+            {{ selectedReviewImage.review.review_text }}
+          </p>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -2396,27 +2763,63 @@ onMounted(loadProduct)
   overflow-wrap: anywhere;
 }
 
+/* =========================
+   Rating row (under title)
+   ========================= */
+
 .rating-row {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 7px 16px 7px 13px;
+  border: 1px solid var(--color-border-soft, #e5e9f0);
+  border-radius: 999px;
+  background: var(--color-surface-muted, #f8f9fb);
   color: var(--color-text-muted, #687386);
   font-size: 13px;
+  line-height: 1;
 }
 
+.rating-row .star-rating {
+  --star-size: 17px;
+  letter-spacing: 1px;
+}
+
+/* Score with a divider after it */
 .rating-row strong {
+  padding-right: 10px;
+  border-right: 1px solid var(--color-border, #d5dbe5);
   color: var(--color-text, #172033);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .rating-link {
   color: var(--color-primary, #1f4a8a);
+  font-weight: 600;
   text-decoration: none;
+  transition: color 0.15s ease;
 }
 
 .rating-link:hover {
   text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.rating-link:focus-visible {
+  outline: 2px solid var(--color-primary, #1f4a8a);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+@media (max-width: 400px) {
+  .rating-row {
+    gap: 8px;
+    padding: 6px 12px 6px 10px;
+  }
 }
 
 .item-code,
@@ -3213,6 +3616,42 @@ onMounted(loadProduct)
   font-size: 13px;
 }
 
+.rating-filter {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .2s ease, border-color .2s ease;
+}
+
+.rating-filter:not(:disabled):hover {
+  background: var(--rv-soft, #f3f5f8);
+}
+
+.rating-filter.active {
+  border-color: var(--rv-primary, #2563eb);
+  background: var(--rv-soft, #f3f5f8);
+}
+
+.rating-filter:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.rating-filter:focus-visible {
+  outline: 2px solid var(--rv-primary, #2563eb);
+  outline-offset: 2px;
+}
+
 .bar-label {
   color: var(--color-text-muted, #687386);
   white-space: nowrap;
@@ -3458,6 +3897,113 @@ onMounted(loadProduct)
   justify-self: end;
   color: var(--color-text-muted, #687386);
   font-size: 11px;
+}
+
+/* Rating bars: specific selectors so order in the file no longer matters */
+.customer-reviews .rating-bars {
+  width: 100%;
+  max-width: 890px;
+}
+
+/* Clear rating filter: pill chip with an × icon */
+.customer-reviews .review-toolbar .link-button,
+.customer-reviews .empty-reviews .link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 0;
+  padding: 7px 14px 7px 11px;
+  border: 1px solid color-mix(in srgb, var(--rv-primary) 30%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--rv-primary) 8%, var(--rv-surface));
+  color: var(--rv-primary);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.customer-reviews .review-toolbar .link-button::before,
+.customer-reviews .empty-reviews .link-button::before {
+  content: '×';
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--rv-primary) 16%, transparent);
+  font-size: 14px;
+  line-height: 1;
+  transition: background 0.15s ease;
+}
+
+@media (hover: hover) {
+  .customer-reviews .review-toolbar .link-button:hover,
+  .customer-reviews .empty-reviews .link-button:hover {
+    border-color: var(--rv-primary);
+    background: var(--rv-primary);
+    color: #fff;
+  }
+
+  .customer-reviews .review-toolbar .link-button:hover::before,
+  .customer-reviews .empty-reviews .link-button:hover::before {
+    background: rgb(255 255 255 / 22%);
+  }
+}
+
+.customer-reviews .review-toolbar .link-button:active,
+.customer-reviews .empty-reviews .link-button:active {
+  transform: translateY(1px);
+}
+
+.customer-reviews .review-toolbar .link-button:focus-visible,
+.customer-reviews .empty-reviews .link-button:focus-visible {
+  outline: 2px solid var(--rv-primary);
+  outline-offset: 3px;
+}
+
+/* Empty-state version sits centered under the text */
+.customer-reviews .empty-reviews .link-button {
+  margin-top: 14px;
+}
+
+/* On narrow screens let the toolbar wrap so the chip never gets squeezed */
+@media (max-width: 650px) {
+  .customer-reviews .review-toolbar {
+    flex-wrap: wrap;
+  }
+}
+
+.customer-reviews .rating-bars li {
+  display: block;
+}
+
+.customer-reviews .rating-bars .rating-filter {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.customer-reviews .rating-bars .bar-track {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #d5dbe5;
+}
+
+.customer-reviews .rating-bars .bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
 }
 
 /* Star picker */
@@ -4092,6 +4638,10 @@ onMounted(loadProduct)
   font-size: 19px;
 }
 
+.review-image-lightbox {
+  overscroll-behavior: contain;
+}
+
 .review-form > .muted {
   margin: 0 0 20px;
   padding-bottom: 18px;
@@ -4661,6 +5211,252 @@ onMounted(loadProduct)
 @media (prefers-reduced-motion: reduce) {
   .bulk-button {
     transition: none;
+  }
+}
+
+
+/* ---------- Review image uploads and galleries ---------- */
+.review-image-upload input[type='file'] {
+  width: 100%;
+  padding: 10px;
+  border: 1px dashed var(--rv-border);
+  border-radius: 10px;
+  background: var(--rv-soft);
+  font-size: 13px;
+}
+
+.review-image-previews,
+.review-image-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.review-image-preview {
+  position: relative;
+  width: 88px;
+  height: 88px;
+}
+
+.review-image-preview img,
+.review-image-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 9px;
+}
+
+.review-image-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 1px solid white;
+  border-radius: 50%;
+  background: #252b36;
+  color: white;
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.review-image-button {
+  width: 92px;
+  height: 92px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.review-image-button:focus-visible,
+.review-image-remove:focus-visible,
+.review-lightbox-close:focus-visible {
+  outline: 2px solid var(--rv-primary);
+  outline-offset: 3px;
+}
+
+.review-image-lightbox {
+  position: fixed;
+  z-index: 9999;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 64px 24px 24px;
+  background: rgb(0 0 0 / 94%);
+}
+
+.review-lightbox-content {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 100%);
+  max-height: 100%;
+  margin: auto;
+  gap: 18px;
+}
+
+.review-lightbox-image-area {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  height: min(68vh, 760px);
+}
+
+.review-lightbox-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.review-lightbox-details {
+  width: 100%;
+  padding: 20px 24px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 12px;
+  background: #fff;
+  color: #172033;
+}
+
+.review-lightbox-counter {
+  margin-bottom: 12px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.review-lightbox-review-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.review-lightbox-details h4 {
+  margin: 12px 0 6px;
+}
+
+.review-lightbox-details p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.review-lightbox-nav {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  transform: translateY(-50%);
+  border: 1px solid rgb(255 255 255 / 35%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 14%);
+  color: white;
+  font-size: 34px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.review-lightbox-nav.previous {
+  left: 12px;
+}
+
+.review-lightbox-nav.next {
+  right: 12px;
+}
+
+.review-lightbox-nav:hover,
+.review-lightbox-close:hover {
+  background: rgb(255 255 255 / 25%);
+}
+
+.review-lightbox-nav:focus-visible,
+.review-lightbox-close:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 3px;
+}
+
+.review-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgb(255 255 255 / 35%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 12%);
+  color: white;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (max-width: 600px) {
+  .review-image-button {
+    width: 76px;
+    height: 76px;
+  }
+
+  .review-image-preview {
+    width: 76px;
+    height: 76px;
+  }
+
+  .review-image-lightbox {
+    align-items: flex-start;
+    padding: 60px 12px 16px;
+  }
+
+  .review-lightbox-image-area {
+    height: 52vh;
+    min-height: 180px;
+  }
+
+  .review-lightbox-nav {
+    width: 38px;
+    height: 38px;
+    font-size: 28px;
+  }
+
+  .review-lightbox-nav.previous {
+    left: 4px;
+  }
+
+  .review-lightbox-nav.next {
+    right: 4px;
+  }
+
+  .review-lightbox-details {
+    padding: 16px;
+  }
+}
+/* Reviews list matches the form's height on desktop and scrolls inside it */
+@media (min-width: 901px) {
+  .reviews-layout {
+    align-items: stretch;
+  }
+
+  .reviews-list {
+    align-self: stretch;
+    max-height: none;
+    min-height: 320px;
+    contain: size; /* the list no longer adds to the row height, so the form sets it */
+  }
+
+  .review-form {
+    align-self: start;
   }
 }
 

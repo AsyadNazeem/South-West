@@ -2,6 +2,7 @@
 
 const {
     ProductReview,
+    ProductReviewImage,
     Item,
     Customer,
     Order,
@@ -12,6 +13,7 @@ const { fn, col } = require('sequelize');
 const { randomInt } = require('node:crypto');
 const { notifyAdmins } = require('./adminNotificationController');
 const { recordAuditLog } = require('../services/auditLogService');
+const { buildFileUrl } = require('../utils/fileStorage');
 
 function maskName(value) {
     const name = String(value || '').trim();
@@ -77,11 +79,18 @@ exports.getProductReviews = async (req, res) => {
                 'is_verified_purchase',
                 'created_at',
             ],
-            include: [{
-                model: Customer,
-                as: 'customer',
-                attributes: ['first_name', 'last_name'],
-            }],
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['first_name', 'last_name'],
+                },
+                {
+                    model: ProductReviewImage,
+                    as: 'images',
+                    attributes: ['id', 'file_path'],
+                },
+            ],
             order: [['created_at', 'DESC']],
         });
 
@@ -94,8 +103,14 @@ exports.getProductReviews = async (req, res) => {
             delete values.display_name;
             delete values.customer;
 
+            const images = (values.images || []).map(image => ({
+                id: image.id,
+                url: buildFileUrl(image.file_path),
+            }));
+
             return {
                 ...values,
+                images,
                 reviewer_name: displayName,
             };
         });
@@ -298,6 +313,28 @@ exports.createCustomerReview = async (req, res) => {
             return res.status(503).json({
                 message: 'Unable to generate a guest review ID. Please try again.',
             });
+        }
+
+        const uploadedImages = req.files || [];
+
+        if (uploadedImages.length) {
+            try {
+                await ProductReviewImage.bulkCreate(
+                    uploadedImages.map(file => ({
+                        product_review_id: review.id,
+                        file_path: file.relativePath,
+                    }))
+                );
+            } catch (imageError) {
+                await review.destroy().catch(cleanupError => {
+                    console.error(
+                        'Failed to roll back review after image persistence error:',
+                        cleanupError.message
+                    );
+                });
+
+                throw imageError;
+            }
         }
 
         return res.status(201).json({

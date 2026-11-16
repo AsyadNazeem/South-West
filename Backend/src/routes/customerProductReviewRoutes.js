@@ -6,6 +6,7 @@ const router = express.Router();
 const customerAuth = require('../middleware/customerAuthMiddleware');
 const optionalCustomerAuth = require('../middleware/optionalCustomerAuthMiddleware');
 const { customerReviewSubmitLimiter } = require('../middleware/customerReviewRateLimit');
+const { uploadReviewImages } = require('../middleware/uploadMiddleware');
 const controller = require('../controllers/customerProductReviewController');
 
 // Public product review list and rating summary.
@@ -15,6 +16,6 @@ router.get('/products/:itemId', controller.getProductReviews);
 router.get('/my', customerAuth, controller.getMyReviews);
 
 // Guests and signed-in customers can submit reviews.
-router.post('/', customerReviewSubmitLimiter, optionalCustomerAuth, controller.createCustomerReview);
+router.post('/', customerReviewSubmitLimiter, optionalCustomerAuth, uploadReviewImages, controller.createCustomerReview);
 
 module.exports = router;

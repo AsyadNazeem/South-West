@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile);
 const limitVideoConversion = pLimit(1);
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
 
-const { UPLOAD_ROOT, removeStoredImage } = require('../utils/fileStorage');
+const { UPLOAD_ROOT, removeStoredImage, removeStoredFile } = require('../utils/fileStorage');
 
 const detectFileType = async (filePath) => {
     const { fileTypeFromFile } = await import('file-type');
@@ -591,7 +591,149 @@ const uploadBrandImage = createUploader({
     responsiveWidths: RESPONSIVE_WIDTHS.square
 });
 
+
+// Customer product review images: up to five files, converted to WebP.
+const uploadReviewImages = (() => {
+    const folder = 'reviews/images';
+    const directory = path.join(UPLOAD_ROOT, folder);
+
+    fs.mkdirSync(directory, { recursive: true });
+
+    const allowedTypes = {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/webp': 'webp'
+    };
+
+    const typeMessage = 'Only JPEG, PNG or WebP images are allowed.';
+    const sizeMessage = 'Each review image must not exceed 5 MB.';
+
+    const upload = multer({
+        storage: multer.diskStorage({
+            destination: (req, file, cb) => cb(null, directory),
+            filename: (req, file, cb) =>
+                cb(null, `${crypto.randomUUID()}.${allowedTypes[file.mimetype] || 'tmp'}`)
+        }),
+        fileFilter: (req, file, cb) => {
+            if (allowedTypes[file.mimetype]) return cb(null, true);
+            cb(new UploadError(typeMessage));
+        },
+        limits: {
+            fileSize: 5 * MB,
+            files: 5
+        }
+    }).array('images', 5);
+
+    return (req, res, next) => {
+        upload(req, res, async (error) => {
+            const files = req.files || [];
+            const temporaryPaths = new Set(
+                files.map(file => file.path).filter(Boolean)
+            );
+
+            const cleanupTemporaryFiles = async () => {
+                await Promise.all(
+                    [...temporaryPaths].map(filePath =>
+                        fs.promises.unlink(filePath).catch(() => {})
+                    )
+                );
+            };
+
+            if (error) {
+                await cleanupTemporaryFiles();
+
+                if (error instanceof multer.MulterError) {
+                    const message = error.code === 'LIMIT_FILE_SIZE'
+                        ? sizeMessage
+                        : error.code === 'LIMIT_UNEXPECTED_FILE'
+                            ? 'You can upload a maximum of five images.'
+                            : error.message;
+
+                    return res.status(400).json({ message });
+                }
+
+                if (error instanceof UploadError) {
+                    return res.status(400).json({ message: error.message });
+                }
+
+                console.error('Review image upload error:', error);
+                return res.status(500).json({
+                    message: 'Review image upload failed.'
+                });
+            }
+
+            try {
+                for (const file of files) {
+                    const detected = await detectFileType(file.path);
+
+                    if (
+                        !detected ||
+                        detected.mime !== file.mimetype ||
+                        detected.ext !== allowedTypes[file.mimetype]
+                    ) {
+                        throw new UploadError(typeMessage);
+                    }
+
+                    const filename = `${crypto.randomUUID()}.webp`;
+                    const outputPath = path.join(directory, filename);
+
+                    temporaryPaths.add(outputPath);
+
+                    await sharp(file.path)
+                        .rotate()
+                        .webp({ quality: 85, effort: 4 })
+                        .toFile(outputPath);
+
+                    await fs.promises.unlink(file.path);
+
+                    file.path = outputPath;
+                    file.filename = filename;
+                    file.mimetype = 'image/webp';
+                    file.size = (await fs.promises.stat(outputPath)).size;
+                    file.relativePath = path.posix.join(folder, filename);
+                }
+
+                const relativePaths = files
+                    .map(file => file.relativePath)
+                    .filter(Boolean);
+
+                // Remove converted files if the review request later fails.
+                res.once('finish', () => {
+                    if (res.statusCode < 400) return;
+
+                    void Promise.all(
+                        relativePaths.map(relativePath =>
+                            removeStoredFile(relativePath)
+                        )
+                    ).catch(cleanupError => {
+                        console.error(
+                            'Review image cleanup failed:',
+                            cleanupError.message
+                        );
+                    });
+                });
+
+                return next();
+            } catch (processingError) {
+                await cleanupTemporaryFiles();
+
+                if (processingError instanceof UploadError) {
+                    return res.status(400).json({
+                        message: processingError.message
+                    });
+                }
+
+                console.error('Review image processing error:', processingError);
+                return res.status(400).json({
+                    message: 'Unable to process a review image. Please use a valid JPEG, PNG or WebP image.'
+                });
+            }
+        });
+    };
+})();
+
 module.exports = {
+    uploadReviewImages,
     uploadItemImage,
     uploadItemVideo,
     uploadCategoryImage,

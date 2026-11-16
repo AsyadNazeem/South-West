@@ -1,8 +1,9 @@
 'use strict';
 
-const { ProductReview, Item, Customer, Order } = require('../models');
+const { ProductReview, ProductReviewImage, Item, Customer, Order } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
 const { notifyAdmins } = require('./adminNotificationController');
+const { removeStoredImage, buildFileUrl } = require('../utils/fileStorage');
 
 const AUDIT_MODULE = 'PRODUCT_REVIEW';
 
@@ -58,8 +59,30 @@ const auditProductReview = async (
 const getReviewIncludes = () => [
     { model: Item, as: 'item' },
     { model: Customer, as: 'customer' },
-    { model: Order, as: 'order' }
+    { model: Order, as: 'order' },
+    {
+        model: ProductReviewImage,
+        as: 'images',
+        attributes: ['id', 'file_path'],
+        required: false
+    }
 ];
+
+const serializeReview = (review) => {
+    if (!review) return review;
+
+    const data = typeof review.toJSON === 'function'
+        ? review.toJSON()
+        : review;
+
+    return {
+        ...data,
+        images: (data.images || []).map((image) => ({
+            id: image.id,
+            url: buildFileUrl(image.file_path)
+        }))
+    };
+};
 
 const validRating = (rating) =>
     rating !== undefined &&
@@ -72,24 +95,51 @@ const validRating = (rating) =>
 const validStatus = (status) =>
     ['pending', 'approved', 'rejected'].includes(status);
 
-// GET all product reviews
-exports.getAllProductReviews = async (req, res) => {
-    try {
-        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
-        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
-        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
-        const { Op } = require('sequelize');
-        const where = {};
-        if (['pending', 'approved', 'rejected'].includes(req.query.status)) where.status = req.query.status;
-        if (/^[1-5]$/.test(String(req.query.rating || ''))) where.rating = Number(req.query.rating);
-        const search = String(req.query.search || '').trim();
-        if (search) where[Op.or] = [
+const buildReviewWhere = (req, includeRating = true) => {
+    const { Op } = require('sequelize');
+    const where = {};
+
+    if (['pending', 'approved', 'rejected'].includes(req.query.status)) {
+        where.status = req.query.status;
+    }
+
+    if (includeRating && /^[1-5]$/.test(String(req.query.rating || ''))) {
+        where.rating = Number(req.query.rating);
+    }
+
+    const search = String(req.query.search || '').trim();
+
+    if (search) {
+        where[Op.or] = [
             { review_title: { [Op.like]: `%${search}%` } },
             { review_text: { [Op.like]: `%${search}%` } },
             { '$item.item_name$': { [Op.like]: `%${search}%` } },
             { '$customer.first_name$': { [Op.like]: `%${search}%` } },
             { '$customer.last_name$': { [Op.like]: `%${search}%` } }
         ];
+    }
+
+    return where;
+};
+
+// GET all product reviews
+exports.getAllProductReviews = async (req, res) => {
+    try {
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? req.query.limit, 10) || 25));
+        const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
+        const where = buildReviewWhere(req);
+        const ratingBaseWhere = buildReviewWhere(req, false);
+
+        const ratingCounts = {};
+        await Promise.all([1, 2, 3, 4, 5].map(async (rating) => {
+            ratingCounts[rating] = await ProductReview.count({
+                where: { ...ratingBaseWhere, rating },
+                include: getReviewIncludes(),
+                distinct: true,
+                col: 'id'
+            });
+        }));
         const result = await ProductReview.findAndCountAll({
             where,
             include: getReviewIncludes(),
@@ -98,7 +148,7 @@ exports.getAllProductReviews = async (req, res) => {
             offset: paginationEnabled ? (page - 1) * pageSize : undefined,
             distinct: true
         });
-        const reviews = result.rows;
+        const reviews = result.rows.map(serializeReview);
 
         await auditProductReview(req, {
             action: 'PRODUCT_REVIEW_LIST_VIEWED',
@@ -108,6 +158,7 @@ exports.getAllProductReviews = async (req, res) => {
         return res.status(200).json({
             message: 'Product reviews retrieved successfully',
             data: reviews,
+            ratingCounts,
             pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
@@ -120,6 +171,33 @@ exports.getAllProductReviews = async (req, res) => {
 
         return res.status(500).json({
             message: 'Failed to retrieve product reviews'
+        });
+    }
+};
+
+// GET all review images matching the current review filters
+exports.getProductReviewImages = async (req, res) => {
+    try {
+        const reviews = await ProductReview.findAll({
+            where: buildReviewWhere(req),
+            include: getReviewIncludes(),
+            order: [['created_at', 'DESC']],
+            distinct: true
+        });
+
+        const data = reviews
+            .map(serializeReview)
+            .filter((review) => review.images?.length);
+
+        return res.status(200).json({
+            message: 'Product review images retrieved successfully',
+            data
+        });
+    } catch (error) {
+        console.error('Get product review images error:', error);
+
+        return res.status(500).json({
+            message: 'Failed to retrieve product review images'
         });
     }
 };
@@ -153,7 +231,7 @@ exports.getProductReviewById = async (req, res) => {
 
         return res.status(200).json({
             message: 'Product review retrieved successfully',
-            data: review
+            data: serializeReview(review)
         });
     } catch (error) {
         console.error('Get product review error:', error);
@@ -295,7 +373,7 @@ exports.createProductReview = async (req, res) => {
 
         return res.status(201).json({
             message: 'Product review created successfully',
-            data: createdReview
+            data: serializeReview(createdReview)
         });
     } catch (error) {
         console.error('Create product review error:', error);
@@ -488,7 +566,32 @@ exports.deleteProductReview = async (req, res) => {
 
         const oldValues = getReviewSnapshot(review);
 
+        const reviewImages = await ProductReviewImage.findAll({
+            where: { product_review_id: review.id },
+            attributes: ['file_path']
+        });
+
         await review.destroy();
+
+        await Promise.all(
+            reviewImages.map(async (image) => {
+                try {
+                    const result = await removeStoredImage(image.file_path);
+
+                    if (result?.status === 'failed') {
+                        console.error(
+                            'Failed to remove product review image:',
+                            image.file_path
+                        );
+                    }
+                } catch (cleanupError) {
+                    console.error(
+                        'Failed to clean up product review image:',
+                        cleanupError.message
+                    );
+                }
+            })
+        );
 
         await auditProductReview(req, {
             action: 'PRODUCT_REVIEW_DELETED',
