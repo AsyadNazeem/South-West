@@ -58,14 +58,84 @@ const image = computed(() => {
   }
 })
 
+const imageSlides = computed(() => {
+  const gallery = Array.isArray(props.product.images) ? props.product.images : []
+  const candidates = [image.value, ...gallery]
+  const seen = new Set()
+
+  return candidates
+    .map(candidate => ({
+      src: getResponsiveImageUrl(candidate),
+      srcset: getResponsiveImageSrcSet(candidate?.responsive_images),
+    }))
+    .filter(candidate => {
+      if (!candidate.src || seen.has(candidate.src)) return false
+      seen.add(candidate.src)
+      return true
+    })
+})
+
+const currentImageIndex = ref(0)
+const activeImage = computed(() =>
+  imageSlides.value[currentImageIndex.value] || imageSlides.value[0] || { src: '', srcset: '' }
+)
 const imageFailed = ref(false)
+const touchStartX = ref(null)
+let suppressNextImageClick = false
+
+function changeImage(direction) {
+  const count = imageSlides.value.length
+  if (count < 2) return
+
+  currentImageIndex.value = (currentImageIndex.value + direction + count) % count
+  imageFailed.value = false
+}
+
+function selectImage(index) {
+  if (index < 0 || index >= imageSlides.value.length) return
+  currentImageIndex.value = index
+  imageFailed.value = false
+}
+
+function handleTouchStart(event) {
+  touchStartX.value = event.changedTouches[0]?.clientX ?? null
+}
+
+function handleTouchEnd(event) {
+  if (touchStartX.value === null) return
+
+  const endX = event.changedTouches[0]?.clientX
+  const difference = endX - touchStartX.value
+  touchStartX.value = null
+
+  if (Math.abs(difference) < 40 || imageSlides.value.length < 2) return
+
+  suppressNextImageClick = true
+  changeImage(difference < 0 ? 1 : -1)
+}
+
+function handleImageLinkClick(event) {
+  if (suppressNextImageClick) {
+    event.preventDefault()
+    event.stopPropagation()
+    suppressNextImageClick = false
+    return
+  }
+
+  trackSelectItem()
+}
 
 function trackSelectItem() {
   const item = analyticsItem(props.product)
   trackEvent('select_item', { item_list_name: route.path === '/offers' ? 'Special Offers' : 'Product Listing', items: [item] })
 }
 
-watch(() => image.value.src, () => {
+watch(() => activeImage.value.src, () => {
+  imageFailed.value = false
+})
+
+watch(() => props.product.id, () => {
+  currentImageIndex.value = 0
   imageFailed.value = false
 })
 
@@ -323,11 +393,18 @@ onBeforeUnmount(() => {
 <template>
   <li class="product-card" :class="{ 'is-out': !inStock, 'is-list': layout === 'list' }">
     <div class="image-wrap">
-      <RouterLink :to="link" class="image-link" :aria-label="`View ${name}`" @click="trackSelectItem">
+      <RouterLink
+        :to="link"
+        class="image-link"
+        :aria-label="`View ${name}`"
+        @click="handleImageLinkClick"
+        @touchstart.passive="handleTouchStart"
+        @touchend.passive="handleTouchEnd"
+      >
         <img
-          v-if="image.src && !imageFailed"
-          :src="image.src"
-          :srcset="image.srcset || undefined"
+          v-if="activeImage.src && !imageFailed"
+          :src="activeImage.src"
+          :srcset="activeImage.srcset || undefined"
           :sizes="imageSizes"
           alt=""
           loading="lazy"
@@ -339,6 +416,45 @@ onBeforeUnmount(() => {
           {{ name.charAt(0).toUpperCase() }}
         </span>
       </RouterLink>
+
+      <template v-if="imageSlides.length > 1">
+        <button
+          type="button"
+          class="image-nav image-nav-prev"
+          aria-label="Previous product image"
+          @click.stop.prevent="changeImage(-1)"
+        >
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m15 18-6-6 6-6" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          class="image-nav image-nav-next"
+          aria-label="Next product image"
+          @click.stop.prevent="changeImage(1)"
+        >
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m9 18 6-6-6-6" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+
+        <div class="image-indicators" aria-label="Product image selection">
+          <button
+            v-for="(slide, index) in imageSlides"
+            :key="slide.src"
+            type="button"
+            class="image-indicator"
+            :class="{ active: currentImageIndex === index }"
+            :aria-label="`Show image ${index + 1} of ${imageSlides.length}`"
+            :aria-pressed="currentImageIndex === index"
+            @click.stop.prevent="selectImage(index)"
+          ></button>
+        </div>
+      </template>
 
       <div
         v-if="campaignVisual && campaignFrameUrl"
@@ -531,6 +647,115 @@ onBeforeUnmount(() => {
   font-family: var(--font-family-display);
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
+}
+
+/* ---------- Manual product image carousel ---------- */
+/* Small, light arrows that match the quick-action circles */
+.image-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 88%);
+  color: var(--color-text);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 12%);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    opacity var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.image-nav:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.image-nav:active {
+  transform: translateY(-50%) scale(0.92);
+}
+
+.image-nav:focus-visible {
+  outline: 2px solid var(--color-focus-outline);
+  outline-offset: 2px;
+}
+
+.image-nav svg {
+  width: 14px;
+  height: 14px;
+}
+
+.image-nav-prev {
+  left: 6px;
+}
+
+.image-nav-next {
+  right: 6px;
+}
+
+/* Mouse users: arrows appear only while hovering the image (or on keyboard focus).
+   Touch screens have no hover, so there the arrows stay visible. */
+@media (hover: hover) and (pointer: fine) {
+  .image-nav {
+    opacity: 0;
+  }
+
+  .image-wrap:hover .image-nav,
+  .image-wrap:focus-within .image-nav {
+    opacity: 1;
+  }
+}
+
+/* Touch screens: a bit larger for easier tapping, still smaller than before */
+@media (pointer: coarse) {
+  .image-nav {
+    width: 30px;
+    height: 30px;
+  }
+}
+
+.image-indicators {
+  position: absolute;
+  bottom: 9px;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  max-width: calc(100% - 90px);
+  padding: 5px 8px;
+  border-radius: var(--radius-pill);
+  background: rgb(0 0 0 / 32%);
+  transform: translateX(-50%);
+}
+
+.image-indicator {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 65%);
+  cursor: pointer;
+}
+
+.image-indicator.active {
+  width: 16px;
+  flex-basis: 16px;
+  border-radius: var(--radius-pill);
+  background: #fff;
 }
 
 /* ---------- Uploaded campaign frame overlays ---------- */
@@ -938,6 +1163,17 @@ onBeforeUnmount(() => {
     height: 16px;
   }
 
+  /* Smaller arrows on the narrow list image */
+  .product-card.is-list .image-nav {
+    width: 24px;
+    height: 24px;
+  }
+
+  .product-card.is-list .image-nav svg {
+    width: 13px;
+    height: 13px;
+  }
+
   .product-card.is-list .action-toast {
     display: none;
   }
@@ -993,6 +1229,7 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .product-card,
   .image-link img,
+  .image-nav,
   .product-actions,
   .product-action-btn,
   .toast-enter-active,
