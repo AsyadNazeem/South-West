@@ -1575,11 +1575,37 @@ const seoDescription = String(product.value.description || `View ${seoName} at S
   .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
 const productPath = `/product/${route.params.productSlug}`
 const productImage = getResponsiveImageUrl(product.value.image || product.value.image_url || product.value.images?.[0])
-setPageMeta({ title: `${seoName} | South West Sri Lanka`, description: seoDescription, path: productPath, index: true, image: productImage || '/SWShareImage.png', type: 'product' })
-setStructuredData('product', productSchema(product.value, productPath, productImage))
-setStructuredData('breadcrumb', breadcrumbSchema([{ name: 'Home', path: '/' }, { name: 'Shop', path: '/shop' }, { name: seoName, path: productPath }]))
+setPageMeta({
+  title: `${seoName} | South West Sri Lanka`,
+  description: seoDescription,
+  path: productPath,
+  index: true,
+  image: productImage || '/SWShareImage.png',
+  type: 'product'
+})
 
+// Select the default variant before generating Product structured data.
 chooseDefaultVariant(product.value)
+
+setStructuredData(
+  'product',
+  productSchema(
+    product.value,
+    productPath,
+    productImage,
+    selectedVariant.value
+  )
+)
+
+setStructuredData(
+  'breadcrumb',
+  breadcrumbSchema([
+    { name: 'Home', path: '/' },
+    { name: 'Shop', path: '/shop' },
+    { name: seoName, path: productPath }
+  ])
+)
+
 trackProductView(product.value, price.value)
 
 reviews.value = []

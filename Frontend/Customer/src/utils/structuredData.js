@@ -35,49 +35,133 @@ export function websiteSchema() {
   }
 }
 
-export function productSchema(product, path, image) {
-  const name = String(product?.item_name || product?.name || product?.product_name || '').trim()
-  const rawPrice = product?.price ?? product?.selling_price
+export function productSchema(product, path, image, selectedVariant = null) {
+  const name = String(
+    product?.item_name || product?.name || product?.product_name || ''
+  ).trim()
+
+  const priceSource = selectedVariant || product
+  const priceKeys = selectedVariant
+    ? ['selling_price', 'price', 'unit_price', 'sale_price']
+    : ['price', 'selling_price']
+
+  let rawPrice = null
+
+  for (const key of priceKeys) {
+    const value = priceSource?.[key]
+
+    if (value === null || value === undefined || value === '') continue
+
+    const numericValue = Number(value)
+
+    if (Number.isFinite(numericValue)) {
+      rawPrice = numericValue
+      break
+    }
+  }
+
   const price = Number(rawPrice)
   const productPath = String(path || '')
+
   let canonicalUrl
   let imageUrl
+
   try {
     canonicalUrl = new URL(productPath, SITE_URL)
     imageUrl = new URL(String(image || ''), SITE_URL)
   } catch {
     return null
   }
-  if (!product || !name || rawPrice == null || rawPrice === '' || !Number.isFinite(price) || price <= 0) return null
-  if (canonicalUrl.origin !== SITE_URL || canonicalUrl.search || canonicalUrl.hash || !/^\/product\/[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canonicalUrl.pathname)) return null
-  if (imageUrl.protocol !== 'https:' || imageUrl.username || imageUrl.password || imageUrl.pathname === '/') return null
 
-  const rawStock = product.stock_quantity ?? product.available_quantity ?? product.available_stock ?? product.quantity_in_stock
-  const knownStock = rawStock !== null && rawStock !== undefined && rawStock !== '' && Number.isFinite(Number(rawStock)) && Number(rawStock) >= 0
-  const stock = product.in_stock === false || (knownStock && Number(rawStock) === 0)
-    ? 'https://schema.org/OutOfStock'
-    : product.in_stock === true || knownStock
-      ? 'https://schema.org/InStock'
-      : null
+  if (
+    !product ||
+    !name ||
+    rawPrice == null ||
+    !Number.isFinite(price) ||
+    price <= 0
+  ) return null
+
+  if (
+    canonicalUrl.origin !== SITE_URL ||
+    canonicalUrl.search ||
+    canonicalUrl.hash ||
+    !/^\/product\/[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canonicalUrl.pathname)
+  ) return null
+
+  if (
+    imageUrl.protocol !== 'https:' ||
+    imageUrl.username ||
+    imageUrl.password ||
+    imageUrl.pathname === '/'
+  ) return null
+
+  const stockSource = selectedVariant || product
+
+  const stockKeys = [
+    'available_quantity',
+    'stock_quantity',
+    'available_stock',
+    'quantity_in_stock'
+  ]
+
+  let stockQuantity = NaN
+
+  for (const key of stockKeys) {
+    const value = stockSource?.[key]
+
+    if (value === null || value === undefined || value === '') continue
+
+    const numericValue = Number(value)
+
+    if (Number.isFinite(numericValue)) {
+      stockQuantity = numericValue
+      break
+    }
+  }
+
+  const inStock =
+    stockSource?.is_active !== false &&
+    stockSource?.in_stock !== false &&
+    Number.isFinite(stockQuantity) &&
+    stockQuantity > 0
+
+  const brandName = String(
+    product.brand_name ||
+    (typeof product.brand === 'string'
+      ? product.brand
+      : product.brand?.name) ||
+    ''
+  ).trim()
+
   const offer = {
     '@type': 'Offer',
     priceCurrency: 'LKR',
     price: price.toFixed(2),
     url: canonicalUrl.href,
+    availability: inStock
+      ? 'https://schema.org/InStock'
+      : 'https://schema.org/OutOfStock'
   }
-  if (stock) offer.availability = stock
+
   return {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name,
-    description: String(product.description || '').replace(/<[^>]*>/g, ' ').trim().slice(0, 5000) || undefined,
+    description: String(product.description || '')
+      .replace(/<[^>]*>/g, ' ')
+      .trim()
+      .slice(0, 5000) || undefined,
     image: imageUrl.href,
     sku: product.item_code || product.sku || undefined,
-    brand: product.brand_name || product.brand?.name ? { '@type': 'Brand', name: product.brand_name || product.brand?.name } : undefined,
-    offers: offer,
+    brand: brandName
+      ? {
+          '@type': 'Brand',
+          name: brandName
+        }
+      : undefined,
+    offers: offer
   }
 }
-
 export function breadcrumbSchema(entries) {
   return {
     '@context': 'https://schema.org',
