@@ -20,7 +20,7 @@ function loadController(state = {}) {
                 ? {
                     id: 12,
                     public_id: UUID,
-                    slug: `kingston-fury-${UUID}`,
+                    slug: 'kingston-fury',
                     item_name: 'Kingston Fury RAM',
                     description: '<p>Fast &amp; reliable <strong>memory</strong>.</p>',
                 }
@@ -93,7 +93,10 @@ test('generates product-specific Open Graph and Twitter metadata', async () => {
     assert.match(res.body, /Kingston Fury RAM \| South West/);
     assert.match(res.body, /property="og:description"/);
     assert.match(res.body, /https:\/\/api\.southwest\.lk\/uploads\/items\/images\/kingston\.jpg/);
-    assert.match(res.body, /https:\/\/southwest\.lk\/product\/kingston-fury-/);
+    assert.match(
+        res.body,
+        new RegExp(`https://southwest\\.lk/product/kingston-fury-${UUID}`)
+    );
     assert.match(res.body, /name="twitter:card" content="summary_large_image"/);
     assert.equal(res.headers['Cache-Control'], 'public, max-age=300, s-maxage=600');
     assert.equal(state.itemQuery.where.public_id, UUID);
