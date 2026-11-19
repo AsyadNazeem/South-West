@@ -208,6 +208,12 @@ app.use('/api/item-payment-prices', itemPaymentPriceRoutes);
 app.use('/uploads', express.static(UPLOAD_ROOT, {
     maxAge: '1y',
     immutable: true,
+    setHeaders(res) {
+        // Public uploaded images use the same CORS response for every origin.
+        // This prevents shared caches from reusing origin-specific CORS headers.
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.removeHeader('Access-Control-Allow-Credentials');
+    },
 }));
 app.use('/api/item-videos', require('./routes/itemVideoRoutes'));
 
