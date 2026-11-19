@@ -1476,6 +1476,16 @@ function onVariantChange() {
 
 async function loadProduct() {
   const requestId = ++latestProductLoadId
+
+  // Keep the requested product URL canonical, but prevent indexing
+  // until the product has loaded successfully.
+  setPageMeta({
+    title: 'Product | South West',
+    path: `/product/${route.params.productSlug}`,
+    index: false,
+    type: 'product'
+  })
+
   setStructuredData('product', null)
   setStructuredData('breadcrumb', null)
   loading.value = true
@@ -1885,14 +1895,6 @@ onUnmounted(unlockPageScroll)
 // --------------------------------------------------
 
 watch(selectedVariantId, onVariantChange)
-
-watch(
-  productName,
-  (name) => {
-    document.title = `${name} | South West`
-  },
-  { immediate: true }
-)
 
 watch(() => route.params.productSlug, loadProduct)
 
