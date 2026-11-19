@@ -146,3 +146,17 @@ test('dedicated top-rated route is registered before parameterized product route
     assert.ok(ratedRouteIndex >= 0);
     assert.ok(ratedRouteIndex < relatedRouteIndex);
 });
+
+test('regular paginated endpoint passes valid image IDs into the eligible-product query', async () => {
+    const { controller, calls } = createController([]);
+    const res = response();
+
+    await controller.getStoreProducts({
+        query: { paginate: '1', limit: '20' },
+    }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(calls.eligible.imageItemIds, ['3', '8']);
+    assert.deepEqual(res.body.data.map(product => product.id), [3, 8]);
+    assert.equal(res.body.pagination.hasMore, false);
+});

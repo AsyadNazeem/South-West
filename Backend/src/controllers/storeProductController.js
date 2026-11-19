@@ -147,6 +147,7 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
                 filters,
                 sort,
                 campaigns,
+                imageItemIds,
             });
 
             const hasMore = pageRows.length > limit;
