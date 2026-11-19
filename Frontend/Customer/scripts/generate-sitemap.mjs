@@ -448,7 +448,14 @@ function updateCanonical(html, canonicalUrl) {
     : html.replace('</head>', () => `    ${tag}\n</head>`)
 }
 
-function createProductHtml(template, product, variant) {
+function createStaticProductData(product, variants) {
+  return JSON.stringify({ product, variants: variants || [] })
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('&', '\\u0026')
+}
+
+function createProductHtml(template, product, variant, variants) {
   const name = String(
     product.item_name || product.name || product.product_name || 'Product'
   ).trim()
@@ -533,7 +540,10 @@ function createProductHtml(template, product, variant) {
     })
     .join('\n    ')
 
-  return html.replace('</head>', () => `    ${jsonLd}\n</head>`)
+  const staticProductData = `<script id="southwest-product-data" type="application/json">${createStaticProductData(product, variants)}</script>`
+
+  return html
+    .replace('</head>', () => `    ${jsonLd}\n    ${staticProductData}\n</head>`)
 }
 
 async function generateProductPages(template) {
@@ -562,7 +572,7 @@ async function generateProductPages(template) {
       await mkdir(outputDirectory, { recursive: true })
       await writeFile(
         outputFile,
-        createProductHtml(template, product, variant),
+        createProductHtml(template, product, variant, variants),
         'utf8'
       )
 

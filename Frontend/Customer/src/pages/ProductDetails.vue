@@ -14,6 +14,7 @@ import { setPageMeta } from '@/composables/usePageMeta'
 import { trackAddToCart, trackProductView } from '@/services/analytics'
 import { breadcrumbSchema, productSchema, setStructuredData } from '@/utils/structuredData'
 import { isDefinitiveProductAbsence, isProductRouteIndexable } from '@/utils/productSeo'
+import { readStaticProductData } from '@/utils/staticProductData'
 import { getWhatsAppLink } from '@/utils/whatsapp'
 
 const route = useRoute()
@@ -24,6 +25,7 @@ const wholesaleWhatsAppLink = computed(() => getWhatsAppLink(
   `Hi South West, I'm interested in buying ${product.value?.name || 'this product'} wholesale. Could you please share your pricing and minimum order quantity?`
 ))
 const loading = ref(true)
+const usingStaticProductData = ref(false)
 let latestProductLoadId = 0
 const error = ref('')
 const selectedImage = ref(0)
@@ -1158,6 +1160,8 @@ const availableQuantity = computed(() => {
 })
 
 const inStock = computed(() => {
+  if (usingStaticProductData.value) return false
+
   const source = selectedVariant.value || product.value
 
   if (!source) return false
@@ -1487,10 +1491,16 @@ function markProductUnavailable() {
 
 async function loadProduct() {
   const requestId = ++latestProductLoadId
+  const productSlug = String(route.params.productSlug || '')
+  const publicIdMatch = productSlug.match(
+    /-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+  )
+  const publicId = publicIdMatch?.[1]
 
   setStructuredData('product', null)
   setStructuredData('breadcrumb', null)
   loading.value = true
+  usingStaticProductData.value = false
   error.value = ''
   cartMessage.value = ''
   cartError.value = ''
@@ -1503,13 +1513,6 @@ async function loadProduct() {
   quantity.value = 1
 
   try {
-const productSlug = String(route.params.productSlug || '')
-const publicIdMatch = productSlug.match(
-  /-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
-)
-
-const publicId = publicIdMatch?.[1]
-
     if (isDefinitiveProductAbsence({ hasPublicId: Boolean(publicId) })) {
       markProductUnavailable()
       error.value = 'This product could not be found or is no longer available.'
@@ -1645,6 +1648,16 @@ await Promise.all([
     // an otherwise valid, statically generated product page into noindex.
     if (isDefinitiveProductAbsence({ responseStatus: err.response?.status })) {
       markProductUnavailable()
+    } else {
+      const staticProduct = readStaticProductData(publicId)
+
+      if (staticProduct) {
+        product.value = staticProduct
+        usingStaticProductData.value = true
+        chooseDefaultVariant(staticProduct)
+        error.value = ''
+        return
+      }
     }
 
     error.value =
@@ -2229,7 +2242,9 @@ onMounted(loadProduct)
           <div class="stock-line" :class="{ unavailable: !inStock }">
             <span class="stock-dot"></span>
             {{
-              inStock
+              usingStaticProductData
+                ? 'Live price and availability are temporarily unavailable'
+                : inStock
                 ? `${availableQuantity} available online`
                 : 'Currently unavailable'
             }}
@@ -2302,7 +2317,7 @@ onMounted(loadProduct)
             <button
               type="button"
               class="buy-button"
-              :disabled="!inStock || buyNowLoading || addingToCart"
+              :disabled="usingStaticProductData || !inStock || buyNowLoading || addingToCart"
               @click="buyNow"
             >
               {{ buyNowLoading ? 'Starting checkout…' : 'Buy Now' }}
@@ -2311,7 +2326,7 @@ onMounted(loadProduct)
             <button
               type="button"
               class="cart-button"
-              :disabled="!inStock || addingToCart || buyNowLoading"
+              :disabled="usingStaticProductData || !inStock || addingToCart || buyNowLoading"
               @click="addToCart"
             >
               {{ addingToCart ? 'Adding...' : 'Add to Cart' }}

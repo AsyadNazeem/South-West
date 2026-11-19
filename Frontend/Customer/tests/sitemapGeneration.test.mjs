@@ -73,3 +73,50 @@ test('sitemap API errors preserve the existing static sitemap', async () => {
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+test('generated product HTML embeds escaped public fallback data', async () => {
+  const product = {
+    id: 27,
+    slug: 'public-lamp',
+    public_id: '123e4567-e89b-12d3-a456-426614174000',
+    item_name: 'Lamp </script><script>alert(1)</script>',
+    price: 2500,
+  }
+  const variant = {
+    id: 4,
+    is_active: true,
+    is_default: true,
+    selling_price: 2500,
+    available_quantity: 2,
+  }
+  const fetchSetup = `
+    globalThis.fetch = async url => {
+      const request = new URL(url);
+      const payload = request.pathname.endsWith('/variants')
+        ? { data: [${JSON.stringify(variant)}] }
+        : { data: [${JSON.stringify(product)}], pagination: { seed: 'seed', hasMore: false, nextCursor: null } };
+      return { ok: true, status: 200, json: async () => payload };
+    };
+  `
+  const { directory, result } = await runGenerator(fetchSetup)
+
+  try {
+    await mkdir(resolve(directory, 'dist'))
+    await writeFile(resolve(directory, 'dist/index.html'), '<html><head><title>Store</title></head><body><div id="app"></div></body></html>')
+
+    const rerun = spawnSync(process.execPath, ['--input-type=module', '-e', `${fetchSetup}\nawait import(${JSON.stringify(`${scriptPath}?fallback-test=${Date.now()}`)})`], {
+      cwd: directory,
+      env: { ...process.env, VITE_API_URL: 'https://api.southwest.lk' },
+      encoding: 'utf8',
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(rerun.status, 0, rerun.stderr)
+    const html = await readFile(resolve(directory, 'dist/product/public-lamp-123e4567-e89b-12d3-a456-426614174000/index.html'), 'utf8')
+    assert.match(html, /id="southwest-product-data" type="application\/json"/)
+    assert.doesNotMatch(html, /<\/script><script>alert\(1\)<\/script>/)
+    assert.match(html, /\\u003c\/script\\u003e/)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
