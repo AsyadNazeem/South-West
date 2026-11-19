@@ -2,6 +2,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { setPageMeta } from '@/composables/usePageMeta'
 import { rememberCampaignParams, trackPageView } from '@/services/analytics'
+import {
+    isProductRouteIndexable,
+    shouldPreserveStaticProductMeta,
+} from '@/utils/productSeo'
 
 const Login = () => import('@/pages/auth/Login.vue')
 const Register = () => import('@/pages/auth/Register.vue')
@@ -238,13 +242,25 @@ const router = createRouter({
 })
 
 router.afterEach((to) => {
-    const index = to.meta.index === true && !Object.keys(to.query || {}).length
-    setPageMeta({
-        title: to.meta.title || 'South West | Online Store',
-        description: to.meta.description,
-        path: to.path,
-        index,
+    const index = to.meta.index === true && isProductRouteIndexable(to.query)
+    const preserveStaticProductMeta = shouldPreserveStaticProductMeta({
+        routeName: to.name,
+        routePath: to.path,
+        hasQuery: !isProductRouteIndexable(to.query),
+        canonicalHref: document.head.querySelector('link[rel="canonical"]')?.href,
+        ogType: document.head.querySelector('meta[property="og:type"]')?.content,
+        robotsContent: document.head.querySelector('meta[name="robots"]')?.content,
     })
+
+    if (!preserveStaticProductMeta) {
+        setPageMeta({
+            title: to.meta.title || 'South West | Online Store',
+            description: to.meta.description,
+            path: to.path,
+            index,
+            type: to.name === 'product-details' ? 'product' : 'website',
+        })
+    }
     rememberCampaignParams(to.fullPath.includes('?') ? to.fullPath.slice(to.fullPath.indexOf('?')) : '')
     trackPageView(to)
 })

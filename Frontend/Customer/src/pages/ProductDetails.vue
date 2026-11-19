@@ -13,6 +13,7 @@ import SimilarProducts from '@/components/products/SimilarProducts.vue'
 import { setPageMeta } from '@/composables/usePageMeta'
 import { trackAddToCart, trackProductView } from '@/services/analytics'
 import { breadcrumbSchema, productSchema, setStructuredData } from '@/utils/structuredData'
+import { isDefinitiveProductAbsence, isProductRouteIndexable } from '@/utils/productSeo'
 import { getWhatsAppLink } from '@/utils/whatsapp'
 
 const route = useRoute()
@@ -1470,21 +1471,22 @@ function onVariantChange() {
   cartError.value = ''
 }
 
+function markProductUnavailable() {
+  setPageMeta({
+    title: 'Product not found | South West',
+    description: 'This product could not be found or is no longer available.',
+    path: route.path,
+    index: false,
+    type: 'product'
+  })
+}
+
 // --------------------------------------------------
 // Load product and variants
 // --------------------------------------------------
 
 async function loadProduct() {
   const requestId = ++latestProductLoadId
-
-  // Keep the requested product URL canonical, but prevent indexing
-  // until the product has loaded successfully.
-  setPageMeta({
-    title: 'Product | South West',
-    path: `/product/${route.params.productSlug}`,
-    index: false,
-    type: 'product'
-  })
 
   setStructuredData('product', null)
   setStructuredData('breadcrumb', null)
@@ -1508,7 +1510,8 @@ const publicIdMatch = productSlug.match(
 
 const publicId = publicIdMatch?.[1]
 
-    if (!publicId) {
+    if (isDefinitiveProductAbsence({ hasPublicId: Boolean(publicId) })) {
+      markProductUnavailable()
       error.value = 'This product could not be found or is no longer available.'
       return
     }
@@ -1529,7 +1532,8 @@ const found = publicId
     )
   : null
 
-    if (!found) {
+    if (isDefinitiveProductAbsence({ productFound: Boolean(found) })) {
+      markProductUnavailable()
       error.value =
         'This product could not be found or is no longer available.'
       return
@@ -1589,7 +1593,7 @@ setPageMeta({
   title: `${seoName} | South West Sri Lanka`,
   description: seoDescription,
   path: productPath,
-  index: true,
+  index: isProductRouteIndexable(route.query),
   image: productImage || '/SWShareImage.png',
   type: 'product'
 })
@@ -1635,6 +1639,13 @@ await Promise.all([
   } catch (err) {
     if (requestId !== latestProductLoadId) return
     console.error('Load product error:', err)
+
+    // A 404 is authoritative absence. Network errors, timeouts, rate limits,
+    // forbidden responses and server failures are transient and must not turn
+    // an otherwise valid, statically generated product page into noindex.
+    if (isDefinitiveProductAbsence({ responseStatus: err.response?.status })) {
+      markProductUnavailable()
+    }
 
     error.value =
       err.response?.data?.message ||
