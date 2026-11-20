@@ -118,6 +118,32 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true
             },
 
+            final_email_status: {
+                type: DataTypes.ENUM('sending', 'sent', 'failed'),
+                allowNull: true
+            },
+
+            final_email_claimed_at: {
+                type: DataTypes.DATE,
+                allowNull: true
+            },
+
+            final_email_sent_at: {
+                type: DataTypes.DATE,
+                allowNull: true
+            },
+
+            final_email_attempts: {
+                type: DataTypes.INTEGER.UNSIGNED,
+                allowNull: false,
+                defaultValue: 0
+            },
+
+            final_email_last_error: {
+                type: DataTypes.STRING(500),
+                allowNull: true
+            },
+
             created_by: {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: true

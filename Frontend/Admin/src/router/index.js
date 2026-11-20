@@ -56,6 +56,7 @@ const Orders = () => import('@/pages/sales/Orders.vue')
 const OrderDetails = () => import('@/pages/sales/OrderDetails.vue')
 const Payment = () => import('@/pages/sales/Payment.vue')
 const Invoice = () => import('@/pages/sales/Invoice.vue')
+const InvoiceDetails = () => import('@/pages/sales/InvoiceDetails.vue')
 const Deliveries = () => import('@/pages/sales/Deliveries.vue')
 const DeliveryDetails = () => import('@/pages/sales/DeliveryDetails.vue')
 const DeliveryCharges = () => import('@/pages/sales/DeliveryCharges.vue')
@@ -592,6 +593,12 @@ const routes = [
                 path: 'sales/invoices',
                 name: 'Invoice',
                 component: Invoice,
+                meta: { permission: 'invoices.view' }
+            },
+            {
+                path: 'sales/invoices/:id',
+                name: 'invoice-details',
+                component: InvoiceDetails,
                 meta: { permission: 'invoices.view' }
             },
             {

@@ -1,10 +1,13 @@
 const { Op, Sequelize } = require('sequelize');
 const { recordAuditLog } = require('../services/auditLogService');
+const { buildOrderPhoneSearch } = require('../utils/orderPhoneSearch');
 
 const {
     Order,
     Customer,
     CustomerAddress,
+    DeliveryDistrict,
+    DeliveryArea,
     User,
     OrderItem,
     OrderAddress,
@@ -73,7 +76,7 @@ const getCurrentSellingPrice = async (
     return amount;
 };
 
-const getOrderIncludes = () => [
+const getOrderIncludes = ({ includeAddressLocations = false } = {}) => [
     {
         model: Customer,
         as: 'customer',
@@ -125,7 +128,21 @@ const getOrderIncludes = () => [
     {
         model: OrderAddress,
         as: 'addresses',
-        required: false
+        required: false,
+        include: includeAddressLocations ? [
+            {
+                model: DeliveryDistrict,
+                as: 'district',
+                attributes: ['id', 'district_name'],
+                required: false
+            },
+            {
+                model: DeliveryArea,
+                as: 'area',
+                attributes: ['id', 'area_name'],
+                required: false
+            }
+        ] : []
     },
     {
         model: Payment,
@@ -195,6 +212,7 @@ exports.getOrderSummaries = async (req, res) => {
         const offset = (page - 1) * pageSize;
         const where = {};
         const search = String(req.query.search || '').trim();
+        let replacements;
         const status = String(req.query.status || '');
         const paymentStatus = String(req.query.paymentStatus || '');
         const orderStatuses = new Set([
@@ -235,6 +253,12 @@ exports.getOrderSummaries = async (req, res) => {
                     { [Op.like]: pattern }
                 ),
             ];
+            const phoneSearch = buildOrderPhoneSearch(search, {
+                orderAlias: 'Order',
+                replacementPrefix: 'orderPhone'
+            });
+            if (phoneSearch) where[Op.or].push(phoneSearch.condition);
+            replacements = phoneSearch?.replacements;
         }
 
         const result = await Order.findAndCountAll({
@@ -259,6 +283,7 @@ exports.getOrderSummaries = async (req, res) => {
             offset,
             distinct: true,
             col: 'id',
+            replacements
         });
 
         const data = result.rows.map(orderRecord => {
@@ -305,7 +330,7 @@ exports.getOrderById = async (req, res) => {
         const {id} = req.params;
 
         const order = await Order.findByPk(id, {
-            include: getOrderIncludes()
+            include: getOrderIncludes({ includeAddressLocations: true })
         });
 
         if (!order) {
@@ -314,9 +339,60 @@ exports.getOrderById = async (req, res) => {
             });
         }
 
+        const data = order.toJSON();
+        const shippingAddress = data.addresses?.find(
+            address => address.address_type === 'shipping'
+        );
+
+        // Orders created before delivery location IDs were snapshotted can only
+        // be enriched when the original customer address still matches exactly.
+        // A failed match deliberately leaves district/area unknown rather than
+        // substituting Province (state) or another current customer address.
+        if (
+            shippingAddress &&
+            (!shippingAddress.district || !shippingAddress.area) &&
+            data.customer?.id
+        ) {
+            const matchingAddress = await CustomerAddress.findOne({
+                where: {
+                    customer_id: data.customer.id,
+                    recipient_name: shippingAddress.recipient_name,
+                    phone: shippingAddress.phone,
+                    address_line_1: shippingAddress.address_line_1,
+                    address_line_2: shippingAddress.address_line_2,
+                    city: shippingAddress.city,
+                    state: shippingAddress.state,
+                    postal_code: shippingAddress.postal_code,
+                    country: shippingAddress.country
+                },
+                include: [
+                    {
+                        model: DeliveryDistrict,
+                        as: 'district',
+                        attributes: ['id', 'district_name'],
+                        required: true
+                    },
+                    {
+                        model: DeliveryArea,
+                        as: 'area',
+                        attributes: ['id', 'area_name'],
+                        required: true
+                    }
+                ]
+            });
+
+            if (matchingAddress) {
+                const location = matchingAddress.toJSON();
+                shippingAddress.district_id = location.district_id;
+                shippingAddress.area_id = location.area_id;
+                shippingAddress.district = location.district;
+                shippingAddress.area = location.area;
+            }
+        }
+
         return res.status(200).json({
             message: 'Order retrieved successfully',
-            data: order
+            data
         });
     } catch (error) {
         console.error('Get order error:', error);

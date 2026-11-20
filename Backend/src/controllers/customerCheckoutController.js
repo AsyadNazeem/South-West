@@ -9,7 +9,7 @@ const {
     sendOrderConfirmationEmail,
     sendAdminNewOrderEmail
 } = require('../services/emailService');
-const { generateInvoicePdf, invoiceFilename } = require('../services/invoicePdfService');
+const { getOrderInvoiceAttachment } = require('../services/invoicePdfService');
 const {
     sequelize,
     CheckoutIdempotency,
@@ -1577,6 +1577,8 @@ line_total: entry.lineTotal
         await OrderAddress.create({
             order_id: order.id,
             address_type: 'shipping',
+            district_id: district.id,
+            area_id: area.id,
             recipient_name: address.recipient_name,
             phone: address.phone,
             address_line_1: address.address_line_1,
@@ -1772,32 +1774,7 @@ await OrderPromotion.create({
                 paymentMethod: payment_method,
                 paymentStatus: 'Unpaid',
                 invoiceAttachment: payment_method === 'cash'
-                    ? {
-                        filename: invoiceFilename(orderNumber, true),
-                        content: await generateInvoicePdf({
-                            order_number: orderNumber,
-                            invoice_number: invoiceNumber,
-                            order_date: order.order_date,
-                            payment_status: 'unpaid',
-                            subtotal,
-                            discount_amount: discountAmount,
-                            shipping_amount: shippingAmount,
-                            normal_delivery_amount: deliveryPricing.normalDeliveryCharge,
-                            additional_shipping_amount: deliveryPricing.additionalShippingAmount,
-                            total_amount: totalAmount,
-                            customer_email: customer?.email,
-                            addresses: [{ ...address, address_type: 'shipping' }],
-                            payments: [{ payment_method: payment_method, payment_status: 'unpaid' }],
-                            items: preparedItems.map(entry => ({
-                                name: entry.item.item_name,
-                                variant_name: entry.variant?.variant_name,
-                                quantity: entry.quantity,
-                                unit_price: entry.unitPrice,
-                                line_total: entry.lineTotal
-                            }))
-                        }, { draft: true }),
-                        contentType: 'application/pdf'
-                    }
+                    ? await getOrderInvoiceAttachment(order.id)
                     : null
             };
 

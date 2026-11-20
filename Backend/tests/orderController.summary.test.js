@@ -5,8 +5,8 @@ const assert = require('node:assert/strict');
 const proxyquire = require('proxyquire').noCallThru();
 const sequelizeLibrary = require('sequelize');
 
-function createHarness({ count = 0, rows = [] } = {}) {
-    const calls = { summary: null, legacy: null };
+function createHarness({ count = 0, rows = [], detail = null, matchingAddress = null } = {}) {
+    const calls = { summary: null, legacy: null, detail: null, matchingAddress: null };
     const models = {
         Order: {
             findAndCountAll: async options => {
@@ -17,9 +17,21 @@ function createHarness({ count = 0, rows = [] } = {}) {
                 calls.legacy = options;
                 return rows;
             },
+            findByPk: async (id, options) => {
+                calls.detail = { id, options };
+                return detail;
+            },
         },
         Customer: { name: 'Customer' },
-        CustomerAddress: { name: 'CustomerAddress' },
+        CustomerAddress: {
+            name: 'CustomerAddress',
+            findOne: async options => {
+                calls.matchingAddress = options;
+                return matchingAddress;
+            },
+        },
+        DeliveryDistrict: { name: 'DeliveryDistrict' },
+        DeliveryArea: { name: 'DeliveryArea' },
         User: { name: 'User' },
         OrderItem: { name: 'OrderItem' },
         OrderAddress: { name: 'OrderAddress' },
@@ -135,6 +147,21 @@ test('order summary applies search, order status and payment status filters', as
     );
 });
 
+test('order summary applies normalized phone matching before pagination', async () => {
+    const { controller, calls } = createHarness({ rows: [order()] });
+    await controller.getOrderSummaries({
+        query: { search: '+94 77-123 4567', page: '2', pageSize: '10' },
+    }, { status() { return this; }, json() {} });
+
+    assert.equal(calls.summary.where[sequelizeLibrary.Op.or].length, 4);
+    assert.deepEqual(calls.summary.replacements, {
+        orderPhone0: '%94771234567%',
+        orderPhone1: '%0771234567%'
+    });
+    assert.equal(calls.summary.limit, 10);
+    assert.equal(calls.summary.offset, 10);
+});
+
 test('order summary uses allowlisted sorting with a stable tie breaker', async () => {
     const { controller, calls } = createHarness();
     await controller.getOrderSummaries({ query: { sortBy: 'total_amount', sortOrder: 'ASC' } }, {
@@ -165,10 +192,90 @@ test('legacy order list keeps its existing full response and associations', asyn
         'customer', 'creator', 'items', 'addresses', 'payments', 'deliveries',
         'invoices', 'promotions', 'productReviews',
     ]);
+    assert.deepEqual(
+        calls.legacy.include.find(include => include.as === 'items').include
+            .map(include => include.as),
+        ['item', 'variant']
+    );
+    assert.deepEqual(
+        calls.legacy.include.find(include => include.as === 'addresses').include,
+        []
+    );
     assert.deepEqual(response.body, {
         message: 'Orders retrieved successfully',
         data: rows,
     });
+});
+
+test('order detail returns snapshotted delivery relationships directly', async () => {
+    const detail = order({
+        customer: { id: 3, first_name: 'Asha', last_name: 'Perera' },
+        addresses: [{
+            address_type: 'shipping',
+            city: 'Nugegoda',
+            state: 'Western Province',
+            postal_code: '10250',
+            district: { id: 1, district_name: 'Colombo' },
+            area: { id: 8, area_name: 'Nugegoda' },
+        }],
+    });
+    const { controller, calls, response } = createHarness({ detail });
+
+    await controller.getOrderById({ params: { id: '14' } }, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(
+        calls.detail.options.include.find(include => include.as === 'addresses').include
+            .map(include => include.as),
+        ['district', 'area']
+    );
+    assert.equal(calls.matchingAddress, null);
+    assert.equal(response.body.data.addresses[0].district.district_name, 'Colombo');
+    assert.equal(response.body.data.addresses[0].area.area_name, 'Nugegoda');
+    assert.equal(response.body.data.addresses[0].postal_code, '10250');
+});
+
+test('legacy order detail only enriches an exact matching saved customer address', async () => {
+    const shipping = {
+        address_type: 'shipping',
+        recipient_name: 'Asha Perera',
+        phone: '0771234567',
+        address_line_1: '20 Lake Road',
+        address_line_2: null,
+        city: 'Nugegoda',
+        state: 'Western Province',
+        postal_code: null,
+        country: 'Sri Lanka',
+    };
+    const detail = order({
+        customer: { id: 3, first_name: 'Asha', last_name: 'Perera' },
+        addresses: [shipping],
+    });
+    const matchingAddress = {
+        toJSON: () => ({
+            district_id: 1,
+            area_id: 8,
+            district: { id: 1, district_name: 'Colombo' },
+            area: { id: 8, area_name: 'Nugegoda' },
+        }),
+    };
+    const { controller, calls, response } = createHarness({ detail, matchingAddress });
+
+    await controller.getOrderById({ params: { id: '14' } }, response);
+
+    assert.deepEqual(calls.matchingAddress.where, {
+        customer_id: 3,
+        recipient_name: shipping.recipient_name,
+        phone: shipping.phone,
+        address_line_1: shipping.address_line_1,
+        address_line_2: null,
+        city: shipping.city,
+        state: shipping.state,
+        postal_code: null,
+        country: shipping.country,
+    });
+    assert.equal(response.body.data.addresses[0].district.district_name, 'Colombo');
+    assert.equal(response.body.data.addresses[0].area.area_name, 'Nugegoda');
 });
 
 test('summary route retains authentication and orders.view permission', () => {

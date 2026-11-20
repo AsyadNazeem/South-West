@@ -1,5 +1,5 @@
 <script setup>
-import {computed, onMounted, ref, watch} from 'vue'
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue'
 import {useRouter} from 'vue-router'
 
 import deliveryApi from '@/api/deliveryApi'
@@ -20,6 +20,7 @@ const search = ref('')
 const statusFilter = ref('')
 const methodFilter = ref('')
 const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
+let searchDebounceTimer
 
 const deletingId = ref(null)
 
@@ -74,76 +75,17 @@ const changePageSize = async (value) => { pageSize.value = value; page.value = 1
 // Filtered Deliveries
 // ==========================================
 
-const filteredDeliveries = computed(() => {
-  const keyword = search.value
-      .trim()
-      .toLowerCase()
+const filteredDeliveries = computed(() => deliveries.value)
 
-  return deliveries.value.filter(delivery => {
-    const orderNumber =
-        delivery.order?.order_number ||
-        ''
-
-    const deliveryReference =
-        delivery.delivery_reference ||
-        ''
-
-    const recipientName =
-        delivery.recipient_name ||
-        ''
-
-    const recipientPhone =
-        delivery.recipient_phone ||
-        ''
-
-    const trackingNumber =
-        delivery.tracking_number ||
-        ''
-
-    const courierName =
-        delivery.courier_name ||
-        ''
-
-    const matchesSearch =
-        !keyword ||
-        deliveryReference
-            .toLowerCase()
-            .includes(keyword) ||
-        orderNumber
-            .toLowerCase()
-            .includes(keyword) ||
-        recipientName
-            .toLowerCase()
-            .includes(keyword) ||
-        recipientPhone
-            .toLowerCase()
-            .includes(keyword) ||
-        trackingNumber
-            .toLowerCase()
-            .includes(keyword) ||
-        courierName
-            .toLowerCase()
-            .includes(keyword)
-
-    const matchesStatus =
-        !statusFilter.value ||
-        delivery.delivery_status ===
-        statusFilter.value
-
-    const matchesMethod =
-        !methodFilter.value ||
-        delivery.delivery_method ===
-        methodFilter.value
-
-    return (
-        matchesSearch &&
-        matchesStatus &&
-        matchesMethod
-    )
-  })
+watch(search, () => {
+  window.clearTimeout(searchDebounceTimer)
+  paginationRequestSequence.invalidate()
+  page.value = 1
+  searchDebounceTimer = window.setTimeout(loadDeliveries, 300)
 })
 
-watch([search, statusFilter, methodFilter], () => {
+watch([statusFilter, methodFilter], () => {
+  window.clearTimeout(searchDebounceTimer)
   page.value = 1
   loadDeliveries()
 })
@@ -357,6 +299,10 @@ const resetFilters = () => {
 onMounted(() => {
   loadDeliveries()
 })
+onBeforeUnmount(() => {
+  window.clearTimeout(searchDebounceTimer)
+  paginationRequestSequence.invalidate()
+})
 </script>
 
 <template>
@@ -453,7 +399,7 @@ onMounted(() => {
           <input
               v-model="search"
               type="text"
-              placeholder="Search delivery, order, recipient, tracking..."
+              placeholder="Search by delivery, order, name or phone..."
               class="search-input"
           />
 

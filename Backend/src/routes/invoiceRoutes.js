@@ -5,6 +5,7 @@ const express = require('express');
 const router = express.Router();
 
 const {
+    downloadInvoicePdf,
     getInvoices,
     getInvoiceById
 } = require('../controllers/invoiceController');
@@ -21,6 +22,13 @@ router.get(
 );
 
 // GET INVOICE BY ID
+router.get(
+    '/:id/pdf',
+    authenticate,
+    requirePermission('invoices.view'),
+    downloadInvoicePdf
+);
+
 router.get(
     '/:id',
     authenticate,

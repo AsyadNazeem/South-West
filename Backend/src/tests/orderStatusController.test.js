@@ -165,7 +165,11 @@ const controller = proxyquire(
             async notifyAdmins() {}
         },
         '../services/auditLogService': auditService,
-        '../services/emailService': emailService
+        '../services/emailService': emailService,
+        '../services/invoicePdfService': {
+            async loadOrderInvoiceData() { return null; },
+            async getOrderInvoiceAttachment() { return null; }
+        }
     }
 );
 

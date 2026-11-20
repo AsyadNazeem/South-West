@@ -3,6 +3,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const sharp = require('sharp');
+const { deriveInvoiceLifecycle } = require('./invoicePresentationService');
 
 const COMPANY = {
     name: 'South West',
@@ -10,6 +11,10 @@ const COMPANY = {
     email: 'support@southwest.lk',
     phone: process.env.SOUTH_WEST_PHONE || ''
 };
+
+function getCompanyDetails() {
+    return { ...COMPANY };
+}
 
 function ascii(value) {
     return String(value ?? '')
@@ -80,9 +85,22 @@ function formatDate(value) {
 }
 
 function getItemName(entry) {
-    const name = entry.item?.item_name || entry.item?.name || entry.name || 'Product';
+    return entry.item?.item_name || entry.item?.name || entry.name || 'Product';
+}
+
+function getVariantText(entry) {
     const variant = entry.variant?.variant_name || entry.variant?.name || entry.variant_name;
-    return variant ? `${name} - ${variant}` : name;
+    const attributes = entry.variant?.attributes;
+    const attributeText = attributes && typeof attributes === 'object'
+        ? Object.entries(attributes)
+            .filter(([, value]) => value !== null && value !== undefined && value !== '')
+            .map(([key, value]) => `${key}: ${Array.isArray(value)
+                ? value.join(', ')
+                : typeof value === 'object' ? JSON.stringify(value) : value}`)
+            .join(' / ')
+        : '';
+    const variantText = [variant, attributeText].filter(Boolean).join(' / ');
+    return variantText || '-';
 }
 
 function paymentMethodLabel(value) {
@@ -93,6 +111,27 @@ function paymentMethodLabel(value) {
         mintpay: 'Mintpay'
     };
     return labels[String(value || '').toLowerCase()] || ascii(value || 'Not provided');
+}
+
+function cellLines(value, width, maximumLines = 2) {
+    const source = ascii(value || '-');
+    const lines = [];
+    let remaining = source;
+    while (remaining && lines.length < maximumLines) {
+        if (remaining.length <= width) {
+            lines.push(remaining);
+            remaining = '';
+            break;
+        }
+        let splitAt = remaining.lastIndexOf(' ', width);
+        if (splitAt < Math.floor(width / 2)) splitAt = width;
+        lines.push(remaining.slice(0, splitAt).trim());
+        remaining = remaining.slice(splitAt).trim();
+    }
+    if (remaining && lines.length) {
+        lines[lines.length - 1] = `${lines.at(-1).slice(0, Math.max(0, width - 3))}...`;
+    }
+    return lines.length ? lines : ['-'];
 }
 
 async function getLogoImage() {
@@ -119,7 +158,7 @@ async function generateInvoicePdf(order, { draft = false } = {}) {
 
     const logo = await getLogoImage();
     const items = order.items || [];
-    const perPage = 22;
+    const perPage = 14;
     const groups = [];
     for (let index = 0; index < Math.max(items.length, 1); index += perPage) {
         groups.push(items.slice(index, index + perPage));
@@ -133,66 +172,119 @@ async function generateInvoicePdf(order, { draft = false } = {}) {
         const line = (x1, y1, x2, y2) => commands.push(`0.82 0.86 0.83 RG 0.7 w ${x1} ${y1} m ${x2} ${y2} l S`);
 
         commands.push('1 1 1 rg 0 0 595 842 re f');
+        if (draft) {
+            commands.push(
+                'q 0.93 g BT /F1 72 Tf 0.707 0.707 -0.707 0.707 165 350 Tm (DRAFT) Tj ET Q'
+            );
+        }
         if (logo) {
-            const scale = Math.min(150 / logo.width, 48 / logo.height);
+            const scale = Math.min(120 / logo.width, 52 / logo.height);
             const width = logo.width * scale;
             const height = logo.height * scale;
-            commands.push(`q ${width} 0 0 ${height} 34 ${782 - height / 2} cm /Logo Do Q`);
+            commands.push(`q ${width} 0 0 ${height} 34 ${770} cm /Logo Do Q`);
         } else {
-            text(34, 803, 20, COMPANY.name, '1 1 1');
+            text(34, 800, 20, COMPANY.name);
         }
-        commands.push('0.10 0.24 0.19 RG 0.8 w 34 770 m 560 770 l S');
-        text(400, 810, 10, COMPANY.website);
-        text(34, 738, 22, draft ? 'DRAFT INVOICE' : 'INVOICE');
-        text(34, 715, 10, `Invoice: ${order.invoice_number || order.order_number}`);
-        text(34, 699, 10, `Order: ${order.order_number}`);
-        text(34, 683, 10, `Date: ${formatDate(order.order_date || order.created_at)}`);
-        text(34, 660, 11, 'BILL TO');
+        text(34, 756, 9, COMPANY.website, '0.35 0.40 0.37');
+        text(34, 742, 9, COMPANY.email, '0.35 0.40 0.37');
+        if (COMPANY.phone) text(34, 728, 9, COMPANY.phone, '0.35 0.40 0.37');
+        text(405, 803, 22, draft ? 'DRAFT INVOICE' : 'INVOICE');
+        text(493, 782, 10, draft ? 'Status: Draft' : 'Status: Final');
+        text(345, 765, 8, 'Invoice Number', '0.42 0.48 0.45');
+        text(345, 753, 8, order.invoice_number || order.order_number);
+        text(345, 740, 8, 'Invoice Date', '0.42 0.48 0.45');
+        text(460, 740, 8, formatDate(order.invoice_date || order.order_date));
+        text(345, 728, 8, 'Order Number', '0.42 0.48 0.45');
+        text(345, 716, 8, order.order_number);
+        text(345, 703, 8, 'Order Date', '0.42 0.48 0.45');
+        text(460, 703, 8, formatDate(order.order_date || order.created_at));
+        commands.push('0.10 0.24 0.19 RG 2 w 34 690 m 560 690 l S');
+
+        text(34, 667, 10, 'CUSTOMER');
+        text(310, 667, 10, 'DELIVERY ADDRESS');
         const customer = order.customer;
-        text(34, 644, 10, customer
-            ? `${customer.first_name || ''} ${customer.last_name || ''}`.trim()
-            : order.addresses?.[0]?.recipient_name || order.customer_email || 'Customer');
-        text(34, 628, 9, customer?.email || order.customer_email || '');
         const address = order.addresses?.find(value => value.address_type === 'shipping') || order.addresses?.[0];
-        if (address) text(34, 612, 9, [address.address_line_1, address.address_line_2, address.city].filter(Boolean).join(', ').slice(0, 90));
-        text(34, 580, 9, 'PRODUCT / VARIANT');
-        text(350, 580, 9, 'QTY');
-        text(402, 580, 9, 'UNIT PRICE');
-        text(500, 580, 9, 'LINE TOTAL');
-        line(34, 572, 560, 572);
-        let y = 553;
+        text(34, 648, 10, address?.recipient_name || (customer
+            ? `${customer.first_name || ''} ${customer.last_name || ''}`.trim()
+            : order.customer_email || 'Customer'));
+        text(34, 632, 9, address?.phone || customer?.phone || '-');
+        text(34, 616, 9, order.customer_email || customer?.email || '-');
+        if (address) {
+            text(310, 648, 9, String(address.address_line_1 || '-').slice(0, 44));
+            if (address.address_line_2) text(310, 632, 9, String(address.address_line_2).slice(0, 44));
+            text(310, 616, 9, `District: ${address.district?.district_name || '-'}`);
+            text(310, 600, 9, `Delivery Area: ${address.area?.area_name || '-'}`);
+            if (address.postal_code) text(310, 584, 9, `Postal Code: ${address.postal_code}`);
+        } else {
+            text(310, 648, 9, '-');
+        }
+        commands.push('0.95 0.97 0.96 rg 34 546 526 25 re f');
+        text(40, 555, 8, 'PRODUCT', '0.34 0.40 0.37');
+        text(172, 555, 8, 'SKU', '0.34 0.40 0.37');
+        text(245, 555, 8, 'VARIANT', '0.34 0.40 0.37');
+        text(352, 555, 8, 'QTY', '0.34 0.40 0.37');
+        text(385, 555, 8, 'UNIT PRICE', '0.34 0.40 0.37');
+        text(455, 555, 8, 'DISCOUNT', '0.34 0.40 0.37');
+        text(520, 555, 8, 'TOTAL', '0.34 0.40 0.37');
+        let y = 529;
         group.forEach(entry => {
             const unitPrice = Number(entry.unit_price || 0);
             const qty = Number(entry.quantity || 0);
             const lineTotal = Number(entry.line_total ?? unitPrice * qty);
-            text(34, y, 9, getItemName(entry).slice(0, 52));
-            text(350, y, 9, String(qty));
-            text(402, y, 9, money(unitPrice));
-            text(500, y, 9, money(lineTotal));
-            y -= 16;
+            const sku = entry.variant?.variant_sku || entry.item?.item_code || '-';
+            cellLines(getItemName(entry), 28).forEach((value, index) => {
+                text(40, y - (index * 9), 7, value);
+            });
+            text(172, y, 6, String(sku).slice(0, 18));
+            cellLines(getVariantText(entry), 22).forEach((value, index) => {
+                text(245, y - (index * 9), 6, value);
+            });
+            text(355, y, 8, String(qty));
+            text(385, y, 7, money(unitPrice));
+            text(455, y, 7, money(entry.discount_amount));
+            text(520, y, 7, money(lineTotal));
+            line(34, y - 13, 560, y - 13);
+            y -= 26;
         });
 
         if (pageIndex === groups.length - 1) {
             const payment = order.payments?.find(record => record.payment_status === 'paid') || order.payments?.[0];
-            y = Math.max(y - 25, 170);
-            line(330, y + 15, 560, y + 15);
-            text(350, y, 9, `Subtotal: ${money(order.subtotal)}`);
-            y -= 17;
-            text(350, y, 9, `Discount: - ${money(order.discount_amount)}`);
-            y -= 17;
-            text(350, y, 9, `Delivery: ${money(order.normal_delivery_amount ?? order.shipping_amount)}`);
-            if (Number(order.additional_shipping_amount || 0) > 0) {
-                y -= 17;
-                text(350, y, 9, `Additional shipping: ${money(order.additional_shipping_amount)}`);
+            const paidAmount = (order.payments || [])
+                .filter(record => record.payment_status === 'paid')
+                .reduce((total, record) => total + Number(record.amount || 0), 0);
+            const outstanding = Math.max(0, Number(order.total_amount || 0) - paidAmount);
+            y = Math.max(y - 22, 190);
+            const cardTop = y + 17;
+            commands.push(`0.88 0.91 0.89 RG 0.8 w 34 ${y - 92} 260 112 re S`);
+            text(48, y, 10, 'PAYMENT INFORMATION');
+            text(48, y - 20, 8, `Payment Method: ${paymentMethodLabel(payment?.payment_method || 'cash')}`);
+            text(48, y - 36, 8, `Payment Status: ${payment?.payment_status || order.payment_status || 'unpaid'}`);
+            text(48, y - 52, 8, `Payment Reference: ${payment?.payment_reference || payment?.transaction_reference || '-'}`);
+            text(48, y - 68, 8, `Payment Date: ${payment?.payment_date ? formatDate(payment.payment_date) : '-'}`);
+            text(48, y - 84, 8, `Amount Paid: ${money(paidAmount)}  |  Outstanding: ${money(outstanding)}`);
+
+            let totalsY = cardTop;
+            line(330, totalsY + 4, 560, totalsY + 4);
+            text(350, totalsY - 12, 9, `Subtotal: ${money(order.subtotal)}`);
+            totalsY -= 29;
+            if (Number(order.discount_amount || 0) > 0) {
+                text(350, totalsY, 9, `Discount: - ${money(order.discount_amount)}`);
+                totalsY -= 17;
+                text(350, totalsY, 9, `Actual Product Value: ${money(Number(order.subtotal || 0) - Number(order.discount_amount || 0))}`);
+                totalsY -= 17;
             }
-            y -= 19;
-            text(350, y, 12, `TOTAL: ${money(order.total_amount)}`);
-            y -= 22;
-            text(34, y, 9, `Payment method: ${paymentMethodLabel(payment?.payment_method || 'cash')}`);
-            text(34, y - 15, 9, `Payment status: ${draft ? 'Unpaid - payment not collected' : 'Paid'}${payment?.payment_date ? ` - ${formatDate(payment.payment_date)}` : ''}`);
+            text(350, totalsY, 9, `Tax: ${money(order.tax_amount)}`);
+            totalsY -= 17;
+            text(350, totalsY, 9, `Delivery Charge: ${money(order.shipping_amount)}`);
+            totalsY -= 22;
+            line(330, totalsY + 12, 560, totalsY + 12);
+            text(350, totalsY - 4, 12, `FINAL TOTAL: ${money(order.total_amount)}`);
         }
-        text(34, 24, 8, `${COMPANY.name} | ${COMPANY.email}${COMPANY.phone ? ` | ${COMPANY.phone}` : ''}`, '0.35 0.40 0.37');
-        if (groups.length > 1) text(520, 24, 8, `Page ${pageIndex + 1} of ${groups.length}`, '0.35 0.40 0.37');
+        // Footer appears on every invoice page.
+        line(34, 70, 560, 70);
+        text(34, 53, 9, 'Thank you for shopping with South West!');
+        text(34, 37, 8, `${COMPANY.website} | ${COMPANY.email}`, '0.35 0.40 0.37');
+        text(480, 24, 8, `Page ${pageIndex + 1} of ${groups.length}`, '0.35 0.40 0.37');
         return commands.join('\n');
     });
 
@@ -230,20 +322,89 @@ async function loadOrderInvoiceData(orderId, transaction) {
         transaction,
         include: [
             { model: models.OrderItem, as: 'items', include: [
-                { model: models.Item, as: 'item', attributes: ['item_name'] },
-                { model: models.ItemVariant, as: 'variant', attributes: ['variant_name'] }
+                { model: models.Item, as: 'item', attributes: ['item_name', 'item_code'] },
+                { model: models.ItemVariant, as: 'variant', attributes: ['variant_name', 'variant_sku', 'attributes'] }
             ] },
-            { model: models.OrderAddress, as: 'addresses' },
+            { model: models.OrderAddress, as: 'addresses', include: [
+                { model: models.DeliveryDistrict, as: 'district', attributes: ['district_name'], required: false },
+                { model: models.DeliveryArea, as: 'area', attributes: ['area_name'], required: false }
+            ] },
             { model: models.Payment, as: 'payments' },
+            { model: models.Delivery, as: 'deliveries' },
             { model: models.Customer, as: 'customer', attributes: ['id', 'first_name', 'last_name', 'email'] },
             { model: models.Invoice, as: 'invoices' }
         ]
     });
 }
 
-function invoiceFilename(orderNumber, draft = false) {
-    const safeNumber = ascii(orderNumber).replace(/[^A-Za-z0-9_-]/g, '-');
-    return `South-West-Order-${safeNumber}-${draft ? 'Draft-' : ''}Invoice.pdf`;
+function invoiceFilename(invoiceNumber, draft = false) {
+    const safeNumber = ascii(invoiceNumber).replace(/[^A-Za-z0-9_-]/g, '-');
+    return `SouthWest-Invoice-${safeNumber}-${draft ? 'Draft' : 'Final'}.pdf`;
 }
 
-module.exports = { generateInvoicePdf, invoiceFilename, loadOrderInvoiceData };
+function plain(record) {
+    return typeof record?.toJSON === 'function' ? record.toJSON() : record;
+}
+
+async function generateInvoiceDocument(invoiceRecord, orderRecord) {
+    const invoice = plain(invoiceRecord);
+    const order = plain(orderRecord || invoice?.order);
+
+    if (!invoice || !order) {
+        throw new Error('Saved invoice and order data are required.');
+    }
+
+    const lifecycle = deriveInvoiceLifecycle({ ...invoice, order });
+    const draft = !lifecycle.is_final;
+    const content = await generateInvoicePdf({
+        ...order,
+        invoice_number: invoice.invoice_number,
+        invoice_date: invoice.invoice_date,
+        payment_status: lifecycle.is_final ? 'paid' : order.payment_status,
+        subtotal: invoice.subtotal,
+        discount_amount: invoice.discount_amount,
+        tax_amount: invoice.tax_amount,
+        shipping_amount: invoice.shipping_amount,
+        total_amount: invoice.total_amount
+    }, { draft });
+
+    return {
+        content,
+        contentType: 'application/pdf',
+        documentStatus: draft ? 'draft' : 'final',
+        filename: invoiceFilename(invoice.invoice_number, draft),
+        invoiceNumber: invoice.invoice_number
+    };
+}
+
+async function getOrderInvoiceAttachment(orderId, { finalOnly = false } = {}) {
+    const orderRecord = await loadOrderInvoiceData(orderId);
+    if (!orderRecord) return null;
+
+    const order = plain(orderRecord);
+    const invoices = [...(order.invoices || [])].sort(
+        (left, right) => Number(left.id || 0) - Number(right.id || 0)
+    );
+    const invoice = invoices[0];
+    if (!invoice) return null;
+
+    const document = await generateInvoiceDocument(invoice, order);
+    if (finalOnly && document.documentStatus !== 'final') return null;
+
+    return {
+        filename: document.filename,
+        content: document.content,
+        contentType: document.contentType,
+        documentStatus: document.documentStatus,
+        invoiceNumber: document.invoiceNumber
+    };
+}
+
+module.exports = {
+    generateInvoicePdf,
+    generateInvoiceDocument,
+    getOrderInvoiceAttachment,
+    getCompanyDetails,
+    invoiceFilename,
+    loadOrderInvoiceData
+};

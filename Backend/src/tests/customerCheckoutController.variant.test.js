@@ -330,11 +330,25 @@ function createHarness(options = {}) {
             },
 
             '../services/emailService': {
-                async sendOrderConfirmationEmail() {
+                async sendOrderConfirmationEmail(details) {
                     calls.customerEmails = (calls.customerEmails || 0) + 1;
+                    calls.customerEmailDetails = details;
                 },
-                async sendAdminNewOrderEmail() {
+                async sendAdminNewOrderEmail(details) {
                     calls.adminEmails = (calls.adminEmails || 0) + 1;
+                    calls.adminEmailDetails = details;
+                }
+            },
+
+            '../services/invoicePdfService': {
+                async getOrderInvoiceAttachment(orderId) {
+                    calls.invoiceAttachmentOrderId = orderId;
+                    return {
+                        filename: 'SouthWest-Invoice-SWI-TEST-Draft.pdf',
+                        content: Buffer.from('%PDF-test'),
+                        contentType: 'application/pdf',
+                        documentStatus: 'draft'
+                    };
                 }
             },
 
@@ -586,6 +600,11 @@ test(
 
         assert.equal(h.res.statusCode, 201);
         assert.equal(h.calls.orderCreated, true);
+        assert.equal(h.calls.invoiceAttachmentOrderId, 50);
+        assert.equal(
+            h.calls.adminEmailDetails.invoiceAttachment.documentStatus,
+            'draft'
+        );
     }
 );
 

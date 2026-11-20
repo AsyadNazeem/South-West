@@ -10,7 +10,6 @@ const router = useRouter()
 
 const loading = ref(true)
 const submitting = ref(false)
-const downloadingDocument = ref(false)
 const error = ref('')
 const notice = ref('')
 
@@ -339,38 +338,6 @@ function formatOrderDate(value) {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('en-LK', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-const canDownloadOrderDocument = computed(() => {
-  if (!order.value) return false
-  const method = String(order.value.payment_method || '').toLowerCase()
-  const status = String(order.value.payment_status || '').toLowerCase()
-  return method === 'cash' || status === 'paid'
-})
-
-async function downloadOrderDocument() {
-  const id = order.value?.id
-  if (!id || downloadingDocument.value) return
-  downloadingDocument.value = true
-  try {
-    const path = isGuest.value
-      ? `/guest-checkout/orders/${id}/document`
-      : `/customer-orders/${id}/document`
-    const response = await api.get(path, {
-      responseType: 'blob',
-      headers: isGuest.value ? { 'x-guest-checkout-token': guestToken.value } : undefined
-    })
-    const blobUrl = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
-    const anchor = document.createElement('a')
-    anchor.href = blobUrl
-    anchor.download = `South-West-Order-${order.value.order_number || id}-${order.value.payment_status === 'paid' ? '' : 'Draft-'}Invoice.pdf`
-    anchor.click()
-    URL.revokeObjectURL(blobUrl)
-  } catch (error) {
-    notice.value = 'The order document could not be downloaded. Please try again later.'
-  } finally {
-    downloadingDocument.value = false
-  }
 }
 
 function addressBody(address) {
@@ -1058,9 +1025,6 @@ const payload = {
       sessionStorage.removeItem(guestAddressStorageKey.value)
 
       // A Buy Now session must not clear the customer's normal guest cart.
-      // Keep the guest session token until the order document can be
-      // downloaded; the consumed session cannot be used to place another order.
-
       guestCart.value = { ...guestCart.value, items: [] }
     } else if (!directPurchase.value) {
       cart.value = { ...cart.value, items: [] }
@@ -1351,16 +1315,6 @@ onMounted(loadCheckout)
   </p>
 
   <div class="actions">
-    <button
-      v-if="canDownloadOrderDocument"
-      type="button"
-      class="primary-button"
-      :disabled="downloadingDocument"
-      @click="downloadOrderDocument"
-    >
-      {{ downloadingDocument ? 'Preparing document…' : 'Download Order Document' }}
-    </button>
-
     <button
       v-if="!isGuest"
       type="button"

@@ -18,7 +18,8 @@ const {
     sendDeliveryTrackingEmail,
     sendOrderStatusEmail
 } = require('../services/emailService');
-const { loadOrderInvoiceData, generateInvoicePdf, invoiceFilename } = require('../services/invoicePdfService');
+const { loadOrderInvoiceData, getOrderInvoiceAttachment } = require('../services/invoicePdfService');
+const { buildOrderPhoneSearch } = require('../utils/orderPhoneSearch');
 
 const ORDER_DELIVERED_LABEL = 'Order Completed';
 
@@ -82,14 +83,24 @@ exports.getAllDeliveries = async (req, res) => {
         const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
         const search = String(req.query.search || '').trim();
         const where = {};
-        if (search) where[Op.or] = [
-            { delivery_reference: { [Op.like]: `%${search}%` } },
-            { tracking_number: { [Op.like]: `%${search}%` } },
-            { courier_name: { [Op.like]: `%${search}%` } },
-            { recipient_name: { [Op.like]: `%${search}%` } },
-            { recipient_phone: { [Op.like]: `%${search}%` } },
-            { '$order.order_number$': { [Op.like]: `%${search}%` } },
-        ];
+        let replacements;
+        if (search) {
+            where[Op.or] = [
+                { delivery_reference: { [Op.like]: `%${search}%` } },
+                { tracking_number: { [Op.like]: `%${search}%` } },
+                { courier_name: { [Op.like]: `%${search}%` } },
+                { recipient_name: { [Op.like]: `%${search}%` } },
+                { recipient_phone: { [Op.like]: `%${search}%` } },
+                { '$order.order_number$': { [Op.like]: `%${search}%` } },
+            ];
+            const phoneSearch = buildOrderPhoneSearch(search, {
+                orderAlias: 'order',
+                directPhoneColumns: ['Delivery.recipient_phone'],
+                replacementPrefix: 'deliveryPhone'
+            });
+            if (phoneSearch) where[Op.or].push(phoneSearch.condition);
+            replacements = phoneSearch?.replacements;
+        }
         if (req.query.status) where.delivery_status = req.query.status;
         if (req.query.method) where.delivery_method = req.query.method;
         const result = await Delivery.findAndCountAll({
@@ -101,13 +112,16 @@ exports.getAllDeliveries = async (req, res) => {
                 },
                 {
                     model: DeliveryStatusHistory,
-                    as: 'statusHistory'
+                    as: 'statusHistory',
+                    separate: true
                 }
             ],
             order: [['id', 'DESC']],
             limit: paginationEnabled ? pageSize : undefined,
             offset: paginationEnabled ? (page - 1) * pageSize : undefined,
-            distinct: true
+            distinct: true,
+            subQuery: false,
+            replacements
         });
         const deliveries = result.rows;
 
@@ -125,7 +139,11 @@ exports.getAllDeliveries = async (req, res) => {
             pagination: { page, pageSize, total: result.count, totalPages: Math.ceil(result.count / pageSize) }
         });
     } catch (error) {
-        console.error('Get deliveries error:', error);
+        console.error('Get deliveries error:', {
+            name: error?.name || 'Error',
+            code: error?.parent?.code || error?.original?.code || null,
+            requestId: req.id || req.requestId || null
+        });
 
         await auditDeliveryAction(req, {
             action: 'DELIVERY_LIST_VIEW_FAILED',
@@ -726,19 +744,11 @@ exports.updateDelivery = async (req, res) => {
         if (completionEmailPayload) {
             try {
                 const invoiceOrder = await loadOrderInvoiceData(completionEmailPayload.orderId);
-                const paidInvoice = invoiceOrder?.payment_status === 'paid';
                 const payment = invoiceOrder?.payments?.find(record => record.payment_status === 'paid') || invoiceOrder?.payments?.[0];
-                const invoice = invoiceOrder?.invoices?.find(record => record.status === 'paid');
-                const invoiceAttachment = paidInvoice && invoice
-                    ? {
-                        filename: invoiceFilename(invoiceOrder.order_number),
-                        content: await generateInvoicePdf({
-                            ...invoiceOrder.toJSON(),
-                            invoice_number: invoice.invoice_number
-                        }),
-                        contentType: 'application/pdf'
-                    }
-                    : null;
+                const invoiceAttachment = await getOrderInvoiceAttachment(
+                    completionEmailPayload.orderId,
+                    { finalOnly: true }
+                );
                 await sendOrderStatusEmail({
                     ...completionEmailPayload,
                     orderDetails: invoiceOrder ? {

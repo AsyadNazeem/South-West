@@ -138,9 +138,17 @@ export function productSchema(product, path, image, selectedVariant = null) {
     priceCurrency: 'LKR',
     price: price.toFixed(2),
     url: canonicalUrl.href,
-    availability: inStock
-      ? 'https://schema.org/InStock'
-      : 'https://schema.org/OutOfStock'
+    ...(
+      Number.isFinite(stockQuantity) ||
+      stockSource?.is_active === false ||
+      stockSource?.in_stock === false
+        ? {
+            availability: inStock
+              ? 'https://schema.org/InStock'
+              : 'https://schema.org/OutOfStock'
+          }
+        : {}
+    )
   }
 
   return {

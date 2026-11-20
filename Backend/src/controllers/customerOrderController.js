@@ -7,8 +7,7 @@ const {
     Item,
     OrderAddress,
     Delivery,
-    Payment,
-    Invoice
+    Payment
 } = require('../models');
 
 const { recordAuditLog } = require('../services/auditLogService');
@@ -306,23 +305,6 @@ async function getMyOrderById(req, res) {
                         'amount',
                         'transaction_reference',
                         'payment_date'
-                    ],
-                    required: false
-                },
-                {
-                    model: Invoice,
-                    as: 'invoices',
-                    attributes: [
-                        'invoice_number',
-                        'invoice_date',
-                        'status',
-                        'subtotal',
-                        'discount_amount',
-                        'tax_amount',
-                        'shipping_amount',
-                        'total_amount',
-                        'paid_amount',
-                        'balance_amount'
                     ],
                     required: false
                 }

@@ -189,8 +189,14 @@ const controller = proxyquire('../controllers/deliveryController', {
                 toJSON() { return { order_number: this.order_number }; }
             };
         },
-        async generateInvoicePdf() { return Buffer.from('%PDF-test'); },
-        invoiceFilename() { return 'test-invoice.pdf'; }
+        async getOrderInvoiceAttachment() {
+            return {
+                filename: 'SouthWest-Invoice-SWI-TEST-501-Final.pdf',
+                content: Buffer.from('%PDF-test'),
+                contentType: 'application/pdf',
+                documentStatus: 'final'
+            };
+        }
     }
 });
 

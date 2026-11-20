@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import paymentApi from '@/api/paymentApi'
 import AppPagination from '@/components/common/AppPagination.vue'
@@ -25,6 +25,7 @@ const search = ref('')
 const statusFilter = ref('')
 const methodFilter = ref('')
 const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
+let searchDebounceTimer
 
 const deletingId = ref(null)
 
@@ -71,46 +72,17 @@ const changePageSize = async (value) => { pageSize.value = value; page.value = 1
 // Filtering
 // ==========================================
 
-const filteredPayments = computed(() => {
-  const searchText = search.value.trim().toLowerCase()
+const filteredPayments = computed(() => payments.value)
 
-  return payments.value.filter(payment => {
-    const paymentReference =
-        payment.payment_reference?.toLowerCase() || ''
-
-    const transactionReference =
-        payment.transaction_reference?.toLowerCase() || ''
-
-    const orderNumber =
-        payment.order?.order_number?.toLowerCase() || ''
-
-    const paymentMethod =
-        payment.payment_method?.toLowerCase() || ''
-
-    const matchesSearch =
-        !searchText ||
-        paymentReference.includes(searchText) ||
-        transactionReference.includes(searchText) ||
-        orderNumber.includes(searchText) ||
-        paymentMethod.includes(searchText)
-
-    const matchesStatus =
-        !statusFilter.value ||
-        payment.payment_status === statusFilter.value
-
-    const matchesMethod =
-        !methodFilter.value ||
-        payment.payment_method === methodFilter.value
-
-    return (
-        matchesSearch &&
-        matchesStatus &&
-        matchesMethod
-    )
-  })
+watch(search, () => {
+  window.clearTimeout(searchDebounceTimer)
+  paginationRequestSequence.invalidate()
+  page.value = 1
+  searchDebounceTimer = window.setTimeout(loadPayments, 300)
 })
 
-watch([search, statusFilter, methodFilter], () => {
+watch([statusFilter, methodFilter], () => {
+  window.clearTimeout(searchDebounceTimer)
   page.value = 1
   loadPayments()
 })
@@ -251,6 +223,10 @@ const totalAmount = computed(() => {
 // ==========================================
 
 onMounted(loadPayments)
+onBeforeUnmount(() => {
+  window.clearTimeout(searchDebounceTimer)
+  paginationRequestSequence.invalidate()
+})
 </script>
 
 <template>
@@ -326,7 +302,7 @@ onMounted(loadPayments)
         <input
             v-model="search"
             type="text"
-            placeholder="Search payment reference, transaction or order..."
+            placeholder="Search by payment, order, name or phone..."
         />
       </div>
 

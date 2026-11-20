@@ -373,7 +373,7 @@ const formatType = (type) => {
         <input
             v-model="search"
             type="text"
-            placeholder="Search order number, customer..."
+            placeholder="Search by name, order number or phone..."
         />
       </div>
 

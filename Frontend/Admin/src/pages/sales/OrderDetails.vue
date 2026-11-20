@@ -1,7 +1,14 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Check, Copy } from 'lucide-vue-next'
 import orderApi from '@/api/orderApi'
+import { hasPermission } from '@/auth/authorization'
+import {
+  buildFullShippingAddress,
+  getOrderSummaryRows,
+  getShippingDetails
+} from '@/utils/orderDetails'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,6 +20,10 @@ const savingStatus = ref(false)
 const statusMessage = ref('')
 const statusError = ref('')
 const statusDialogOpen = ref(false)
+const copiedField = ref('')
+const copyError = ref('')
+const copySection = ref('')
+let copyStatusTimer
 
 const modalStatus = ref('')
 const statusReason = ref('')
@@ -84,6 +95,21 @@ const shippingAddress = computed(() =>
   )
 )
 
+const shippingDetails = computed(() =>
+  getShippingDetails(shippingAddress.value, customerName.value)
+)
+
+const shippingFields = computed(() => [
+  { key: 'customerName', label: 'Customer Name', value: shippingDetails.value.customerName },
+  { key: 'deliveryAddress', label: 'Delivery Address', value: shippingDetails.value.deliveryAddress },
+  { key: 'district', label: 'District', value: shippingDetails.value.district },
+  { key: 'area', label: 'Area', value: shippingDetails.value.area },
+  { key: 'postalCode', label: 'Postal Code', value: shippingDetails.value.postalCode, optional: true },
+  { key: 'phone', label: 'Contact Number', value: shippingDetails.value.phone }
+].filter(field => !field.optional || field.value))
+
+const summaryRows = computed(() => getOrderSummaryRows(order.value || {}))
+
 const items = computed(() => order.value?.items || [])
 const payments = computed(() => order.value?.payments || [])
 const deliveries = computed(() => order.value?.deliveries || [])
@@ -126,6 +152,49 @@ const formatLabel = (value) => {
     .replaceAll('_', ' ')
     .replace(/\b\w/g, character => character.toUpperCase())
 }
+
+const displayValue = value => value || '-'
+
+const clearCopyStatusLater = () => {
+  window.clearTimeout(copyStatusTimer)
+  copyStatusTimer = window.setTimeout(() => {
+    copiedField.value = ''
+    copyError.value = ''
+    copySection.value = ''
+  }, 2200)
+}
+
+const copyValue = async (value, key, section = 'shipping') => {
+  copiedField.value = ''
+  copyError.value = ''
+  copySection.value = section
+
+  if (!value || !navigator.clipboard?.writeText) {
+    copyError.value = 'Copy is unavailable in this browser.'
+    clearCopyStatusLater()
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(value)
+    copiedField.value = key
+  } catch {
+    copyError.value = 'Could not copy. Please select the text manually.'
+  }
+
+  clearCopyStatusLater()
+}
+
+const copyFullAddress = () => copyValue(
+  buildFullShippingAddress(shippingDetails.value),
+  'fullAddress'
+)
+
+const copyAmount = row => copyValue(
+  `${row.negative ? '-' : ''}${Number(row.value || 0).toFixed(2)}`,
+  `amount-${row.key}`,
+  'summary'
+)
 
 const isHttpUrl = value => {
   try {
@@ -322,6 +391,7 @@ const loadOrder = async () => {
 }
 
 const goBack = () => router.push('/admin/sales/orders')
+const viewInvoice = id => router.push(`/admin/sales/invoices/${id}`)
 
 watch(() => route.params.id, () => {
   resetStatusDialog()
@@ -329,6 +399,7 @@ watch(() => route.params.id, () => {
 })
 
 onMounted(loadOrder)
+onBeforeUnmount(() => window.clearTimeout(copyStatusTimer))
 </script>
 
 <template>
@@ -584,11 +655,46 @@ onMounted(loadOrder)
               <div>
                 <h2>Shipping Address</h2>
               </div>
+              <button
+                v-if="shippingAddress"
+                type="button"
+                class="copy-full-button"
+                @click="copyFullAddress"
+              >
+                <Check v-if="copiedField === 'fullAddress'" :size="15" aria-hidden="true" />
+                <Copy v-else :size="15" aria-hidden="true" />
+                {{ copiedField === 'fullAddress' ? 'Copied' : 'Copy Full Address' }}
+              </button>
             </div>
 
-            <div v-if="shippingAddress" class="address-block">
-              <p v-for="(line, index) in formatAddress(shippingAddress)" :key="index">
-                {{ line }}
+            <div v-if="shippingAddress" class="shipping-address-grid">
+              <div
+                v-for="field in shippingFields"
+                :key="field.key"
+                class="shipping-field"
+              >
+                <span class="shipping-label">{{ field.label }}</span>
+                <span class="shipping-value">{{ displayValue(field.value) }}</span>
+                <button
+                  type="button"
+                  class="copy-field-button"
+                  :disabled="!field.value"
+                  :aria-label="`Copy ${field.label}`"
+                  :title="field.value ? `Copy ${field.label}` : `${field.label} is unavailable`"
+                  @click="copyValue(field.value, field.key)"
+                >
+                  <Check v-if="copiedField === field.key" :size="15" aria-hidden="true" />
+                  <Copy v-else :size="15" aria-hidden="true" />
+                </button>
+              </div>
+
+              <p class="copy-status" aria-live="polite">
+                <span v-if="copySection === 'shipping' && copyError" class="copy-error">
+                  {{ copyError }}
+                </span>
+                <span v-else-if="copySection === 'shipping' && copiedField">
+                  Copied to clipboard.
+                </span>
               </p>
             </div>
             <div v-else class="empty-state compact">
@@ -604,28 +710,41 @@ onMounted(loadOrder)
             </div>
 
             <div class="summary-lines">
-              <div>
-                <span>Subtotal</span>
-                <strong>Rs. {{ formatAmount(order.subtotal) }}</strong>
+              <div
+                v-for="row in summaryRows"
+                :key="row.key"
+                :class="{ 'summary-total': row.total }"
+              >
+                <span>{{ row.label }}</span>
+                <div class="summary-value">
+                  <strong :class="{ 'discount-value': row.negative }">
+                    {{ row.negative ? '- ' : '' }}Rs. {{ formatAmount(row.value) }}
+                  </strong>
+                  <button
+                    type="button"
+                    class="copy-field-button"
+                    :aria-label="`Copy ${row.label} amount`"
+                    :title="`Copy ${row.label} amount`"
+                    @click="copyAmount(row)"
+                  >
+                    <Check
+                      v-if="copiedField === `amount-${row.key}`"
+                      :size="15"
+                      aria-hidden="true"
+                    />
+                    <Copy v-else :size="15" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-              <div>
-                <span>Discount</span>
-                <strong class="discount-value">
-                  - Rs. {{ formatAmount(order.discount_amount) }}
-                </strong>
-              </div>
-              <div>
-                <span>Tax</span>
-                <strong>Rs. {{ formatAmount(order.tax_amount) }}</strong>
-              </div>
-              <div>
-                <span>Shipping</span>
-                <strong>Rs. {{ formatAmount(order.shipping_amount) }}</strong>
-              </div>
-              <div class="summary-total">
-                <span>Total</span>
-                <strong>Rs. {{ formatAmount(order.total_amount) }}</strong>
-              </div>
+
+              <p class="copy-status summary-copy-status" aria-live="polite">
+                <span v-if="copySection === 'summary' && copyError" class="copy-error">
+                  {{ copyError }}
+                </span>
+                <span v-else-if="copySection === 'summary' && copiedField">
+                  Copied to clipboard.
+                </span>
+              </p>
             </div>
           </section>
 
@@ -670,13 +789,18 @@ onMounted(loadOrder)
             </div>
           </section>
 
-          <section v-if="invoices.length" class="card">
+          <section v-if="invoices.length && hasPermission('invoices.view')" class="card">
             <div class="card-header">
               <h2>Invoices</h2>
             </div>
             <div v-for="invoice in invoices" :key="invoice.id" class="invoice-row">
-              <strong>{{ invoice.invoice_number || `Invoice #${invoice.id}` }}</strong>
-              <span>{{ formatLabel(invoice.status) }}</span>
+              <div>
+                <strong>{{ invoice.invoice_number || `Invoice #${invoice.id}` }}</strong>
+                <span>{{ formatLabel(invoice.status) }}</span>
+              </div>
+              <button type="button" class="invoice-link" @click="viewInvoice(invoice.id)">
+                View Invoice
+              </button>
             </div>
           </section>
 
@@ -1051,6 +1175,88 @@ td small {
   margin: 0;
 }
 
+.shipping-address-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shipping-field {
+  display: grid;
+  grid-template-columns: minmax(105px, 0.8fr) minmax(0, 1.4fr) 30px;
+  align-items: center;
+  gap: 10px;
+  min-height: 39px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  font-size: 13px;
+}
+
+.shipping-label {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.shipping-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.copy-field-button,
+.copy-full-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-card, #fff);
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.copy-field-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 7px;
+}
+
+.copy-full-button {
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.copy-field-button:hover:not(:disabled),
+.copy-full-button:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, white);
+}
+
+.copy-field-button:focus-visible,
+.copy-full-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.copy-field-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.copy-status {
+  min-height: 18px;
+  margin: 7px 0 0;
+  color: #15803d;
+  font-size: 12px;
+}
+
+.copy-error {
+  color: #b91c1c;
+}
+
 .summary-lines {
   display: flex;
   flex-direction: column;
@@ -1067,6 +1273,19 @@ td small {
 
 .summary-lines strong {
   text-align: right;
+}
+
+.summary-value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.summary-copy-status {
+  justify-content: flex-end !important;
+  min-height: 18px;
+  margin: -4px 0 0;
 }
 
 .summary-lines .summary-total {
@@ -1209,6 +1428,24 @@ td small {
   color: var(--color-text-secondary);
 }
 
+.invoice-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.invoice-link {
+  align-self: center;
+  padding: 6px 9px;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
 .notes-text {
   white-space: pre-wrap;
   font-size: 13px;
@@ -1333,6 +1570,14 @@ td small {
 
   .record-grid {
     grid-template-columns: 1fr;
+  }
+
+  .shipping-field {
+    grid-template-columns: minmax(90px, 0.75fr) minmax(0, 1.25fr) 30px;
+  }
+
+  .copy-full-button {
+    flex-shrink: 0;
   }
 }
 </style>

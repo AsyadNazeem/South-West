@@ -24,7 +24,7 @@ const {
     sendDeliveryTrackingEmail,
     sendOrderStatusEmail
 } = require('../services/emailService');
-const { loadOrderInvoiceData, generateInvoicePdf, invoiceFilename } = require('../services/invoicePdfService');
+const { loadOrderInvoiceData, getOrderInvoiceAttachment } = require('../services/invoicePdfService');
 
 const STATUS_LABELS = {
     confirmed: 'Order Confirmed',
@@ -67,14 +67,9 @@ async function getStatusEmailDetails(snapshot) {
     const order = await loadOrderInvoiceData(snapshot.id);
     if (!order || order.payment_status !== 'paid') return snapshot.orderDetails;
     const payment = order.payments?.find(record => record.payment_status === 'paid') || order.payments?.[0];
-    const invoice = order.invoices?.find(record => record.status === 'paid');
-    const invoiceAttachment = invoice
-        ? {
-            filename: invoiceFilename(order.order_number),
-            content: await generateInvoicePdf({ ...order.toJSON(), invoice_number: invoice.invoice_number }),
-            contentType: 'application/pdf'
-        }
-        : null;
+    const invoiceAttachment = await getOrderInvoiceAttachment(snapshot.id, {
+        finalOnly: true
+    });
     return {
         paymentMethod: payment?.payment_method || 'Not provided',
         paymentStatus: order.payment_status,

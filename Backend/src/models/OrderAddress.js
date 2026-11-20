@@ -9,6 +9,16 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'order_id',
                 as: 'order'
             });
+
+            OrderAddress.belongsTo(models.DeliveryDistrict, {
+                foreignKey: 'district_id',
+                as: 'district'
+            });
+
+            OrderAddress.belongsTo(models.DeliveryArea, {
+                foreignKey: 'area_id',
+                as: 'area'
+            });
         }
     }
 
@@ -24,6 +34,16 @@ module.exports = (sequelize, DataTypes) => {
             order_id: {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: false
+            },
+
+            district_id: {
+                type: DataTypes.BIGINT.UNSIGNED,
+                allowNull: true
+            },
+
+            area_id: {
+                type: DataTypes.BIGINT.UNSIGNED,
+                allowNull: true
             },
 
             address_type: {

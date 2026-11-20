@@ -12,6 +12,7 @@ const {
 const { recordAuditLog } = require('../services/auditLogService');
 const { sendOrderStatusEmail } = require('../services/emailService');
 const { notifyAdmins } = require('./adminNotificationController');
+const { buildOrderPhoneSearch } = require('../utils/orderPhoneSearch');
 
 
 const updatePaymentStatus = async (req, res) => {
@@ -339,12 +340,23 @@ const getPayments = async (req, res) => {
         const paginationEnabled = req.query.page !== undefined || req.query.pageSize !== undefined || req.query.limit !== undefined;
         const search = String(req.query.search || '').trim();
         const where = {};
-        if (search) where[Op.or] = [
-            { payment_reference: { [Op.like]: `%${search}%` } },
-            { transaction_reference: { [Op.like]: `%${search}%` } },
-            { '$order.order_number$': { [Op.like]: `%${search}%` } },
-            { payment_method: { [Op.like]: `%${search}%` } },
-        ];
+        let replacements;
+        if (search) {
+            where[Op.or] = [
+                { payment_reference: { [Op.like]: `%${search}%` } },
+                { transaction_reference: { [Op.like]: `%${search}%` } },
+                { '$order.order_number$': { [Op.like]: `%${search}%` } },
+                { payment_method: { [Op.like]: `%${search}%` } },
+                { '$order.customer.first_name$': { [Op.like]: `%${search}%` } },
+                { '$order.customer.last_name$': { [Op.like]: `%${search}%` } }
+            ];
+            const phoneSearch = buildOrderPhoneSearch(search, {
+                orderAlias: 'order',
+                replacementPrefix: 'paymentPhone'
+            });
+            if (phoneSearch) where[Op.or].push(phoneSearch.condition);
+            replacements = phoneSearch?.replacements;
+        }
         if (req.query.status) where.payment_status = req.query.status;
         if (req.query.method) where.payment_method = req.query.method;
         const result = await Payment.findAndCountAll({
@@ -352,7 +364,13 @@ const getPayments = async (req, res) => {
             include: [
                 {
                     model: Order,
-                    as: 'order'
+                    as: 'order',
+                    include: [{
+                        model: Customer,
+                        as: 'customer',
+                        attributes: [],
+                        required: false
+                    }]
                 },
                 {
                     model: User,
@@ -365,7 +383,8 @@ const getPayments = async (req, res) => {
             order: [['created_at', 'DESC']],
             limit: paginationEnabled ? pageSize : undefined,
             offset: paginationEnabled ? (page - 1) * pageSize : undefined,
-            distinct: true
+            distinct: true,
+            replacements
         });
         const payments = result.rows;
 
