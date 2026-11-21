@@ -39,12 +39,20 @@ async function isAdmin(req) {
     return (user?.roles || []).some((role) => String(role.name || '').trim().toLowerCase() === 'admin');
 }
 
+function visibleNotifications(req) {
+    const where = { user_id: req.user.id };
+    if (!req.permissions?.has('warranty_claims.view')) {
+        where[Op.or] = [{reference_type:null}, {reference_type:{[Op.ne]:'warranty_claim'}}];
+    }
+    return where;
+}
+
 async function list(req, res) {
     try {
         const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
         const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25));
         const sortOrder = String(req.query.sortOrder || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-        const where = { user_id: req.user.id };
+        const where = visibleNotifications(req);
         if (req.query.view === 'feed') where.is_dismissed = false;
         let result;
         try {
@@ -68,10 +76,10 @@ async function unreadCount(req, res) {
     try {
         let count;
         try {
-            count = await AdminNotification.count({ where: { user_id: req.user.id, is_read: false, is_dismissed: false } });
+            count = await AdminNotification.count({ where: { ...visibleNotifications(req), is_read: false, is_dismissed: false } });
         } catch (error) {
             if (!isMissingDismissalColumn(error)) throw error;
-            count = await AdminNotification.count({ where: { user_id: req.user.id, is_read: false } });
+            count = await AdminNotification.count({ where: { ...visibleNotifications(req), is_read: false } });
         }
         return res.json({ count });
     } catch (error) {
@@ -83,10 +91,10 @@ async function unreadCount(req, res) {
 async function markRead(req, res) {
     let notification;
     try {
-        notification = await AdminNotification.findOne({ attributes: notificationDismissalAttributes, where: { id: req.params.id, user_id: req.user.id } });
+        notification = await AdminNotification.findOne({ attributes: notificationDismissalAttributes, where: { ...visibleNotifications(req), id: req.params.id } });
     } catch (error) {
         if (!isMissingDismissalColumn(error)) throw error;
-        notification = await AdminNotification.findOne({ attributes: notificationListAttributes, where: { id: req.params.id, user_id: req.user.id } });
+        notification = await AdminNotification.findOne({ attributes: notificationListAttributes, where: { ...visibleNotifications(req), id: req.params.id } });
     }
     if (!notification) return res.status(404).json({ message: 'Notification not found' });
     const previousRead = notification.is_read;
@@ -103,10 +111,10 @@ async function dismiss(req, res) {
     try {
         let notification;
         try {
-            notification = await AdminNotification.findOne({ attributes: notificationDismissalAttributes, where: { id: req.params.id, user_id: req.user.id } });
+            notification = await AdminNotification.findOne({ attributes: notificationDismissalAttributes, where: { ...visibleNotifications(req), id: req.params.id } });
         } catch (error) {
             if (!isMissingDismissalColumn(error)) throw error;
-            notification = await AdminNotification.findOne({ attributes: notificationListAttributes, where: { id: req.params.id, user_id: req.user.id } });
+            notification = await AdminNotification.findOne({ attributes: notificationListAttributes, where: { ...visibleNotifications(req), id: req.params.id } });
         }
         if (!notification) return res.status(404).json({ message: 'Notification not found' });
         const previousRead = notification.is_read;

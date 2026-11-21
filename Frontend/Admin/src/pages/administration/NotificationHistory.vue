@@ -142,6 +142,7 @@
               <span>
                 {{ item.message }}
               </span>
+              <RouterLink v-if="item.reference_type === 'warranty_claim' && hasPermission('warranty_claims.view')" :to="'/admin/sales/warranty-claims/' + item.reference_id">View claim</RouterLink>
 
             </td>
 
@@ -198,6 +199,7 @@
 </template>
 
 <script setup>
+import { hasPermission } from '@/auth/authorization'
 import { onMounted, ref, watch } from 'vue'
 import api from '@/api/axios'
 import AppPagination from '@/components/common/AppPagination.vue'

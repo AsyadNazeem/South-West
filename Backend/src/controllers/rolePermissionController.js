@@ -176,6 +176,13 @@ const updateRolePermissions = async (req, res) => {
                 .map(permission => permission.name)
                 .sort();
 
+            const warrantyGrants = names => names.filter(name => name.startsWith('warranty_claims.')).join(',');
+            if (warrantyGrants(oldValues) !== warrantyGrants(newValues) &&
+                !req.permissions.has('warranty_claims.manage')) {
+                const error = new Error('Warranty permission management is required');
+                error.code = 'WARRANTY_PERMISSION_MANAGEMENT_REQUIRED';
+                throw error;
+            }
             await role.setPermissions(permission_ids, {
                 transaction
             });
@@ -220,6 +227,9 @@ const updateRolePermissions = async (req, res) => {
             data: updatedRole
         });
     } catch (error) {
+        if (error.code === 'WARRANTY_PERMISSION_MANAGEMENT_REQUIRED') {
+            return res.status(403).json({ message: error.message });
+        }
         console.error('Update role permissions error:', error);
 
         return res.status(500).json({

@@ -13,7 +13,8 @@ const { fn, col } = require('sequelize');
 const { randomInt } = require('node:crypto');
 const { notifyAdmins } = require('./adminNotificationController');
 const { recordAuditLog } = require('../services/auditLogService');
-const { buildFileUrl } = require('../utils/fileStorage');
+const path = require('node:path');
+const { UPLOAD_ROOT, buildFileUrl } = require('../utils/fileStorage');
 
 function maskName(value) {
     const name = String(value || '').trim();
@@ -367,6 +368,23 @@ exports.createCustomerReview = async (req, res) => {
     }
 };
 
+// Current uploads are relative to UPLOAD_ROOT. Convert legacy absolute
+// filenames inside that directory before passing them to the public URL helper.
+function accountReviewImages(images) {
+    return (images || []).flatMap(({ id, file_path: stored }) => {
+        if (!stored) return [];
+        if (/^https?:\/\//i.test(stored)) return [{ id, url: buildFileUrl(stored) }];
+
+        const relative = stored.startsWith(UPLOAD_ROOT + path.sep)
+            ? path.relative(UPLOAD_ROOT, stored)
+            : stored.replace(/^\/?uploads\//, '');
+        if (path.isAbsolute(relative) || relative.includes('\\') ||
+            relative.split('/').includes('..') || !relative) return [];
+
+        return [{ id, url: buildFileUrl(relative) }];
+    });
+}
+
 // Authenticated customer: see only their own reviews.
 exports.getMyReviews = async (req, res) => {
     try {
@@ -377,11 +395,19 @@ exports.getMyReviews = async (req, res) => {
             include: [{
                 model: Item,
                 as: 'item',
+            }, {
+                association: ProductReview.associations.images,
+                attributes: ['id', 'file_path'],
+                required: false,
             }],
             order: [['created_at', 'DESC']],
         });
 
-        return res.json({ data: reviews });
+        const data = reviews.map(review => {
+            const values = review.toJSON();
+            return { ...values, images: accountReviewImages(values.images) };
+        });
+        return res.json({ data });
     } catch (error) {
         console.error('Get my reviews error:', error);
         return res.status(500).json({

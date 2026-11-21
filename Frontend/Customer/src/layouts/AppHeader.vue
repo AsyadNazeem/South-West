@@ -1,5 +1,5 @@
 <script setup>
-import {computed, onMounted, onUnmounted, ref} from 'vue'
+import {computed, nextTick, onMounted, onUnmounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import api from '@/services/api.js'
 import SeasonalDecorations from '@/components/SeasonalDecorations.vue'
@@ -272,13 +272,19 @@ function goTo(path) {
 }
 
 
+const cancelButton = ref(null)
+const logoutButton = ref(null)
+let logoutTrigger
 function confirmLogout() {
+    logoutTrigger = document.activeElement
     menuOpen.value = false
     showLogoutModal.value = true
+    nextTick(() => cancelButton.value?.focus())
 }
 
 function cancelLogout() {
     showLogoutModal.value = false
+    nextTick(() => logoutTrigger?.isConnected && logoutTrigger.focus())
 }
 
 async function logout() {
@@ -351,6 +357,7 @@ onMounted(() => {
   loadCustomer()
 
   // Fires after login/logout in the same browser tab.
+  window.addEventListener('customer-request-logout', confirmLogout)
   window.addEventListener('customer-auth-changed', handleAuthChanged)
 
   // Handles storage changes from other tabs.
@@ -361,6 +368,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('customer-request-logout', confirmLogout)
   window.removeEventListener('customer-auth-changed', handleAuthChanged)
   window.removeEventListener('storage', handleStorageChange)
 
@@ -645,7 +653,7 @@ onUnmounted(() => {
         <div class="logout-modal-actions">
           <button
             type="button"
-            class="logout-cancel-button"
+            class="logout-cancel-button" ref="cancelButton" @keydown.shift.tab.prevent="logoutButton.focus()"
             @click="cancelLogout"
           >
             Cancel
@@ -653,7 +661,7 @@ onUnmounted(() => {
 
           <button
             type="button"
-            class="logout-confirm-button"
+            class="logout-confirm-button" ref="logoutButton" @keydown.tab.exact.prevent="cancelButton.focus()"
             @click="logout"
           >
             Logout

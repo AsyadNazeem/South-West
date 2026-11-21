@@ -37,3 +37,9 @@ Backend/online-sales-test.xlsx
 
 # Temporary working backups
 *-backup*
+
+# Private, processed customer warranty evidence
+Backend/private/warranty/
+
+# Temporary Backend files
+Backend/tmp/

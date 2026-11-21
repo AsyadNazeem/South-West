@@ -189,3 +189,21 @@ test('notification routes require authentication and notifications.view for own 
     const updateRoute = registered.find(entry => entry[1] === '/admin/preferences' && entry[0] === 'put');
     assert.ok(updateRoute.slice(2).some(handler => handler.permissionName === 'notifications.view'));
 });
+
+
+test('warranty notification scope follows current view permission on feed, counts and read actions', async () => {
+    const {Op} = require('sequelize');
+    for (const allowed of [false,true]) {
+        const {controller,calls} = loadController();
+        const req = {user:{id:7},params:{id:44},query:{},permissions:new Set(allowed ? ['warranty_claims.view'] : [])};
+        await controller.list(req,response());
+        await controller.unreadCount(req,response());
+        await controller.markRead(req,response());
+        await controller.dismiss(req,response());
+        for (const {where} of [...calls.list,...calls.count,...calls.findNotification]) {
+            assert.equal(where.user_id,7);
+            if (allowed) assert.equal(where[Op.or],undefined);
+            else assert.deepEqual(where[Op.or],[{reference_type:null},{reference_type:{[Op.ne]:'warranty_claim'}}]);
+        }
+    }
+});

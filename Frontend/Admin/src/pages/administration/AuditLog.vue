@@ -156,7 +156,7 @@
 
               <td>
                 <div class="user-cell">
-                  <strong>{{ log.user?.email || 'System / Deleted User' }}</strong>
+                  <strong>{{ actorLabel(log) }}</strong>
                   <small v-if="log.user_id">ID: {{ log.user_id }}</small>
                 </div>
               </td>
@@ -251,7 +251,7 @@
           </div>
           <div>
             <span>User</span>
-            <strong>{{ selectedLog.user?.email || 'System / Deleted User' }}</strong>
+            <strong>{{ actorLabel(selectedLog) }}</strong>
           </div>
           <div>
             <span>User ID</span>
@@ -432,6 +432,16 @@ function formatDate(value) {
   return date.toLocaleString()
 }
 
+function actorLabel(log) {
+  if (log.module === 'warranty_claims') {
+    const actor = auditValues(log.new_values)
+    if (actor?.actor_type === 'customer') return 'Customer #' + actor.actor_id
+    if (actor?.actor_type === 'system') return 'Warranty mail worker'
+    if (actor?.actor_type === 'staff' && !log.user) return 'Staff #' + actor.actor_id
+  }
+  return log.user?.email || 'System / Deleted User'
+}
+
 function actionClass(action) {
   const value = String(action || '').toLowerCase()
 
@@ -443,15 +453,16 @@ function actionClass(action) {
   return 'action-neutral'
 }
 
+function auditValues(value) {
+  if (typeof value !== 'string') return value
+  try { return JSON.parse(value) } catch { return value }
+}
+
 function prettyJson(value) {
   if (value === null || value === undefined || value === '') return 'No data recorded.'
 
-  try {
-    const parsed = typeof value === 'string' ? JSON.parse(value) : value
-    return JSON.stringify(parsed, null, 2)
-  } catch {
-    return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
-  }
+  const parsed = auditValues(value)
+  return typeof value === 'string' && parsed === value ? value : JSON.stringify(parsed, null, 2)
 }
 
 onMounted(fetchAuditLogs)

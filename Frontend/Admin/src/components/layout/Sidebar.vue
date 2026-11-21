@@ -89,6 +89,7 @@ const menuDefinitions = [
     label: 'Sales',
     icon: Banknote,
     children: [
+      { label: 'Warranty Claims', to: '/admin/sales/warranty-claims', permissions: ['warranty_claims.view'] },
       { label: 'Orders', to: '/admin/sales/orders', permissions: ['orders.view'] },
       { label: 'Payments', to: '/admin/sales/payments', permissions: ['payments.view'] },
       { label: 'Invoices', to: '/admin/sales/invoices', permissions: ['invoices.view'] },

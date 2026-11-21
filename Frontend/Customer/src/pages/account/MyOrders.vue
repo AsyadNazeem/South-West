@@ -1,5 +1,8 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import AccountPageHeader from '@/components/account/AccountPageHeader.vue'
+import { accountFeedback } from '@/utils/accountFeedback'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import OrderThumbnail from '@/components/account/OrderThumbnail.vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 
@@ -8,12 +11,12 @@ const router = useRouter()
 const orders = ref([])
 const loading = ref(true)
 const errorMessage = ref('')
-const expandedOrderId = ref(null)
 const orderDetails = ref({})
 const loadingDetails = ref({})
 const activeFilter = ref('all')
 const searchText = ref('')
 const copiedTracking = ref('')
+const visibleCount = ref(10)
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -22,9 +25,15 @@ const FILTERS = [
   { key: 'cancelled', label: 'Cancelled' },
 ]
 
-// Progress tracker shown on each order. Add any extra status your
-// backend uses to STATUS_STEP (0 = placed ... 3 = delivered).
 const TRACKING_STEPS = ['Placed', 'Processing', 'Shipped', 'Delivered']
+
+// One icon per step (done steps show a tick instead)
+const STEP_ICONS = [
+  'M9 4h6l1 2h3v14H5V6h3z M9 12h6 M9 16h4',
+  'M3 7l9-4 9 4v11l-9 4-9-4z M3 7l9 4 9-4 M12 11v11',
+  'M3 6h11v10H3z M14 9h4l3 3v4h-7 M7.5 19a1.5 1.5 0 1 0 .01 0 M17.5 19a1.5 1.5 0 1 0 .01 0',
+  'M4 12l5 5L20 6',
+]
 
 const STATUS_MESSAGES = [
   'Your order has been placed. We will confirm it shortly.',
@@ -34,18 +43,10 @@ const STATUS_MESSAGES = [
 ]
 
 const STATUS_STEP = {
-  pending: 0,
-  placed: 0,
-  confirmed: 0,
-  processing: 1,
-  packed: 1,
-  ready: 1,
-  shipped: 2,
-  dispatched: 2,
-  'in-transit': 2,
-  'out-for-delivery': 2,
-  delivered: 3,
-  completed: 3,
+  pending: 0, placed: 0, confirmed: 0,
+  processing: 1, packed: 1, ready: 1,
+  shipped: 2, dispatched: 2, 'in-transit': 2, 'out-for-delivery': 2,
+  delivered: 3, completed: 3,
 }
 
 const PAYMENT_METHOD_LABELS = {
@@ -57,117 +58,89 @@ const PAYMENT_METHOD_LABELS = {
 }
 
 const formatAmount = (amount) =>
-  Number(amount || 0).toLocaleString('en-LK', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+  Number(amount || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const formatDate = (date) => {
   if (!date) return 'Not available'
-
   const parsed = new Date(date)
   return Number.isNaN(parsed.getTime())
     ? 'Not available'
-    : parsed.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      })
+    : parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const formatStatus = (status) =>
-  String(status || 'unknown')
-    .replaceAll('_', ' ')
-    .replace(/\b\w/g, char => char.toUpperCase())
+  String(status || 'unknown').replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase())
 
 const statusClass = (status) =>
   String(status || 'unknown').toLowerCase().replaceAll('_', '-')
 
 const paymentMethodLabel = (method) =>
-  PAYMENT_METHOD_LABELS[String(method || '').toLowerCase()] ||
-  formatStatus(method)
+  PAYMENT_METHOD_LABELS[String(method || '').toLowerCase()] || formatStatus(method)
 
-// Colour family for a status badge
 function tone(status) {
   const key = statusClass(status)
-
   if (['delivered', 'completed', 'paid', 'success'].includes(key)) return 'success'
   if (['cancelled', 'failed', 'refunded', 'rejected'].includes(key)) return 'danger'
   if (['shipped', 'dispatched', 'in-transit', 'out-for-delivery'].includes(key)) return 'progress'
   if (['confirmed', 'processing', 'packed', 'ready'].includes(key)) return 'info'
   if (['pending', 'placed', 'unpaid', 'partially-paid'].includes(key)) return 'warning'
-
   return 'neutral'
 }
 
 function orderGroup(order) {
   const status = statusClass(order.status)
-
   if (status === 'cancelled') return 'cancelled'
   if (status === 'delivered' || status === 'completed') return 'delivered'
   return 'active'
 }
 
-function currentStep(order) {
-  return STATUS_STEP[statusClass(order.status)] ?? 0
-}
+const currentStep = (order) => STATUS_STEP[statusClass(order.status)] ?? 0
 
 function stepState(order, index) {
   const current = currentStep(order)
   const last = TRACKING_STEPS.length - 1
-
   if (index < current || (current === last && index === last)) return 'done'
   if (index === current) return 'current'
   return 'upcoming'
 }
 
-function statusMessage(order) {
-  return STATUS_MESSAGES[currentStep(order)] || ''
+const statusMessage = (order) => STATUS_MESSAGES[currentStep(order)] || ''
+
+// Details helpers (the details come from the second API call)
+const firstPayment = (id) => orderDetails.value[id]?.payments?.[0] || null
+const firstDelivery = (id) => orderDetails.value[id]?.deliveries?.[0] || null
+
+function shipTo(id) {
+  const list = orderDetails.value[id]?.addresses || []
+  return list.find(a => a.address_type === 'shipping') || list[0] || null
 }
 
-function deliveryEvents(delivery) {
-  return [
-    {
-      label: 'Dispatched',
-      date: delivery.dispatched_at,
-      done: Boolean(delivery.dispatched_at),
-    },
-    {
-      label: 'Expected delivery',
-      date: delivery.expected_delivery_date,
-      done: Boolean(delivery.delivered_at),
-    },
-    {
-      label: 'Delivered',
-      date: delivery.delivered_at,
-      done: Boolean(delivery.delivered_at),
-    },
-  ]
+const addressText = (a) =>
+  [a.address_line_1, a.address_line_2, a.city, a.state, a.postal_code].filter(Boolean).join(', ')
+
+function deliveryLine(d) {
+  if (d.delivered_at) return `Delivered ${formatDate(d.delivered_at)}`
+  if (d.expected_delivery_date) return `Expected ${formatDate(d.expected_delivery_date)}`
+  if (d.dispatched_at) return `Dispatched ${formatDate(d.dispatched_at)}`
+  return ''
 }
 
 const filterCounts = computed(() => {
   const counts = { all: orders.value.length, active: 0, delivered: 0, cancelled: 0 }
-
-  for (const order of orders.value) {
-    counts[orderGroup(order)]++
-  }
-
+  for (const order of orders.value) counts[orderGroup(order)]++
   return counts
 })
 
 const filteredOrders = computed(() => {
   const query = searchText.value.trim().toLowerCase()
-
   return orders.value.filter(order => {
-    const matchesFilter =
-      activeFilter.value === 'all' || orderGroup(order) === activeFilter.value
-
-    const matchesSearch =
-      !query || String(order.order_number || '').toLowerCase().includes(query)
-
+    const matchesFilter = activeFilter.value === 'all' || orderGroup(order) === activeFilter.value
+    const matchesSearch = !query || String(order.order_number || '').toLowerCase().includes(query)
     return matchesFilter && matchesSearch
   })
 })
+
+const visibleOrders = computed(() => filteredOrders.value.slice(0, visibleCount.value))
 
 function clearFilters() {
   activeFilter.value = 'all'
@@ -176,16 +149,14 @@ function clearFilters() {
 
 async function copyTracking(number) {
   if (!number) return
-
   try {
     await navigator.clipboard.writeText(String(number))
     copiedTracking.value = String(number)
-
     setTimeout(() => {
       if (copiedTracking.value === String(number)) copiedTracking.value = ''
     }, 1800)
   } catch {
-    // Clipboard access can be blocked; the number is still visible to copy by hand.
+    // Clipboard can be blocked; the number is still visible to copy by hand.
   }
 }
 
@@ -194,116 +165,81 @@ async function loadOrders() {
   errorMessage.value = ''
 
   if (!sessionStorage.getItem('customerToken')) {
-    router.replace({
-      path: '/login',
-      query: { redirect: router.currentRoute.value.fullPath },
-    })
+    router.replace({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
     return
   }
 
   try {
-    const response = await api.get('/customer-orders', {
-      params: { page: 1, limit: 50 },
-    })
-
+    const response = await api.get('/customer-orders', { params: { page: 1, limit: 50 } })
     orders.value = response.data?.data || []
   } catch (error) {
-    errorMessage.value =
-      error.response?.data?.message || 'Unable to load your orders.'
-
+    errorMessage.value = accountFeedback(error, 'Unable to load your orders.')
     if (error.response?.status === 401) {
       sessionStorage.removeItem('customerToken')
       sessionStorage.removeItem('customerProfile')
-
-      router.replace({
-        path: '/login',
-        query: { redirect: router.currentRoute.value.fullPath },
-      })
+      router.replace({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
     }
   } finally {
     loading.value = false
   }
 }
 
-async function toggleDetails(order) {
-  if (expandedOrderId.value === order.id) {
-    expandedOrderId.value = null
-    return
-  }
+async function ensureDetails(order) {
+  const id = order.id
+  if (loadingDetails.value[id]) return
+  if (orderDetails.value[id] && !orderDetails.value[id]._error) return
 
-  expandedOrderId.value = order.id
-
-  if (orderDetails.value[order.id]) return
-
-  loadingDetails.value = {
-    ...loadingDetails.value,
-    [order.id]: true,
-  }
+  loadingDetails.value = { ...loadingDetails.value, [id]: true }
 
   try {
-    const response = await api.get(`/customer-orders/${order.id}`)
+    const response = await api.get(`/customer-orders/${id}`)
     const body = response.data
-
-    orderDetails.value = {
-      ...orderDetails.value,
-      [order.id]: body?.data?.data ?? body?.data ?? body,
-    }
+    orderDetails.value = { ...orderDetails.value, [id]: body?.data?.data ?? body?.data ?? body }
   } catch (error) {
     orderDetails.value = {
       ...orderDetails.value,
-      [order.id]: {
-        _error:
-          error.response?.data?.message ||
-          'Unable to load order details. Please try again.',
-      },
+      [id]: { _error: accountFeedback(error, 'Unable to load order details.') },
     }
   } finally {
-    loadingDetails.value = {
-      ...loadingDetails.value,
-      [order.id]: false,
-    }
+    loadingDetails.value = { ...loadingDetails.value, [id]: false }
   }
 }
 
-onMounted(loadOrders)
+function retryDetails(order) {
+  const next = { ...orderDetails.value }
+  delete next[order.id]
+  orderDetails.value = next
+  ensureDetails(order)
+}
+
+// Load details for whichever orders are on screen
+watch(visibleOrders, (list) => list.forEach(ensureDetails), { immediate: true })
+watch([activeFilter, searchText], () => { visibleCount.value = 10 })
+
+onMounted(async () => {
+  await loadOrders()
+  const id = router.currentRoute.value.query.orderId
+  if (id) {
+    const index = filteredOrders.value.findIndex(order => String(order.id) === String(id))
+    if (index >= visibleCount.value) visibleCount.value = index + 1
+    await nextTick()
+    document.getElementById(`order-${id}`)?.scrollIntoView({ block: 'center' })
+  }
+})
 </script>
 
 <template>
   <section class="orders-page">
 
-    <!-- Heading -->
-    <header class="heading">
-      <div>
-        <h2 class="page-title">My Orders</h2>
-        <p class="subtitle">Track your orders, payments and deliveries in one place.</p>
-      </div>
-
-      <button
-        class="refresh-button"
-        type="button"
-        :disabled="loading"
-        @click="loadOrders"
-      >
-        <svg
-          class="refresh-icon"
-          :class="{ spinning: loading }"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
+    <AccountPageHeader title="My orders" description="Browse purchases, payment details and delivery updates.">
+      <button class="btn" type="button" :disabled="loading" @click="loadOrders">
+        <svg class="refresh-icon" :class="{ spinning: loading }" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         Refresh
       </button>
-    </header>
+    </AccountPageHeader>
 
-    <!-- Filters -->
     <div v-if="!loading && !errorMessage && orders.length" class="toolbar">
       <div class="tabs" role="group" aria-label="Filter orders by status">
         <button
@@ -314,10 +250,7 @@ onMounted(loadOrders)
           :class="{ active: activeFilter === filter.key }"
           :aria-pressed="activeFilter === filter.key"
           @click="activeFilter = filter.key"
-        >
-          {{ filter.label }}
-          <span class="tab-count">{{ filterCounts[filter.key] }}</span>
-        </button>
+        >{{ filter.label }}<span class="tab-count">{{ filterCounts[filter.key] }}</span></button>
       </div>
 
       <label class="search">
@@ -325,1456 +258,295 @@ onMounted(loadOrders)
           <circle cx="10.8" cy="10.8" r="6.5" stroke="currentColor" stroke-width="1.9" />
           <path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
         </svg>
-
-        <input
-          v-model="searchText"
-          type="search"
-          enterkeyhint="search"
-          autocomplete="off"
-          placeholder="Search by order number"
-          aria-label="Search orders by order number"
-        />
+        <input v-model="searchText" type="search" autocomplete="off" placeholder="Search order number" aria-label="Search orders by order number" />
       </label>
     </div>
 
-    <!-- Loading -->
-    <div
-      v-if="loading"
-      class="order-list"
-      aria-busy="true"
-      aria-label="Loading your orders"
-    >
+    <div v-if="loading" class="order-list" aria-busy="true" aria-label="Loading your orders">
       <div v-for="n in 3" :key="n" class="order-card skeleton" aria-hidden="true">
-        <div class="skeleton-line short"></div>
-        <div class="skeleton-line"></div>
-        <div class="skeleton-line wide"></div>
+        <div class="col"><div class="skeleton-line short"></div><div class="skeleton-line"></div><div class="skeleton-line wide"></div></div>
+        <div class="col details-col"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line"></div></div>
       </div>
     </div>
 
-    <!-- Error -->
-    <div v-else-if="errorMessage" class="state state-error" role="alert">
-      <span class="state-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" />
-          <path d="M12 7.5v5.5M12 16.2h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-        </svg>
-      </span>
-
+    <div v-else-if="errorMessage" class="state" role="alert">
       <h3>Something went wrong</h3>
       <p class="muted">{{ errorMessage }}</p>
-
-      <button class="secondary-button" type="button" @click="loadOrders">
-        Try again
-      </button>
+      <button class="btn" type="button" @click="loadOrders">Try again</button>
     </div>
 
-    <!-- No orders -->
     <div v-else-if="orders.length === 0" class="state">
-      <span class="state-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none">
-          <path
-            d="M6 8h12l-1 11H7L6 8Z"
-            stroke="currentColor"
-            stroke-width="1.7"
-            stroke-linejoin="round"
-          />
-          <path d="M9 8a3 3 0 0 1 6 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-        </svg>
-      </span>
-
       <h3>No orders yet</h3>
       <p class="muted">When you place an order, you can follow it here.</p>
-
-      <RouterLink to="/" class="primary-button">Start shopping</RouterLink>
+      <RouterLink to="/" class="btn primary">Start shopping</RouterLink>
     </div>
 
-    <!-- No matches -->
     <div v-else-if="filteredOrders.length === 0" class="state">
-      <span class="state-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none">
-          <circle cx="10.8" cy="10.8" r="6.5" stroke="currentColor" stroke-width="1.8" />
-          <path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-        </svg>
-      </span>
-
       <h3>No matching orders</h3>
       <p class="muted">Try a different status or order number.</p>
-
-      <button class="secondary-button" type="button" @click="clearFilters">
-        Clear filters
-      </button>
+      <button class="btn" type="button" @click="clearFilters">Clear filters</button>
     </div>
 
-    <!-- Orders -->
     <template v-else>
-
-      <p class="result-count">
-        Showing {{ filteredOrders.length }} of {{ orders.length }}
-        order{{ orders.length === 1 ? '' : 's' }}
-      </p>
-
       <div class="order-list">
+        <article v-for="order in visibleOrders" :id="`order-${order.id}`" :key="order.id" class="order-card">
 
-        <article
-          v-for="order in filteredOrders"
-          :key="order.id"
-          class="order-card"
-          :class="`group-${orderGroup(order)}`"
-        >
+          <!-- Left: order and progress -->
+          <div class="col status-col">
+            <header class="order-top">
+              <div class="order-id">
+                <h3 class="order-number">{{ order.order_number }}</h3>
+                <span class="muted">{{ formatDate(order.order_date) }}</span>
+              </div>
+              <span class="status" :class="`tone-${tone(order.status)}`">{{ formatStatus(order.status) }}</span>
+            </header>
 
-          <!-- Top: order number, date and badges -->
-          <header class="order-top">
-
-            <div class="order-id">
-              <span class="eyebrow">Order</span>
-              <h3 class="order-number">{{ order.order_number }}</h3>
-              <span class="muted">Placed on {{ formatDate(order.order_date) }}</span>
-            </div>
-
-            <div class="badges">
-              <span class="badge" :class="`tone-${tone(order.status)}`">
-                {{ formatStatus(order.status) }}
-              </span>
-
-              <span class="badge badge-soft" :class="`tone-${tone(order.payment_status)}`">
-                Payment: {{ formatStatus(order.payment_status) }}
+            <div v-if="order.items?.length" class="order-preview">
+              <OrderThumbnail :item="order.items[0].item" />
+              <span class="preview-name">
+                {{ order.items[0].item?.item_name || 'Purchased product' }}
+                <small v-if="order.items.length > 1">+{{ order.items.length - 1 }} more</small>
               </span>
             </div>
 
-          </header>
-
-          <!-- Progress -->
-          <div v-if="orderGroup(order) !== 'cancelled'" class="progress">
-
-            <ol class="tracker" aria-label="Order progress">
-              <li
-                v-for="(label, index) in TRACKING_STEPS"
-                :key="label"
-                class="tracker-step"
-                :class="[
-                  stepState(order, index),
-                  { 'line-done': index <= currentStep(order) }
-                ]"
-                :aria-current="stepState(order, index) === 'current' ? 'step' : undefined"
-              >
-                <span class="tracker-dot" aria-hidden="true">
-                  <svg
-                    v-if="stepState(order, index) === 'done'"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                  >
-                    <path
-                      d="m5.5 12.5 4.2 4.2L18.5 8"
-                      stroke="currentColor"
-                      stroke-width="3"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                </span>
-
-                <span class="tracker-label">{{ label }}</span>
-              </li>
-            </ol>
-
-            <p class="status-message">{{ statusMessage(order) }}</p>
-
+           <div v-if="orderGroup(order) !== 'cancelled'" class="progress">
+  <ol class="steps" aria-label="Order progress">
+    <li
+      v-for="(label, index) in TRACKING_STEPS"
+      :key="label"
+      class="step"
+      :class="[stepState(order, index), { 'line-done': index <= currentStep(order) }]"
+      :aria-current="stepState(order, index) === 'current' ? 'step' : undefined"
+    >
+      <span class="step-node" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path :d="stepState(order, index) === 'done' ? STEP_ICONS[3] : STEP_ICONS[index]" />
+        </svg>
+      </span>
+      <span class="step-label">{{ label }}</span>
+    </li>
+  </ol>
+  <p class="status-message">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01 M11 12h1v5" /></svg>
+    {{ statusMessage(order) }}
+  </p>
+</div>
+            <p v-else class="cancel-note">This order was cancelled.</p>
           </div>
 
-          <p v-else class="cancel-note">
-            This order was cancelled.
-          </p>
+          <!-- Right: details -->
+          <div class="col details-col">
 
-          <!-- Bottom: total and details button -->
-          <footer class="order-bottom">
-
-            <div class="order-total">
-              <span class="muted">Order total</span>
-              <strong>Rs. {{ formatAmount(order.total_amount) }}</strong>
-            </div>
-
-            <button
-              type="button"
-              class="details-button"
-              :aria-expanded="expandedOrderId === order.id"
-              :aria-controls="`order-details-${order.id}`"
-              @click="toggleDetails(order)"
-            >
-              <span>
-                {{ expandedOrderId === order.id ? 'Hide details' : 'View details' }}
-              </span>
-
-              <svg class="details-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="m6 9 6 6 6-6"
-                  stroke="currentColor"
-                  stroke-width="2.2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </button>
-
-          </footer>
-
-          <!-- Details -->
-          <div
-            v-if="expandedOrderId === order.id"
-            :id="`order-details-${order.id}`"
-            class="details"
-          >
-
-            <div v-if="loadingDetails[order.id]" class="details-loading">
-              <div class="skeleton-line short"></div>
-              <div class="skeleton-line"></div>
-              <div class="skeleton-line wide"></div>
-            </div>
-
-            <p v-else-if="orderDetails[order.id]?._error" class="error">
-              {{ orderDetails[order.id]._error }}
-            </p>
-
-            <template v-else-if="orderDetails[order.id]">
-
-              <!-- Items -->
-              <section class="detail-section">
-                <h4>Items in this order</h4>
-
-                <p
-                  v-if="!(orderDetails[order.id].items || []).length"
-                  class="muted"
-                >
-                  No item details available.
-                </p>
-
-                <ul v-else class="item-list">
-                  <li
-                    v-for="item in orderDetails[order.id].items"
-                    :key="item.id"
-                    class="item-row"
-                  >
-                    <span class="item-thumb" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" fill="none">
-                        <path
-                          d="M6 8h12l-1 11H7L6 8Z"
-                          stroke="currentColor"
-                          stroke-width="1.6"
-                          stroke-linejoin="round"
-                        />
-                        <path d="M9 8a3 3 0 0 1 6 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                      </svg>
-                    </span>
-
-                    <span class="item-info">
-                      <RouterLink
-                        v-if="item.item?.slug && item.item?.public_id"
-                        :to="`/product/${item.item.slug}-${item.item.public_id}`"
-                        class="item-name link"
-                      >
-                        {{ item.item.item_name || 'Product' }}
-                      </RouterLink>
-
-                      <strong v-else class="item-name">
-                        {{ item.item?.item_name || 'Product' }}
-                      </strong>
-
-                      <span class="muted">
-                        <template v-if="item.item?.item_code">{{ item.item.item_code }} · </template>
-                        Qty {{ item.quantity }}
-                      </span>
-                    </span>
-
-                    <span class="item-price">Rs. {{ formatAmount(item.line_total) }}</span>
-                  </li>
-                </ul>
-
-                <!-- Totals -->
-                <dl class="totals">
-                  <div>
-                    <dt>Subtotal</dt>
-                    <dd>Rs. {{ formatAmount(order.subtotal) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Shipping</dt>
-                    <dd>Rs. {{ formatAmount(order.shipping_amount) }}</dd>
-                  </div>
-                  <div class="grand-total">
-                    <dt>Total</dt>
-                    <dd>Rs. {{ formatAmount(order.total_amount) }}</dd>
-                  </div>
-                </dl>
-              </section>
-
-              <!-- Payment -->
-              <section class="detail-section">
-                <h4>Payment</h4>
-
-                <p
-                  v-if="!(orderDetails[order.id].payments || []).length"
-                  class="muted"
-                >
-                  No payment records available yet.
-                </p>
-
-                <div
-                  v-for="(payment, index) in orderDetails[order.id].payments || []"
-                  :key="payment.id || index"
-                  class="info-card"
-                >
-                  <div class="info-card-head">
-                    <strong>{{ paymentMethodLabel(payment.payment_method) }}</strong>
-                    <span class="badge badge-soft" :class="`tone-${tone(payment.payment_status)}`">
-                      {{ formatStatus(payment.payment_status) }}
-                    </span>
-                  </div>
-
-                  <dl class="info-grid">
-                    <div>
-                      <dt>Amount</dt>
-                      <dd>Rs. {{ formatAmount(payment.amount) }}</dd>
-                    </div>
-                    <div>
-                      <dt>Payment date</dt>
-                      <dd>{{ formatDate(payment.payment_date) }}</dd>
-                    </div>
-                    <div class="wide">
-                      <dt>Reference</dt>
-                      <dd>{{ payment.transaction_reference || 'Not available' }}</dd>
-                    </div>
-                  </dl>
-
-                  <p
-                    v-if="['cash', 'cod'].includes(String(payment.payment_method).toLowerCase()) &&
-                      tone(payment.payment_status) !== 'success'"
-                    class="info-note"
-                  >
-                    Please pay the delivery person when your order arrives.
-                  </p>
-                </div>
-              </section>
-
-              <!-- Delivery -->
-              <section class="detail-section">
-                <h4>Delivery tracking</h4>
-
-                <p
-                  v-if="!(orderDetails[order.id].deliveries || []).length"
-                  class="muted"
-                >
-                  Delivery details are not available yet. We will update this
-                  once your order is ready to ship.
-                </p>
-
-                <div
-                  v-for="(delivery, index) in orderDetails[order.id].deliveries || []"
-                  :key="delivery.id || delivery.delivery_reference || index"
-                  class="info-card"
-                >
-                  <div class="info-card-head">
-                    <strong>{{ delivery.courier_name || 'Courier not assigned yet' }}</strong>
-                    <span class="badge badge-soft" :class="`tone-${tone(delivery.delivery_status)}`">
-                      {{ formatStatus(delivery.delivery_status) }}
-                    </span>
-                  </div>
-
-                  <div class="tracking-row">
-                    <div>
-                      <span class="tracking-label">Tracking number</span>
-                      <strong class="tracking-number">
-                        {{ delivery.tracking_number || 'Not available yet' }}
-                      </strong>
-                    </div>
-
-                    <button
-                      v-if="delivery.tracking_number"
-                      type="button"
-                      class="copy-button"
-                      @click="copyTracking(delivery.tracking_number)"
-                    >
-                      {{ copiedTracking === String(delivery.tracking_number) ? 'Copied ✓' : 'Copy' }}
-                    </button>
-                  </div>
-
-                  <ol class="timeline">
-                    <li
-                      v-for="event in deliveryEvents(delivery)"
-                      :key="event.label"
-                      class="timeline-item"
-                      :class="{ done: event.done }"
-                    >
-                      <span class="timeline-dot" aria-hidden="true"></span>
-                      <span class="timeline-label">{{ event.label }}</span>
-                      <span class="timeline-date">{{ formatDate(event.date) }}</span>
-                    </li>
-                  </ol>
-                </div>
-              </section>
-
+            <template v-if="orderDetails[order.id]?._error">
+              <p class="error">{{ orderDetails[order.id]._error }}</p>
+              <button type="button" class="link-button" @click="retryDetails(order)">Try again</button>
             </template>
 
+            <div v-else-if="!orderDetails[order.id]" class="details-loading" aria-busy="true">
+              <div class="skeleton-line"></div>
+              <div class="skeleton-line short"></div>
+              <div class="skeleton-line"></div>
+            </div>
+
+            <template v-else>
+              <ul v-if="(orderDetails[order.id].items || []).length" class="items">
+                <li v-for="item in orderDetails[order.id].items" :key="item.id">
+                  <RouterLink
+                    v-if="item.item?.slug && item.item?.public_id"
+                    :to="`/product/${item.item.slug}-${item.item.public_id}`"
+                    class="item-name"
+                  >{{ item.item.item_name || 'Product' }}</RouterLink>
+                  <span v-else class="item-name">{{ item.item?.item_name || 'Product' }}</span>
+                  <span class="item-qty">× {{ item.quantity }}</span>
+                  <span class="item-price">LKR {{ formatAmount(item.line_total) }}</span>
+                </li>
+              </ul>
+
+              <dl class="rows">
+                <div v-if="firstPayment(order.id)">
+                  <dt>Payment</dt>
+                  <dd>
+                    {{ paymentMethodLabel(firstPayment(order.id).payment_method) }}
+                    <span class="dot-status" :class="`tone-${tone(firstPayment(order.id).payment_status)}`">{{ formatStatus(firstPayment(order.id).payment_status) }}</span>
+                  </dd>
+                </div>
+                <div v-else>
+                  <dt>Payment</dt>
+                  <dd><span class="dot-status" :class="`tone-${tone(order.payment_status)}`">{{ formatStatus(order.payment_status) }}</span></dd>
+                </div>
+
+                <div v-if="shipTo(order.id)">
+                  <dt>Ship to</dt>
+                  <dd>{{ shipTo(order.id).recipient_name }}<small>{{ addressText(shipTo(order.id)) }}</small></dd>
+                </div>
+
+                <div>
+                  <dt>Delivery</dt>
+                  <dd v-if="firstDelivery(order.id)">
+                    {{ firstDelivery(order.id).courier_name || 'Courier not assigned yet' }}
+                    <small v-if="deliveryLine(firstDelivery(order.id))">{{ deliveryLine(firstDelivery(order.id)) }}</small>
+                    <small v-if="firstDelivery(order.id).tracking_number" class="tracking">
+                      {{ firstDelivery(order.id).tracking_number }}
+                      <button type="button" class="link-button" @click="copyTracking(firstDelivery(order.id).tracking_number)">
+                        {{ copiedTracking === String(firstDelivery(order.id).tracking_number) ? 'Copied' : 'Copy' }}
+                      </button>
+                    </small>
+                  </dd>
+                  <dd v-else class="muted-dd">Not shipped yet</dd>
+                </div>
+              </dl>
+
+              <p
+                v-if="firstPayment(order.id) && ['cash', 'cod'].includes(String(firstPayment(order.id).payment_method).toLowerCase()) && tone(firstPayment(order.id).payment_status) !== 'success'"
+                class="note"
+              >Please pay the delivery person when your order arrives.</p>
+            </template>
+
+            <dl class="totals">
+              <div><dt>Shipping</dt><dd>LKR {{ formatAmount(order.shipping_amount) }}</dd></div>
+              <div class="grand-total"><dt>Total</dt><dd>LKR {{ formatAmount(order.total_amount) }}</dd></div>
+            </dl>
           </div>
 
         </article>
-
       </div>
 
+      <div v-if="visibleCount < filteredOrders.length" class="more">
+        <button type="button" class="btn" @click="visibleCount += 10">
+          Show more ({{ filteredOrders.length - visibleCount }} left)
+        </button>
+      </div>
     </template>
 
   </section>
 </template>
 
 <style scoped>
-.orders-page {
-  min-width: 0;
-  color: var(--color-text);
-}
-
-.muted {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
-}
-
-/* =========================
-   Heading
-   ========================= */
-
-.heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: var(--space-5);
-}
-
-.page-title {
-  margin: 0 0 4px;
-  color: var(--color-text);
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-lg, 20px);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: -0.01em;
-}
-
-.subtitle {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
-
-.refresh-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  transition: border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.refresh-button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.refresh-icon {
-  width: 16px;
-  height: 16px;
-}
-
-.refresh-icon.spinning {
-  animation: spin 0.9s linear infinite;
-}
-
-/* =========================
-   Toolbar
-   ========================= */
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-}
-
-.tabs {
-  display: inline-flex;
-  max-width: 100%;
-  padding: 4px;
-  overflow-x: auto;
-  border-radius: var(--radius-pill);
-  background: var(--color-surface-muted);
-  scrollbar-width: none;
-}
-
-.tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  white-space: nowrap;
-  transition: background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.tab:hover:not(.active) {
-  color: var(--color-text);
-}
-
-.tab-count {
-  min-width: 20px;
-  padding: 1px 6px;
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  font-size: 11px;
-  line-height: 1.5;
-  text-align: center;
-}
-
-.tab.active {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.tab.active .tab-count {
-  background: rgb(255 255 255 / 22%);
-  color: var(--color-on-primary);
-}
-
-.search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 1 280px;
-  min-width: 0;
-  height: 42px;
-  padding: 0 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.search svg {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-
-.search:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
-}
-
-.search input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--font-size-sm);
-}
-
-.search input::placeholder {
-  color: var(--color-text-muted);
-}
-
-.result-count {
-  margin: 0 0 var(--space-3);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-}
-
-/* =========================
-   States
-   ========================= */
-
-.state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 44px 20px;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-  text-align: center;
-}
-
-.state h3 {
-  margin: 8px 0 0;
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-md);
-}
-
-.state .muted {
-  margin: 0 0 var(--space-3);
-}
-
-.state-icon {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-  color: var(--color-primary);
-}
-
-.state-icon svg {
-  width: 28px;
-  height: 28px;
-}
-
-.state-error .state-icon {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
-.error {
-  color: var(--color-danger);
-  font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
-}
-
-/* =========================
-   Order cards
-   ========================= */
-
-.order-list {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.order-card {
-  position: relative;
-  min-width: 0;
-  padding: 22px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-/* Coloured edge shows the state of the order at a glance */
-.order-card::before {
-  position: absolute;
-  top: 14px;
-  bottom: 14px;
-  left: 0;
-  width: 4px;
-  border-radius: 0 4px 4px 0;
-  background: var(--color-primary);
-  content: '';
-}
-
-.order-card.group-delivered::before {
-  background: var(--color-success, #16a34a);
-}
-
-.order-card.group-cancelled::before {
-  background: var(--color-danger);
-}
-
-@media (hover: hover) {
-  .order-card:hover {
-    border-color: var(--color-border);
-    box-shadow: var(--shadow-sm);
-  }
-}
-
-/* ---------- Top ---------- */
-
-.order-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px 16px;
-}
-
-.order-id {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.eyebrow {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.order-number {
-  margin: 0;
-  color: var(--color-text);
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-bold);
-  overflow-wrap: anywhere;
-}
-
-/* ---------- Badges ---------- */
-
-.badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 11px;
-  border-radius: var(--radius-pill);
-  font-size: 12px;
-  font-weight: var(--font-weight-semibold);
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.badge::before {
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: currentColor;
-  content: '';
-}
-
-.tone-neutral {
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-}
-
-.tone-warning {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.tone-info {
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-  color: var(--color-primary);
-}
-
-.tone-progress {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.tone-success {
-  background: var(--color-success-bg, #dcfce7);
-  color: var(--color-success, #166534);
-}
-
-.tone-danger {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
-/* The payment badge is quieter than the main status badge */
-.badge-soft.tone-progress {
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-  color: var(--color-primary);
-}
-
-/* ---------- Progress ---------- */
-
-.progress {
-  margin-top: 26px;
-}
-
-.tracker {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.tracker-step {
-  position: relative;
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  text-align: center;
-}
-
-/* Line coming from the previous step */
-.tracker-step:not(:first-child)::before {
-  position: absolute;
-  top: 12px;
-  right: 50%;
-  width: 100%;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--color-border-soft);
-  content: '';
-}
-
-.tracker-step.line-done::before {
-  background: var(--color-primary);
-}
-
-.tracker-dot {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
-  box-sizing: border-box;
-  border: 2px solid var(--color-border);
-  border-radius: 50%;
-  background: var(--color-surface);
-  color: var(--color-on-primary);
-}
-
-.tracker-dot svg {
-  width: 14px;
-  height: 14px;
-}
-
-.tracker-step.done .tracker-dot {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-}
-
-.tracker-step.done .tracker-label {
-  color: var(--color-text);
-}
-
-.tracker-step.current .tracker-dot {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 18%, transparent);
-}
-
-.tracker-step.current .tracker-dot::after {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  content: '';
-}
-
-.tracker-step.current .tracker-label {
-  color: var(--color-primary);
-  font-weight: var(--font-weight-bold);
-}
-
-.status-message {
-  margin: 16px 0 0;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
-  color: var(--color-text);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-  text-align: center;
-}
-
-.cancel-note {
-  margin: 20px 0 0;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-}
-
-/* ---------- Bottom ---------- */
-
-.order-bottom {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 16px;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--color-border-soft);
-}
-
-.order-total {
-  display: grid;
-  gap: 2px;
-}
-
-.order-total strong {
-  color: var(--color-text);
-  font-size: var(--font-size-lg, 18px);
-  font-weight: var(--font-weight-bold);
-  font-variant-numeric: tabular-nums;
-}
-
-.details-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 0 18px;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.details-button:hover,
-.details-button[aria-expanded='true'] {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.details-chevron {
-  width: 16px;
-  height: 16px;
-  transition: transform var(--transition-fast);
-}
-
-.details-button[aria-expanded='true'] .details-chevron {
-  transform: rotate(180deg);
-}
-
-/* =========================
-   Expanded details
-   ========================= */
-
-.details {
-  display: grid;
-  gap: var(--space-5);
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--color-border-soft);
-  min-width: 0;
-}
-
-.details-loading {
-  display: grid;
-  gap: 12px;
-}
-
-.detail-section h4 {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 12px;
-  color: var(--color-primary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.detail-section h4::after {
-  flex: 1;
-  height: 1px;
-  background: var(--color-border-soft);
-  content: '';
-}
-
-/* ---------- Items ---------- */
-
-.item-list {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.item-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-border-soft);
-}
-
-.item-thumb {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  flex-shrink: 0;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-}
-
-.item-thumb svg {
-  width: 22px;
-  height: 22px;
-}
-
-.item-info {
-  display: grid;
-  flex: 1;
-  gap: 2px;
-  min-width: 0;
-}
-
-.item-name {
-  color: var(--color-text);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  overflow-wrap: anywhere;
-}
-
-.item-name.link {
-  text-decoration: none;
-}
-
-.item-name.link:hover {
-  color: var(--color-primary);
-  text-decoration: underline;
-}
-
-.item-price {
-  flex-shrink: 0;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  font-variant-numeric: tabular-nums;
-}
-
-.totals {
-  display: grid;
-  gap: 8px;
-  margin: 14px 0 0 auto;
-  max-width: 320px;
-}
-
-.totals > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  font-size: var(--font-size-sm);
-}
-
-.totals dt {
-  color: var(--color-text-muted);
-}
-
-.totals dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.totals .grand-total {
-  margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px solid var(--color-border-soft);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-bold);
-}
-
-.totals .grand-total dt {
-  color: var(--color-text);
-}
-
-/* ---------- Payment / delivery cards ---------- */
-
-.info-card {
-  margin-bottom: 12px;
-  padding: 16px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-}
-
-.info-card:last-child {
-  margin-bottom: 0;
-}
-
-.info-card-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 12px;
-  margin-bottom: 14px;
-}
-
-.info-card-head strong {
-  font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
-}
-
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 16px;
-  margin: 0;
-}
-
-.info-grid .wide {
-  grid-column: 1 / -1;
-}
-
-.info-grid dt {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-}
-
-.info-grid dd {
-  margin: 2px 0 0;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  overflow-wrap: anywhere;
-}
-
-.info-note {
-  margin: 14px 0 0;
-  padding: 10px 12px;
-  border-left: 3px solid var(--color-primary);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-}
-
-/* ---------- Tracking number ---------- */
-
-.tracking-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-}
-
-.tracking-label {
-  display: block;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-}
-
-.tracking-number {
-  display: block;
-  margin-top: 2px;
-  font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
-}
-
-.copy-button {
-  flex-shrink: 0;
-  min-height: 34px;
-  padding: 0 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  transition: border-color var(--transition-fast);
-}
-
-.copy-button:hover {
-  border-color: var(--color-primary);
-}
-
-/* ---------- Delivery timeline ---------- */
-
-.timeline {
-  display: grid;
-  gap: 0;
-  margin: 16px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.timeline-item {
-  position: relative;
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
-
-/* Vertical line between the dots */
-.timeline-item:not(:last-child)::before {
-  position: absolute;
-  top: 24px;
-  bottom: -8px;
-  left: 7px;
-  width: 2px;
-  background: var(--color-border-soft);
-  content: '';
-}
-
-.timeline-dot {
-  position: relative;
-  z-index: 1;
-  width: 16px;
-  height: 16px;
-  box-sizing: border-box;
-  border: 2px solid var(--color-border);
-  border-radius: 50%;
-  background: var(--color-surface);
-}
-
-.timeline-item.done {
-  color: var(--color-text);
-}
-
-.timeline-item.done .timeline-dot {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-}
-
-.timeline-label {
-  font-weight: var(--font-weight-semibold);
-}
-
-.timeline-date {
-  font-variant-numeric: tabular-nums;
-}
-
-/* =========================
-   Buttons
-   ========================= */
-
-.secondary-button,
-.primary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0 22px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  text-decoration: none;
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.secondary-button {
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-
-.secondary-button:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.primary-button {
-  border: 1px solid transparent;
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.primary-button:hover {
-  background: var(--color-primary-hover);
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.tab:focus-visible,
-.refresh-button:focus-visible,
-.details-button:focus-visible,
-.copy-button:focus-visible,
-.secondary-button:focus-visible,
-.primary-button:focus-visible,
-.item-name.link:focus-visible {
-  outline: 2px solid var(--color-focus-outline);
-  outline-offset: 2px;
-}
-
-/* =========================
-   Loading skeleton
-   ========================= */
-
-.order-card.skeleton {
-  display: grid;
-  gap: 12px;
-}
-
-.skeleton-line {
-  height: 12px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-.skeleton-line.short {
-  width: 35%;
-}
-
-.skeleton-line.wide {
-  height: 40px;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* =========================
-   Touch devices
-   ========================= */
-
-@media (pointer: coarse) {
-  .tab,
-  .refresh-button,
-  .details-button {
-    min-height: 44px;
-  }
-
-  .search {
-    height: 46px;
-  }
-
-  .search input {
-    font-size: 16px; /* stops iOS zooming into the field */
-  }
-}
-
-/* =========================
-   Phones
-   ========================= */
-
-@media (max-width: 600px) {
-  .order-card {
-    padding: 16px 14px 16px 18px;
-  }
-
-  .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .search {
-    flex-basis: auto;
-    width: 100%;
-  }
-
-  .order-bottom {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .details-button {
-    justify-content: center;
-    width: 100%;
-  }
-
-  .totals {
-    max-width: none;
-  }
-}
-
-/* =========================
-   Small phones and fold cover screens
-   ========================= */
-
-@media (max-width: 420px) {
-  .heading {
-    flex-wrap: wrap;
-  }
-
-  .refresh-button {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .tracker-step {
-    font-size: 10px;
-  }
-
-  .info-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .tracking-row {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .timeline-item {
-    grid-template-columns: 20px minmax(0, 1fr);
-  }
-
-  .timeline-date {
-    grid-column: 2;
-  }
+.orders-page { min-width: 0; color: var(--color-text); }
+.muted { color: var(--color-text-muted); font-size: 12px; overflow-wrap: anywhere; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 14px; background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-md); font: 600 13px/1 var(--font-family-base); text-decoration: none; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+.btn:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
+.btn.primary { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
+.btn.primary:hover { background: var(--color-primary-hover); color: var(--color-on-primary); }
+.link-button { padding: 0; background: none; border: 0; color: var(--color-primary); font: 600 12px var(--font-family-base); cursor: pointer; }
+.link-button:hover { text-decoration: underline; }
+.refresh-icon { width: 15px; height: 15px; }
+.refresh-icon.spinning { animation: spin .9s linear infinite; }
+
+/* Toolbar */
+.toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--color-border-soft); }
+.tabs { display: flex; gap: 22px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { display: inline-flex; align-items: center; gap: 6px; padding: 10px 0; margin-bottom: -1px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--color-text-muted); font: 600 13px/1 var(--font-family-base); white-space: nowrap; cursor: pointer; }
+.tab:hover:not(.active) { color: var(--color-text); }
+.tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.tab-count { font-size: 11px; font-weight: 500; opacity: .75; }
+.search { display: flex; align-items: center; gap: 8px; flex: 0 1 230px; min-width: 0; height: 34px; margin-bottom: 6px; padding: 0 10px; background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.search svg { width: 15px; height: 15px; flex-shrink: 0; }
+.search:focus-within { border-color: var(--color-primary); }
+.search input { flex: 1; min-width: 0; background: transparent; color: var(--color-text); border: 0; outline: 0; font: 400 13px var(--font-family-base); }
+.search input::placeholder { color: var(--color-text-muted); }
+
+/* States */
+.state { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 40px 20px; text-align: center; background: var(--color-surface); border: 1px solid var(--color-border-soft); border-radius: var(--radius-lg); }
+.state h3 { margin: 0; font-family: var(--font-family-display); font-size: 16px; }
+.state .muted { margin-bottom: 10px; font-size: 13px; }
+.error { margin: 0 0 6px; color: #b42318; font-size: 13px; }
+
+/* Card: two halves */
+.order-list { display: grid; gap: 12px; }
+.order-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-width: 0; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px 18px; }
+.details-col { background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); border-left: 1px solid var(--color-border); }
+
+/* Left half */
+.order-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.order-id { display: grid; gap: 1px; min-width: 0; }
+.order-number { margin: 0; font-family: var(--font-family-display); font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.status { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.status::before, .dot-status::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: currentColor; }
+.tone-neutral { color: var(--color-text-muted); }
+.tone-warning { color: #b45309; }
+.tone-info, .tone-progress { color: var(--color-primary); }
+.tone-success { color: #15803d; }
+.tone-danger { color: #b42318; }
+
+.order-preview { display: flex; align-items: center; gap: 10px; }
+.preview-name { min-width: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.preview-name small { margin-left: 4px; color: var(--color-text-muted); font-size: 12px; font-weight: 500; }
+
+/* Progress */
+.progress { margin-top: auto; }
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
+.step { position: relative; display: grid; justify-items: center; gap: 7px; }
+.step:not(:first-child)::before { content: ''; position: absolute; top: 12px; right: 50%; width: 100%; height: 2px; background: var(--color-border); }
+.step.line-done::before { background: var(--color-primary); }
+.step-node { position: relative; z-index: 1; display: grid; place-items: center; width: 26px; height: 26px; box-sizing: border-box; background: var(--color-surface); color: var(--color-text-muted); border: 2px solid var(--color-border); border-radius: 50%; }
+.step-node svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.step.done .step-node { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
+.step.current .step-node { color: var(--color-primary); border-color: var(--color-primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 16%, transparent); }
+.step-label { color: var(--color-text-muted); font-size: 11px; }
+.step.done .step-label { color: var(--color-text); }
+.step.current .step-label { color: var(--color-primary); font-weight: 700; }
+.status-message { display: flex; align-items: flex-start; gap: 8px; margin: 14px 0 0; padding: 9px 11px; background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)); color: var(--color-text); border-radius: var(--radius-md); font-size: 12px; line-height: 1.45; }
+.status-message svg { flex-shrink: 0; width: 15px; height: 15px; margin-top: 1px; fill: none; stroke: var(--color-primary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cancel-note { margin: auto 0 0; padding: 9px 11px; background: #fef2f2; color: #b42318; border-radius: var(--radius-md); font-size: 12px; font-weight: 600; }
+
+/* Totals as a white box */
+.totals { display: grid; gap: 4px; margin: auto 0 0; padding: 10px 12px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+
+/* Right half */
+.items { display: grid; gap: 6px; margin: 0; padding: 0 0 12px; list-style: none; border-bottom: 1px solid var(--color-border); }
+.items li { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.item-name { flex: 1; min-width: 0; overflow: hidden; color: var(--color-text); font-weight: 500; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+a.item-name:hover { color: var(--color-primary); text-decoration: underline; }
+.item-qty { flex-shrink: 0; color: var(--color-text-muted); font-size: 12px; }
+.item-price { flex-shrink: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.rows { display: grid; gap: 8px; margin: 0; }
+.rows > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; font-size: 13px; }
+.rows dt { color: var(--color-text-muted); }
+.rows dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.rows dd small { display: block; margin-top: 1px; color: var(--color-text-muted); font-size: 12px; font-weight: 400; line-height: 1.4; }
+.rows .muted-dd { color: var(--color-text-muted); font-weight: 400; }
+.dot-status { display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; font-size: 12px; font-weight: 600; }
+.tracking { display: flex !important; align-items: center; gap: 8px; }
+.note { margin: 0; color: var(--color-text-muted); font-size: 12px; }
+
+.totals > div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+.totals dt { color: var(--color-text-muted); }
+.totals dd { margin: 0; font-variant-numeric: tabular-nums; }
+.totals .grand-total { font-size: 14px; font-weight: 700; }
+.totals .grand-total dt { color: var(--color-text); }
+
+.more { display: flex; justify-content: center; margin-top: 16px; }
+
+/* Loading */
+.details-loading { display: grid; gap: 10px; }
+.skeleton-line { height: 11px; background: var(--color-border); border-radius: 4px; animation: pulse 1.4s ease-in-out infinite; }
+.skeleton-line.short { width: 40%; }
+.skeleton-line.wide { height: 32px; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.tab:focus-visible, .btn:focus-visible, .link-button:focus-visible, a.item-name:focus-visible { outline: 2px solid var(--color-focus-outline); outline-offset: 2px; }
+
+@media (pointer: coarse) { .search input { font-size: 16px; } }
+
+/* Tablet and phone: stack the halves */
+@media (max-width: 760px) {
+  .order-card { grid-template-columns: minmax(0, 1fr); }
+  .details-col { border-left: 0; border-top: 1px solid var(--color-border-soft); }
+  .toolbar { flex-direction: column; align-items: stretch; gap: 10px; border-bottom: 0; }
+  .tabs { border-bottom: 1px solid var(--color-border-soft); }
+  .search { flex-basis: auto; width: 100%; margin-bottom: 0; }
+  .col { padding: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skeleton-line,
-  .refresh-icon.spinning {
-    animation: none;
-  }
-
-  .order-card,
-  .tab,
-  .details-chevron,
-  .details-button,
-  .search,
-  .copy-button {
-    transition: none;
-  }
+  .skeleton-line, .refresh-icon.spinning { animation: none; }
 }
 </style>

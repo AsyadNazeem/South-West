@@ -1,6 +1,11 @@
 'use strict';
 
+const warrantyPermissions = ['view', 'review', 'update_status', 'request_evidence', 'assign', 'download_evidence', 'manage']
+    .map(action => ({ name: 'warranty_claims.' + action, module: 'warranty_claims',
+        description: 'Warranty claims · ' + action.replace(/_/g, ' ') }));
+
 const permissionCatalog = [
+    ...warrantyPermissions,
     { name: 'dashboard.view', module: 'dashboard', description: 'View dashboard' },
     { name: 'users.view', module: 'users', description: 'View users' },
     { name: 'users.create', module: 'users', description: 'Create users' },

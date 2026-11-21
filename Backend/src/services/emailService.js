@@ -449,7 +449,35 @@ function getStatusMessage(statusLabel) {
     return messages[statusLabel] || 'There is an update to your order.';
 }
 
+async function sendWarrantyUpdate(to, claim, history) {
+    const url = new URL('/account/warranty-claims/' + claim.id, process.env.CUSTOMER_APP_URL || 'https://southwest.lk');
+    const subject = 'South West warranty claim ' + claim.reference + ' · ' + history.new_status;
+    const lines = [claim.product, history.previous_status && 'Previous status: ' + history.previous_status,
+        'Current status: ' + history.new_status, warrantyTime(history.created_at), history.message].filter(Boolean);
+    return sendEmail('support', { to, subject, messageId: '<warranty-' + history.id + '@southwest.lk>',
+        text: [subject, ...lines, url.href].join('\n'),
+        html: brandedEmail({ heading: subject, body: lines.map(line => '<p>' + escapeHtml(line) + '</p>').join('') +
+            '<p><a href="' + escapeHtml(url.href) + '">View warranty claim</a></p>' }) });
+}
+
+function warrantyTime(value) {
+    return new Date(value).toLocaleString('en-GB', { timeZone: 'Asia/Colombo', timeZoneName: 'short' });
+}
+
+async function sendAdminWarrantyClaim(user, claim, history, photos, videos) {
+    const url = new URL('/admin/sales/warranty-claims/' + claim.id, process.env.ADMIN_APP_URL || 'https://admin.southwest.lk');
+    const subject = 'New Warranty Claim Received | ' + claim.reference;
+    const lines = [claim.customer_name, 'Order: ' + claim.order_number, claim.invoice_number && 'Invoice: ' + claim.invoice_number,
+        claim.product, warrantyTime(history.created_at), claim.reason, photos + ' photos · ' + videos + ' videos'].filter(Boolean);
+    return sendEmail('admin', { to: user.email, subject, messageId: '<warranty-' + history.id + '-staff-' + user.id + '@southwest.lk>',
+        text: [subject,...lines,url.href].join('\n'),
+        html: brandedEmail({ heading: subject, body: lines.map(line => '<p>' + escapeHtml(line) + '</p>').join('') +
+            '<p><a href="' + escapeHtml(url.href) + '">Review warranty claim</a></p>' }) });
+}
+
 module.exports = {
+    sendAdminWarrantyClaim,
+    sendWarrantyUpdate,
     sendVerificationCode,
     sendCustomerPasswordSetupInvitation,
     sendCustomerPasswordReset,

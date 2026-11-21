@@ -16,6 +16,7 @@ function createHarness(options = {}) {
 
     const models = {
         ProductReview: {
+            associations: { images: options.reviewImagesAssociation },
             async findOne(query) {
                 if (query.where?.guest_number) {
                     calls.guestNumberQueries.push(query);
@@ -307,4 +308,78 @@ test('public registered review displays full name when opted in', async () => {
         h.res.body.data.reviews[0].reviewer_name,
         'Mohamad Asyad'
     );
+});
+
+test('my reviews joins photos by review ID and returns public images or an empty array', async t => {
+    const express = require('express');
+    const fs = require('node:fs/promises');
+    const path = require('node:path');
+    const os = require('node:os');
+    const { once } = require('node:events');
+    const { ProductReview, ProductReviewImage } = require('../models');
+    const { UPLOAD_ROOT } = require('../utils/fileStorage');
+
+    const photos = ProductReview.associations.images;
+    assert.equal(photos.target, ProductReviewImage);
+    assert.equal(photos.sourceKey, 'id');
+    assert.equal(photos.foreignKey, 'product_review_id');
+    assert.equal(ProductReviewImage.associations.review.target, ProductReview);
+    assert.equal(ProductReviewImage.associations.review.foreignKey, 'product_review_id');
+
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'review-images-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const folder = 'reviews/images';
+    await fs.mkdir(path.join(directory, folder), { recursive: true });
+    const sharp = require('sharp');
+    for (const color of ['red', 'blue']) {
+        await sharp({ create: { width: 2, height: 2, channels: 3, background: color } })
+            .webp().toFile(path.join(directory, folder, color + '.webp'));
+    }
+    const app = express();
+    app.use('/uploads', express.static(directory));
+    const server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const origin = 'http://127.0.0.1:' + server.address().port;
+    const previousBase = process.env.FILE_BASE_URL;
+    process.env.FILE_BASE_URL = origin;
+    t.after(() => {
+        if (previousBase === undefined) delete process.env.FILE_BASE_URL;
+        else process.env.FILE_BASE_URL = previousBase;
+    });
+
+    const h = createHarness({
+        customer: { id: 25 },
+        reviewImagesAssociation: photos,
+        publicReviews: [
+            { toJSON: () => ({ id: 12, item_id: 40, images: [
+                { id: 1, file_path: folder + '/red.webp' },
+                { id: 2, file_path: path.join(UPLOAD_ROOT, folder, 'blue.webp') },
+                { id: 3, file_path: '/private/missing.webp' },
+            ] }) },
+            { toJSON: () => ({ id: 13, item_id: 40, images: [] }) },
+        ],
+    });
+    await h.controller.getMyReviews(h.req, h.res);
+    const query = h.calls.publicReviewQuery;
+    assert.deepEqual(query.where, { customer_id: 25 });
+    assert.deepEqual(query.order, [['created_at', 'DESC']]);
+    assert.equal(query.include[0].as, 'item');
+    assert.deepEqual(query.include[1], {
+        association: photos, attributes: ['id', 'file_path'], required: false,
+    });
+    const images = ['red', 'blue'].map((color, i) => ({
+        id: i + 1, url: origin + '/uploads/' + folder + '/' + color + '.webp',
+    }));
+    assert.deepEqual(h.res.body, { data: [
+        { id: 12, item_id: 40, images },
+        { id: 13, item_id: 40, images: [] },
+    ] });
+    for (const image of h.res.body.data[0].images) {
+        const response = await fetch(image.url);
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get('content-type'), /image\/webp/);
+        const metadata = await sharp(Buffer.from(await response.arrayBuffer())).metadata();
+        assert.equal(metadata.format, 'webp');
+    }
 });

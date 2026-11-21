@@ -1,0 +1,6 @@
+.account .account-panel{padding:clamp(1rem,2.3vw,1.65rem);background:var(--color-surface);border:1px solid var(--color-border-soft);border-radius:var(--radius-lg)}
+.account-panel h2{margin:0;font:700 1.23rem var(--font-family-display);color:var(--color-primary)}
+.account-panel p{line-height:1.6}
+.account-cta,.account-text-link{display:inline-flex;align-items:center;min-height:44px;font-weight:650;font-size:.9rem}
+.account-cta{background:var(--color-primary);color:var(--color-on-primary);border-radius:var(--radius-md);padding:.65rem 1rem;text-decoration:none}
+.account-text-link{color:var(--color-primary-light);text-underline-offset:.2em}

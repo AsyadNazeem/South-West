@@ -415,3 +415,44 @@ test('admin notification rejects missing notification recipient', async (t) => {
         /ORDER_NOTIFICATION_EMAIL is not configured/
     );
 });
+
+test('warranty updates escape customer text and omit internal notes and evidence', async t => {
+    const mail = loadEmailService({ EMAIL_PROVIDER: 'mailpit', CUSTOMER_APP_URL: 'https://fixture.invalid' });
+    t.after(mail.restoreEnv);
+    await mail.service.sendWarrantyUpdate('customer@example.invalid', { id: 13, reference: 'WC-TEST', product: '<b>Camera</b>' },
+        { id: 42, created_at:new Date(0), previous_status:'Submitted', new_status: 'Under Review', message: '<i>Received</i>', internal_note: 'private fixture' });
+    const [sent] = mail.sentMessages;
+    assert.match(sent.html,/&lt;b&gt;Camera/);
+    assert.match(sent.html,/&lt;i&gt;Received/);
+    assert.match(sent.html,/https:\/\/fixture.invalid\/account\/warranty-claims\/13/);
+    assert.doesNotMatch(sent.html + sent.text,/private fixture/);
+    assert.equal(sent.attachments,undefined);
+    assert.equal(sent.messageId,'<warranty-42@southwest.lk>');
+});
+
+
+test('each warranty transition identifies both statuses and event time', async t => {
+    const mail = loadEmailService({ EMAIL_PROVIDER:'mailpit' });
+    t.after(mail.restoreEnv);
+    const transitions = [['Submitted','Under Review'],['Under Review','More Evidence Required'],
+        ['More Evidence Required','Evidence Submitted'],['Evidence Submitted','Approved'],['Under Review','Rejected'],
+        ['Approved','Processing'],['Processing','Resolved'],['Resolved','Closed']];
+    for (const [previous_status,new_status] of transitions) {
+        await mail.service.sendWarrantyUpdate('fixture@example.invalid',{id:2,product:'Camera',reference:'WC-2'},
+            {id:3,previous_status,new_status,created_at:new Date('2026-11-21T06:00:00Z')});
+        const message = mail.sentMessages.at(-1);
+        for (const part of [previous_status,new_status,'21/11/2026','11:30','Camera','WC-2']) assert.ok(message.text.includes(part));
+    }
+});
+
+test('new claim email identifies purchase and initial evidence without private attachments', async t => {
+    const mail = loadEmailService({EMAIL_PROVIDER:'mailpit'});
+    t.after(mail.restoreEnv);
+    await mail.service.sendAdminWarrantyClaim({id:6,email:'reviewer@example.invalid'},
+        {id:4,reference:'WC-4',customer_name:'Buyer',order_number:'ORDER4',invoice_number:'INV4',
+            product:'Camera',reason:'<b>Damaged</b>'}, {id:1,created_at:new Date()},3,1);
+    const [message] = mail.sentMessages;
+    for (const part of ['WC-4','Buyer','ORDER4','INV4','Camera','3 photos','1 videos','/admin/sales/warranty-claims/4']) assert.ok(message.text.includes(part));
+    assert.match(message.html,/&lt;b&gt;Damaged/);
+    assert.equal(message.attachments,undefined);
+});

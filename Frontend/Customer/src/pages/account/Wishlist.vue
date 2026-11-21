@@ -1,4 +1,7 @@
 <script setup>
+import AccountConfirmDialog from '@/components/account/AccountConfirmDialog.vue'
+import AccountPageHeader from '@/components/account/AccountPageHeader.vue'
+import { accountFeedback } from '@/utils/accountFeedback'
 import {
   getResponsiveImageSrcSet,
   getResponsiveImageUrl,
@@ -12,6 +15,7 @@ const wishlist = ref([])
 const loading = ref(true)
 const errorMessage = ref('')
 const removingIds = ref([])
+const removal = ref(null)
 const cartBusyIds = ref([])
 const notice = ref('')
 const noticeType = ref('success')
@@ -120,8 +124,7 @@ async function loadWishlist() {
     wishlist.value = Array.isArray(body?.data) ? body.data : []
   } catch (error) {
     errorMessage.value =
-      error.response?.data?.message ||
-      'Unable to load your wishlist. Please try again.'
+      accountFeedback(error, 'Unable to load your wishlist. Please try again.')
 
     if (error.response?.status === 401) {
       sessionStorage.removeItem('customerToken')
@@ -158,9 +161,9 @@ async function removeFromWishlist(entry) {
     })
   } catch (error) {
     errorMessage.value =
-      error.response?.data?.message ||
-      'Unable to remove this product from your wishlist.'
+      accountFeedback(error, 'Unable to remove this product from your wishlist.')
   } finally {
+    removal.value = null
     removingIds.value = removingIds.value.filter(
       id => String(id) !== String(itemId)
     )
@@ -220,8 +223,7 @@ async function addToCart(entry) {
   } catch (error) {
     showNotice(
       'error',
-      error.response?.data?.message ||
-        'Unable to add this product to your cart. Please try again.'
+      accountFeedback(error, 'Unable to add this product to your cart. Please try again.')
     )
   } finally {
     cartBusyIds.value = cartBusyIds.value.filter(
@@ -240,101 +242,52 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="wishlist-page">
-    <div class="wishlist-heading">
-      <div>
-        <h2 class="section-title">
-          Wishlist
-          <span v-if="wishlist.length" class="count-pill">{{ wishlist.length }}</span>
-        </h2>
-        <p class="muted">Products you've saved for later.</p>
-      </div>
-
-      <button
-        v-if="!loading && wishlist.length"
-        type="button"
-        class="refresh-button"
-        :disabled="loading"
-        @click="loadWishlist"
-      >
+    <AccountPageHeader title="Wishlist" description="Keep track of the products you’ve saved.">
+      <button v-if="!loading && wishlist.length" type="button" class="btn" :disabled="loading" @click="loadWishlist">
         Refresh
       </button>
-    </div>
+    </AccountPageHeader>
 
-    <p
-      v-if="notice"
-      class="message"
-      :class="noticeType === 'success' ? 'success-text' : 'error-text'"
-      :role="noticeType === 'success' ? 'status' : 'alert'"
-    >
+    <p v-if="notice" class="notice" :class="noticeType" :role="noticeType === 'success' ? 'status' : 'alert'">
       {{ notice }}
-      <RouterLink v-if="noticeType === 'success'" to="/cart" class="message-link">
-        View cart
-      </RouterLink>
+      <RouterLink v-if="noticeType === 'success'" to="/cart" class="notice-link">View cart</RouterLink>
     </p>
 
     <!-- Loading -->
-    <div
-      v-if="loading"
-      class="wishlist-list"
-      aria-busy="true"
-      aria-label="Loading your wishlist"
-    >
-      <div v-for="n in 4" :key="n" class="wishlist-item skeleton" aria-hidden="true">
-        <div class="skeleton-block image"></div>
-        <div class="skeleton-body">
-          <div class="skeleton-block"></div>
-          <div class="skeleton-block short"></div>
-          <div class="skeleton-block button"></div>
+    <div v-if="loading" class="wishlist-list" aria-busy="true" aria-label="Loading your wishlist">
+      <div v-for="n in 4" :key="n" class="card skeleton" aria-hidden="true">
+        <div class="media skeleton-line"></div>
+        <div class="info">
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+          <div class="skeleton-line button"></div>
         </div>
       </div>
     </div>
 
-    <div v-else-if="errorMessage" class="status-message error-message" role="alert">
-      <p>{{ errorMessage }}</p>
-
-      <button
-        type="button"
-        class="secondary-button"
-        @click="loadWishlist"
-      >
-        Try again
-      </button>
+    <!-- Error -->
+    <div v-else-if="errorMessage" class="state" role="alert">
+      <h3>Something went wrong</h3>
+      <p class="muted">{{ errorMessage }}</p>
+      <button type="button" class="btn" @click="loadWishlist">Try again</button>
     </div>
 
-    <div v-else-if="!wishlist.length" class="empty-state">
-      <div class="empty-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none">
-          <path
-            d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2Z"
-            stroke="currentColor"
-            stroke-width="1.7"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </div>
-
+    <!-- Empty -->
+    <div v-else-if="!wishlist.length" class="state">
       <h3>Your wishlist is empty</h3>
-      <p class="muted">
-        Save products you're interested in and find them here later.
-      </p>
-
-      <RouterLink to="/" class="browse-button">
-        Browse products
-      </RouterLink>
+      <p class="muted">Save products you're interested in and find them here later.</p>
+      <RouterLink to="/" class="btn primary">Browse products</RouterLink>
     </div>
 
+    <!-- Products -->
     <div v-else class="wishlist-list">
-      <article
-        v-for="entry in wishlist"
-        :key="entry.id"
-        class="wishlist-item"
-        :class="{ unavailable: isUnavailable(entry) }"
-      >
-        <div class="product-media">
+      <article v-for="entry in wishlist" :key="entry.id" class="card" :class="{ unavailable: isUnavailable(entry) }">
+
+        <div class="media">
           <button
             v-if="getProductImage(getItem(entry)).src"
             type="button"
-            class="product-image-button"
+            class="image-button"
             :disabled="!getProductUrl(getItem(entry))"
             :aria-label="`View ${entryName(entry)}`"
             @click="openProduct(getItem(entry))"
@@ -344,17 +297,11 @@ onBeforeUnmount(() => {
               :srcset="getProductImage(getItem(entry)).srcset || undefined"
               sizes="(max-width: 340px) 100vw, (max-width: 560px) 50vw, 25vw"
               :alt="entryName(entry)"
-              class="product-image"
               loading="lazy"
               decoding="async"
             >
           </button>
-
-          <div
-            v-else
-            class="product-image-placeholder"
-            aria-hidden="true"
-          >
+          <div v-else class="placeholder" aria-hidden="true">
             <span>{{ entryName(entry).charAt(0).toUpperCase() }}</span>
           </div>
 
@@ -366,596 +313,120 @@ onBeforeUnmount(() => {
             :disabled="isRemoving(entry)"
             :aria-label="`Remove ${entryName(entry)} from wishlist`"
             title="Remove from wishlist"
-            @click="removeFromWishlist(entry)"
+            @click="removal = entry"
           >
             <span v-if="isRemoving(entry)" class="spinner" aria-hidden="true"></span>
-
             <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
             </svg>
           </button>
         </div>
 
-        <div class="product-info">
-          <div class="product-text">
-          <RouterLink
-            v-if="getProductUrl(getItem(entry))"
-            :to="getProductUrl(getItem(entry))"
-            class="product-name"
-          >
-            {{ entryName(entry) }}
-          </RouterLink>
+        <div class="info">
+          <div class="text">
+            <RouterLink v-if="getProductUrl(getItem(entry))" :to="getProductUrl(getItem(entry))" class="name">
+              {{ entryName(entry) }}
+            </RouterLink>
+            <h3 v-else class="name">{{ entryName(entry) }}</h3>
 
-          <h3 v-else class="product-name">
-            {{ entryName(entry) }}
-          </h3>
-
-          <p v-if="getItem(entry)?.item_code" class="muted product-code">
-            {{ getItem(entry)?.item_code }}
-          </p>
-
-          <p v-if="getPrice(getItem(entry)) !== null" class="product-price">
-            {{ formatPrice(getPrice(getItem(entry))) }}
-          </p>
+            <p v-if="getItem(entry)?.item_code" class="muted code">{{ getItem(entry)?.item_code }}</p>
+            <p v-if="getPrice(getItem(entry)) !== null" class="price">{{ formatPrice(getPrice(getItem(entry))) }}</p>
           </div>
 
-          <button
-            type="button"
-            class="cart-button"
-            :disabled="isUnavailable(entry) || isAddingToCart(entry)"
-            @click="addToCart(entry)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M3 4h2l2.1 10.1a2 2 0 0 0 2 1.6h8.7a2 2 0 0 0 2-1.6L21 8H6"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <circle cx="10" cy="20" r="1.4" fill="currentColor" />
-              <circle cx="18" cy="20" r="1.4" fill="currentColor" />
-            </svg>
-            {{
-              isUnavailable(entry)
-                ? 'Unavailable'
-                : isAddingToCart(entry)
-                  ? 'Adding…'
-                  : 'Add to cart'
-            }}
+          <button type="button" class="cart-button" :disabled="isUnavailable(entry) || isAddingToCart(entry)" @click="addToCart(entry)">
+            {{ isUnavailable(entry) ? 'Unavailable' : isAddingToCart(entry) ? 'Adding…' : 'Add to cart' }}
           </button>
         </div>
+
       </article>
     </div>
+
+    <AccountConfirmDialog v-if="removal" title="Remove from wishlist?" :description="entryName(removal)" confirm-label="Remove product"
+      :busy="isRemoving(removal)" @cancel="removal = null" @confirm="removeFromWishlist(removal)" />
   </section>
 </template>
 
 <style scoped>
-.wishlist-page {
-  width: 100%;
-  min-width: 0;
-  color: var(--color-text);
-}
+.wishlist-page { width: 100%; min-width: 0; color: var(--color-text); }
+.muted { margin: 0; color: var(--color-text-muted); font-size: 12px; overflow-wrap: anywhere; }
+button:disabled { cursor: not-allowed; opacity: .55; }
 
-.wishlist-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
-}
+/* Buttons */
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 14px; background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-md); font: 600 13px/1 var(--font-family-base); text-decoration: none; white-space: nowrap; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+.btn:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
+.btn.primary { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
+.btn.primary:hover { background: var(--color-primary-hover); border-color: var(--color-primary-hover); color: var(--color-on-primary); }
 
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0 0 6px;
-  color: var(--color-primary);
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-bold);
-}
+/* Notice */
+.notice { margin: 0 0 14px; padding: 10px 14px; border-radius: var(--radius-md); font-size: 13px; }
+.notice.success { background: #ecfdf3; color: #166534; border: 1px solid #bbf7d0; }
+.notice.error { background: #fef2f2; color: #b42318; border: 1px solid #fecaca; }
+.notice-link { margin-left: 8px; color: inherit; font-weight: 600; text-decoration: underline; }
 
-.count-pill {
-  min-width: 22px;
-  padding: 1px 8px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-  color: var(--color-primary);
-  font-family: inherit;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1.6;
-  text-align: center;
-}
+/* States */
+.state { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 48px 20px; text-align: center; background: var(--color-surface); border: 1px solid var(--color-border-soft); border-radius: var(--radius-lg); }
+.state h3 { margin: 0; font-family: var(--font-family-display); font-size: 16px; }
+.state .muted { margin-bottom: 10px; font-size: 13px; }
 
-.muted {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
+/* Grid */
+.wishlist-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
 
-/* ---------- Messages and states ---------- */
-.message {
-  margin: 0 0 var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-}
-
-.success-text {
-  background: #e9f8f0;
-  color: #176c49;
-}
-
-.error-text {
-  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
-.message-link {
-  margin-left: var(--space-2);
-  color: inherit;
-  font-weight: var(--font-weight-semibold);
-  text-decoration: underline;
-}
-
-.status-message,
-.empty-state {
-  padding: var(--space-8) var(--space-4);
-  text-align: center;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-}
-
-.error-message {
-  color: var(--color-danger);
-}
-
-.error-message p {
-  margin: 0 0 var(--space-4);
-}
-
-.empty-icon {
-  display: grid;
-  place-items: center;
-  width: 72px;
-  height: 72px;
-  margin: 0 auto var(--space-4);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-  color: var(--color-primary);
-}
-
-.empty-icon svg {
-  width: 34px;
-  height: 34px;
-}
-
-.empty-state h3 {
-  margin: 0 0 var(--space-2);
-  color: var(--color-text);
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-md);
-}
-
-.empty-state p {
-  margin-bottom: var(--space-5);
-}
-
-/* ---------- Product cards ---------- */
-.wishlist-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: var(--space-5);
-}
-
-.wishlist-item {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
-}
-
-@media (hover: hover) {
-  .wishlist-item:hover {
-    border-color: var(--color-border);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
-  }
-
-  .wishlist-item:hover .product-image {
-    transform: scale(1.05);
-  }
-}
+.card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); transition: border-color .15s ease, box-shadow .15s ease; }
+@media (hover: hover) { .card:hover { border-color: var(--color-border-strong, var(--color-border)); box-shadow: var(--shadow-md); } }
 
 /* Image tile */
-.product-media {
-  position: relative;
-  aspect-ratio: 1 / 1;
-  background: var(--color-surface-muted);
-}
+.media { position: relative; aspect-ratio: 1 / 1; background: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface)); border-bottom: 1px solid var(--color-border-soft); }
+.image-button, .placeholder { position: absolute; inset: 0; display: grid; place-items: center; width: 100%; height: 100%; padding: 16px; overflow: hidden; background: transparent; border: 0; }
+.image-button { cursor: pointer; }
+.image-button:disabled { cursor: default; opacity: 1; }
+.image-button img { max-width: 100%; max-height: 100%; object-fit: contain; mix-blend-mode: multiply; }
+.placeholder span { display: grid; place-items: center; width: 48px; height: 48px; background: var(--color-surface); color: var(--color-primary); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: var(--font-family-display); font-size: 18px; font-weight: 700; }
+.card.unavailable img { opacity: .45; }
 
-.product-image-button,
-.product-image-placeholder {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
-  padding: var(--space-4);
-  overflow: hidden;
-  border: 0;
-  background: transparent;
-}
+.tag { position: absolute; top: 8px; left: 8px; padding: 2px 8px; background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border); border-radius: var(--radius-pill); font-size: 11px; font-weight: 600; pointer-events: none; }
 
-.product-image-button {
-  cursor: pointer;
-}
-
-.product-image-button:disabled {
-  cursor: default;
-}
-
-.product-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  /* White product photos blend into the tile background */
-  mix-blend-mode: multiply;
-  transition: transform var(--transition-base);
-}
-
-.product-image-placeholder span {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-primary);
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-bold);
-}
-
-.wishlist-item.unavailable .product-image {
-  opacity: 0.5;
-}
-
-.tag {
-  position: absolute;
-  top: var(--space-2);
-  left: var(--space-2);
-  padding: 2px var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1.4;
-  pointer-events: none;
-}
-
-/* Remove: small circle, top right of the image */
-.remove-button {
-  position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid var(--color-border-soft);
-  border-radius: 50%;
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-}
-
-.remove-button svg {
-  width: 17px;
-  height: 17px;
-}
-
-.remove-button:hover:not(:disabled) {
-  border-color: var(--color-danger);
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
-.remove-button:disabled {
-  cursor: wait;
-  opacity: 0.7;
-}
-
-.spinner {
-  width: 15px;
-  height: 15px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* Remove: small, quiet */
+.remove-button { position: absolute; top: 8px; right: 8px; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border-soft); border-radius: 50%; cursor: pointer; transition: color .15s ease, border-color .15s ease, background .15s ease; }
+.remove-button svg { width: 13px; height: 13px; }
+.remove-button:hover:not(:disabled) { color: #b42318; border-color: #fecaca; background: #fef2f2; }
+.spinner { width: 12px; height: 12px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Info */
-.product-info {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-  padding: var(--space-3) var(--space-4) var(--space-4);
-}
+.info { display: flex; flex: 1; flex-direction: column; gap: 12px; min-width: 0; padding: 12px 14px 14px; }
+.text { display: grid; flex: 1; align-content: start; gap: 3px; min-width: 0; }
+.name { display: -webkit-box; margin: 0; overflow: hidden; color: var(--color-text); font-size: 13px; font-weight: 600; line-height: 1.4; text-decoration: none; overflow-wrap: anywhere; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
+a.name:hover { color: var(--color-primary); }
+.code { font-size: 11px; }
+.price { margin: 4px 0 0; color: var(--color-text); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* Text block grows, so the cart button sits at the bottom of every card */
-.product-text {
-  display: grid;
-  flex: 1;
-  align-content: start;
-  gap: var(--space-1);
-  min-width: 0;
-  margin-bottom: var(--space-3);
-}
+.cart-button { width: 100%; min-height: 36px; margin-top: auto; padding: 0 12px; background: var(--color-primary); color: var(--color-on-primary); border: 0; border-radius: var(--radius-md); font: 600 13px/1 var(--font-family-base); cursor: pointer; transition: background .15s ease; }
+.cart-button:hover:not(:disabled) { background: var(--color-primary-hover); }
+.cart-button:disabled { background: var(--color-surface-muted); color: var(--color-text-muted); }
 
-.product-name {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  color: var(--color-text);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1.35;
-  text-decoration: none;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  transition: color var(--transition-fast);
-}
+/* Focus */
+.image-button:focus-visible, .name:focus-visible, .remove-button:focus-visible, .cart-button:focus-visible, .btn:focus-visible, .notice-link:focus-visible { outline: 2px solid var(--color-focus-outline); outline-offset: 2px; }
 
-a.product-name:hover {
-  color: var(--color-primary);
-}
+/* Loading */
+.card.skeleton { pointer-events: none; }
+.skeleton-line { height: 11px; background: var(--color-border-soft); border-radius: 4px; animation: pulse 1.4s ease-in-out infinite; }
+.media.skeleton-line { height: auto; border-radius: 0; }
+.skeleton-line.short { width: 45%; }
+.skeleton-line.button { height: 36px; margin-top: 4px; border-radius: var(--radius-md); }
+.card.skeleton .info { gap: 10px; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 
-.product-code {
-  font-size: var(--font-size-xs);
-  overflow-wrap: anywhere;
-}
+@media (pointer: coarse) { .remove-button { width: 34px; height: 34px; } .cart-button { min-height: 40px; } }
 
-.product-price {
-  margin: var(--space-1) 0 0;
-  color: var(--color-primary);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-bold);
-}
-
-/* ---------- Buttons ---------- */
-.cart-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-height: 40px;
-  margin-top: auto;
-  padding: 0 var(--space-3);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  transition: background var(--transition-fast);
-}
-
-.cart-button svg {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.cart-button:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-}
-
-.cart-button:disabled {
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-  cursor: not-allowed;
-}
-
-.refresh-button,
-.secondary-button {
-  min-height: 40px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  transition: border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.refresh-button:hover:not(:disabled),
-.secondary-button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.refresh-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.browse-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0 var(--space-6);
-  border-radius: var(--radius-md);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  text-decoration: none;
-  transition: background var(--transition-fast);
-}
-
-.browse-button:hover {
-  background: var(--color-primary-hover);
-}
-
-.product-image-button:focus-visible,
-.product-name:focus-visible,
-.remove-button:focus-visible,
-.cart-button:focus-visible,
-.refresh-button:focus-visible,
-.secondary-button:focus-visible,
-.browse-button:focus-visible,
-.message-link:focus-visible {
-  outline: 2px solid var(--color-focus-outline);
-  outline-offset: 2px;
-}
-
-/* ---------- Loading skeleton ---------- */
-.wishlist-item.skeleton {
-  pointer-events: none;
-}
-
-.skeleton-body {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4) var(--space-4);
-}
-
-.skeleton-block {
-  height: 12px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-.skeleton-block.image {
-  height: auto;
-  aspect-ratio: 1 / 1;
-  border-radius: 0;
-}
-
-.skeleton-block.short {
-  width: 45%;
-}
-
-.skeleton-block.button {
-  height: 40px;
-  margin-top: var(--space-2);
-  border-radius: var(--radius-md);
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-}
-
-/* ---------- Touch devices ---------- */
-@media (pointer: coarse) {
-  .remove-button {
-    width: 40px;
-    height: 40px;
-  }
-
-  .cart-button,
-  .refresh-button,
-  .secondary-button {
-    min-height: 44px;
-  }
-}
-
-/* ---------- Phones: two compact columns ---------- */
 @media (max-width: 560px) {
-  .wishlist-list {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: var(--space-3);
-  }
-
-  .product-image-button,
-  .product-image-placeholder {
-    padding: var(--space-3);
-  }
-
-  .product-info {
-    padding: var(--space-2) var(--space-3) var(--space-3);
-  }
-
-  .product-price {
-    font-size: var(--font-size-sm);
-  }
+  .wishlist-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .image-button, .placeholder { padding: 12px; }
+  .info { padding: 10px 12px 12px; }
 }
-
-/* ---------- Fold cover screens ---------- */
-@media (max-width: 340px) {
-  .wishlist-list {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
+@media (max-width: 340px) { .wishlist-list { grid-template-columns: minmax(0, 1fr); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .wishlist-item,
-  .product-image,
-  .remove-button,
-  .cart-button,
-  .refresh-button,
-  .secondary-button,
-  .browse-button {
-    transition: none;
-  }
-
-  .wishlist-item:hover {
-    transform: none;
-  }
-
-  .skeleton-block {
-    animation: none;
-  }
-
-  .spinner {
-    animation-duration: 1.6s;
-  }
+  .skeleton-line { animation: none; }
+  .spinner { animation-duration: 1.6s; }
 }
 </style>

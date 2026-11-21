@@ -4,6 +4,9 @@
 
     RewriteRule ^index\.html$ - [L]
 
+    # Serve prerendered information pages at their original extensionless URLs.
+    RewriteRule ^(contact|faq|shipping|returns|about|privacy-policy|terms)$ $1.html [END]
+
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule . /index.html [L]

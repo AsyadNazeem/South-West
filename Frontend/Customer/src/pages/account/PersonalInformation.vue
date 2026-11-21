@@ -1,212 +1,84 @@
 <script setup>
 import { computed } from 'vue'
+import AccountPageHeader from '@/components/account/AccountPageHeader.vue'
 
-const props = defineProps({
-  customer: { type: Object, default: () => ({}) },
-  fullName: { type: String, default: 'Customer' },
-})
+const props = defineProps({ customer: Object, fullName: String })
 
 const initials = computed(() =>
-  props.fullName
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(part => part[0].toUpperCase())
-    .join('') || 'C'
+  (props.fullName || '').trim().split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase() || '?'
 )
 
-const details = computed(() => [
-  { label: 'First name', value: props.customer.first_name },
-  { label: 'Last name', value: props.customer.last_name },
-  { label: 'Email', value: props.customer.email },
-  { label: 'Phone', value: props.customer.phone },
-  { label: 'Customer code', value: props.customer.customer_code },
+const fields = computed(() => [
+  ['First name', props.customer?.first_name],
+  ['Last name', props.customer?.last_name],
+  ['Email address', props.customer?.email],
+  ['Phone number', props.customer?.phone],
 ])
 </script>
 
 <template>
-  <div class="personal">
+  <section class="profile-page">
+    <AccountPageHeader title="My profile" description="The contact details registered to your South West account." />
 
-    <!-- Heading -->
-    <header class="personal-header">
-      <h2 class="section-title">Personal Information</h2>
-      <p class="intro">Your account details.</p>
-    </header>
+    <article class="card">
 
-    <!-- Profile summary -->
-    <div class="profile">
-      <div class="avatar" aria-hidden="true">{{ initials }}</div>
-
-      <div class="profile-text">
-        <strong class="profile-name">{{ fullName }}</strong>
-        <span class="profile-email">{{ customer.email || 'No email on file' }}</span>
+      <div class="col identity">
+        <span class="avatar" aria-hidden="true">{{ initials }}</span>
+        <div class="who">
+          <h2>{{ fullName || 'Customer' }}</h2>
+          <p v-if="customer?.customer_code" class="muted">Customer code · {{ customer.customer_code }}</p>
+        </div>
+        <RouterLink class="link" to="/contact">Contact support about a correction →</RouterLink>
       </div>
 
-      <span v-if="customer.customer_code" class="code-badge">
-        {{ customer.customer_code }}
-      </span>
-    </div>
-
-    <!-- Details -->
-    <dl class="details">
-      <div
-        v-for="item in details"
-        :key="item.label"
-        class="detail"
-      >
-        <dt>{{ item.label }}</dt>
-
-        <dd :class="{ empty: !item.value }">
-          {{ item.value || 'Not provided' }}
-        </dd>
+      <div class="col side">
+        <h3>Personal information</h3>
+        <dl class="rows">
+          <div v-for="[label, value] in fields" :key="label">
+            <dt>{{ label }}</dt>
+            <dd :class="{ empty: !value }">{{ value || 'Not provided' }}</dd>
+          </div>
+        </dl>
       </div>
-    </dl>
 
-  </div>
+    </article>
+  </section>
 </template>
 
 <style scoped>
-.personal-header {
-  margin-bottom: 24px;
+.profile-page { min-width: 0; color: var(--color-text); }
+.muted { margin: 0; color: var(--color-text-muted); font-size: 12px; }
+
+/* Two-half card */
+.card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); min-width: 0; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 20px; }
+.side { background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); border-left: 1px solid var(--color-border); }
+
+/* Left: identity */
+.avatar { display: grid; place-items: center; width: 52px; height: 52px; background: var(--color-primary); color: var(--color-on-primary); border-radius: 50%; font-size: 17px; font-weight: 700; letter-spacing: .02em; }
+.who { display: grid; gap: 2px; min-width: 0; }
+.who h2 { margin: 0; font-family: var(--font-family-display); font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.link { margin-top: auto; color: var(--color-primary); font-size: 13px; font-weight: 600; text-decoration: none; }
+.link:hover { text-decoration: underline; }
+.link:focus-visible { outline: 2px solid var(--color-focus-outline); outline-offset: 2px; }
+
+/* Right: details */
+.side h3 { margin: 0; color: var(--color-text-muted); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.rows { margin: 0; }
+.rows > div { display: grid; grid-template-columns: minmax(7rem, 9rem) minmax(0, 1fr); gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--color-border); font-size: 13px; }
+.rows > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.rows > div:first-child { padding-top: 0; }
+dt { color: var(--color-text-muted); }
+dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+dd.empty { color: var(--color-text-muted); font-weight: 400; }
+
+@media (max-width: 760px) {
+  .card { grid-template-columns: minmax(0, 1fr); }
+  .side { border-left: 0; border-top: 1px solid var(--color-border); }
+  .col { padding: 16px; }
+  .link { margin-top: 0; }
 }
-
-.section-title {
-  margin: 0;
-  font-size: var(--font-size-lg, 20px);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--color-text);
-}
-
-.intro {
-  margin: 6px 0 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
-
-/* Profile summary */
-
-.profile {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 18px 20px;
-  margin-bottom: 24px;
-  background: var(--color-bg-soft, #f8fafc);
-  border: 1px solid var(--color-border-soft);
-  border-radius: 12px;
-}
-
-.avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--color-primary);
-  color: #fff;
-  font-size: var(--font-size-md);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.profile-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.profile-name {
-  font-size: var(--font-size-md);
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.profile-email {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
-  overflow-wrap: anywhere;
-}
-
-.code-badge {
-  padding: 5px 12px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: 999px;
-  background: #fff;
-  color: var(--color-text);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-
-/* Details grid
-   The 1px gap shows the container background, which draws the
-   dividers without any per-cell border juggling. */
-
-.details {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  margin: 0;
-  background: var(--color-border-soft);
-  border: 1px solid var(--color-border-soft);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.detail {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 18px 20px;
-  background: #fff;
-}
-
-/* An odd last item spans the full width */
-.detail:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-
-dt {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-dd {
-  margin: 0;
-  color: var(--color-text);
-  font-size: var(--font-size-md);
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-dd.empty {
-  color: var(--color-text-muted);
-  font-weight: 400;
-  font-style: italic;
-}
-
-/* Responsive */
-
-@media (max-width: 640px) {
-  .profile {
-    flex-wrap: wrap;
-  }
-
-  .code-badge {
-    margin-left: 64px;
-  }
-
-  .details {
-    grid-template-columns: 1fr;
-  }
+@media (max-width: 520px) {
+  .rows > div { grid-template-columns: 1fr; gap: 2px; }
 }
 </style>

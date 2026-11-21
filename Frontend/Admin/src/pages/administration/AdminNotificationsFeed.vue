@@ -51,9 +51,9 @@
       v-for="item in items"
       :key="item.id"
       :class="{ unread: !item.is_read }"
-      :tabindex="item.is_read ? undefined : 0"
-      @click="markRead(item)"
-      @keydown.enter.self="markRead(item)"
+      :tabindex="item.is_read && !claimPath(item) ? undefined : 0"
+      @click="openItem(item)"
+      @keydown.enter.self="openItem(item)"
     >
       <span class="dot"></span>
 
@@ -61,6 +61,7 @@
         <strong>{{ item.title }}</strong>
         <p>{{ item.message }}</p>
         <small>{{ formatDate(item.created_at) }}</small>
+        <RouterLink v-if="claimPath(item)" :to="claimPath(item)" @click.stop="markRead(item); emit('history')">View claim</RouterLink>
       </div>
 
       <div class="notification-actions">
@@ -89,6 +90,18 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '@/api/axios'
+import { useRouter } from 'vue-router'
+import { hasPermission } from '@/auth/authorization'
+const router = useRouter()
+function claimPath(item) {
+  return item.reference_type === 'warranty_claim' && /^[1-9]\d*$/.test(item.reference_id) &&
+    hasPermission('warranty_claims.view') ? '/admin/sales/warranty-claims/' + item.reference_id : ''
+}
+async function openItem(item) {
+  await markRead(item)
+  const path = claimPath(item)
+  if (path) { emit('history'); await router.push(path) }
+}
 
 const emit = defineEmits(['updated', 'history'])
 

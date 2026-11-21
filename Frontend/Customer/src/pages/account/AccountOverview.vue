@@ -1,258 +1,59 @@
 <script setup>
-import { computed } from 'vue'
-
-const props = defineProps({
-  customer: { type: Object, default: () => ({}) },
-  fullName: { type: String, default: 'Customer' },
-})
-
-const initials = computed(() =>
-  props.fullName
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(part => part[0].toUpperCase())
-    .join('') || 'C'
-)
-
-const details = computed(() => [
-  { label: 'Full name', value: props.fullName },
-  { label: 'Email', value: props.customer.email },
-  { label: 'Phone', value: props.customer.phone },
-  { label: 'Customer code', value: props.customer.customer_code },
-])
+import {ref,onMounted} from 'vue'
+import api from '@/services/api'
+import AccountPageHeader from '@/components/account/AccountPageHeader.vue'
+import OrderThumbnail from '@/components/account/OrderThumbnail.vue'
+defineProps({customer:Object,fullName:String})
+const orders=ref([]), loading=ref(true), failed=ref(false)
+async function load(){
+  loading.value=true;failed.value=false
+  try {orders.value=(await api.get('/customer-orders',{params:{page:1,limit:3}})).data.data}
+  catch {failed.value=true}
+  finally {loading.value=false}
+}
+const latestUnread = ref(null)
+async function loadNotification() {
+  try {
+    const { data } = await api.get('/my/notifications')
+    const notifications = Array.isArray(data?.data) ? data.data : data?.data?.data
+    latestUnread.value = (notifications || [])
+      .filter(notification => !notification.is_read)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+  } catch {
+    latestUnread.value = null
+  }
+}
+onMounted(loadNotification)
+const shortcuts=[
+  ['Warranty claims','Submit evidence or follow a claim','warranty-claims'],
+  ['Saved addresses','Manage your delivery details','addresses'],
+  ['My profile','View your contact information','personal-information'],
+  ['Notifications','Read your account updates','notifications'],
+]
+const money=new Intl.NumberFormat('en-LK',{style:'currency',currency:'LKR',currencyDisplay:'code'})
+onMounted(load)
 </script>
-
 <template>
-  <div class="overview">
-
-    <!-- Heading -->
-    <header class="overview-header">
-      <h2 class="section-title">Account Overview</h2>
-      <p class="intro">Welcome back, {{ fullName }}.</p>
-    </header>
-
-    <!-- Profile summary -->
-    <div class="profile">
-      <div class="avatar" aria-hidden="true">{{ initials }}</div>
-
-      <div class="profile-text">
-        <strong class="profile-name">{{ fullName }}</strong>
-        <span class="profile-email">{{ customer.email || 'No email on file' }}</span>
-      </div>
-
-      <span v-if="customer.customer_code" class="code-badge">
-        {{ customer.customer_code }}
-      </span>
-    </div>
-
-    <!-- Details -->
-    <dl class="details">
-      <div
-        v-for="item in details"
-        :key="item.label"
-        class="detail"
-      >
-        <dt>{{ item.label }}</dt>
-
-        <dd :class="{ empty: !item.value }">
-          {{ item.value || 'Not provided' }}
-        </dd>
-      </div>
-    </dl>
-
-    <!-- Action -->
-    <RouterLink class="link" to="/account/personal-information">
-      Manage personal information
-      <span class="arrow" aria-hidden="true">→</span>
-    </RouterLink>
-
-  </div>
+  <section><AccountPageHeader :title="'Welcome back, '+(customer?.first_name || fullName)" description="Your purchases and account details, in one place."/>
+    <section class="account-panel recent"><div class="row-head"><h2>Recent orders</h2><RouterLink to="/account/orders">View all orders →</RouterLink></div>
+      <p v-if="loading" role="status">Loading recent orders…</p>
+      <p v-else-if="failed" role="alert">Your recent orders couldn’t be loaded. <button @click="load">Try again</button></p>
+      <div v-else-if="!orders.length" class="blank"><h3>No orders yet</h3><p>Your purchases will appear here once you place an order.</p><RouterLink class="account-cta" to="/shop">Browse products</RouterLink></div>
+      <RouterLink v-for="o in orders" v-else :key="o.id" class="order" :to="{path:'/account/orders',query:{orderId:o.id}}">
+        <OrderThumbnail :item="o.items?.[0]?.item"/><div class="summary"><strong>{{ o.items?.[0]?.item?.item_name || o.order_number }}</strong>
+        <small>{{ o.order_number }} · {{ new Date(o.order_date).toLocaleDateString('en-GB') }}</small></div>
+        <div class="amount"><span>{{ o.status.replaceAll('_',' ') }}</span><strong>{{ money.format(o.total_amount) }}</strong></div>
+      </RouterLink>
+    </section>
+    <h2 class="links-title">Manage your account</h2>
+    <div class="shortcuts"><RouterLink v-for="[name,help,path] in shortcuts" :key="path" :to="'/account/'+path"><div><strong>{{ name }}</strong><small>{{ path === 'notifications' && latestUnread?.title ? latestUnread.title : help }}</small></div><span aria-hidden="true">↗</span></RouterLink></div>
+  </section>
 </template>
-
 <style scoped>
-.overview-header {
-  margin-bottom: 24px;
-}
-
-.section-title {
-  margin: 0;
-  font-size: var(--font-size-lg, 20px);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--color-text);
-}
-
-.intro {
-  margin: 6px 0 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
-
-/* Profile summary */
-
-.profile {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 18px 20px;
-  margin-bottom: 24px;
-  background: var(--color-bg-soft, #f8fafc);
-  border: 1px solid var(--color-border-soft);
-  border-radius: 12px;
-}
-
-.avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--color-primary);
-  color: #fff;
-  font-size: var(--font-size-md);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.profile-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.profile-name {
-  font-size: var(--font-size-md);
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.profile-email {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
-  overflow-wrap: anywhere;
-}
-
-.code-badge {
-  padding: 5px 12px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: 999px;
-  background: #fff;
-  color: var(--color-text);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-
-/* Details grid */
-
-.details {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0;
-  margin: 0 0 28px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.detail {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--color-border-soft);
-}
-
-.detail:nth-child(odd) {
-  border-right: 1px solid var(--color-border-soft);
-}
-
-.detail:nth-last-child(-n + 2) {
-  border-bottom: none;
-}
-
-dt {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-dd {
-  margin: 0;
-  color: var(--color-text);
-  font-size: var(--font-size-md);
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-dd.empty {
-  color: var(--color-text-muted);
-  font-weight: 400;
-  font-style: italic;
-}
-
-/* Action */
-
-.link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border: 1px solid var(--color-primary);
-  border-radius: 8px;
-  color: var(--color-primary);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  text-decoration: none;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.link:hover {
-  background: var(--color-primary);
-  color: #fff;
-}
-
-.arrow {
-  transition: transform 0.2s ease;
-}
-
-.link:hover .arrow {
-  transform: translateX(3px);
-}
-
-/* Responsive */
-
-@media (max-width: 640px) {
-  .profile {
-    flex-wrap: wrap;
-  }
-
-  .code-badge {
-    margin-left: 64px;
-  }
-
-  .details {
-    grid-template-columns: 1fr;
-  }
-
-  .detail:nth-child(odd) {
-    border-right: none;
-  }
-
-  .detail:nth-last-child(-n + 2) {
-    border-bottom: 1px solid var(--color-border-soft);
-  }
-
-  .detail:last-child {
-    border-bottom: none;
-  }
-}
+.row-head,.order,.shortcuts a{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.row-head{border-bottom:1px solid var(--color-border-soft);padding-bottom:1rem;flex-wrap:wrap}.row-head h2,.links-title{margin:0;font:700 1.25rem var(--font-family-display)}.row-head a{color:var(--color-primary-light);font-weight:650;font-size:.88rem}
+.order{padding:1rem 0;border-bottom:1px solid var(--color-border-soft);text-decoration:none;color:var(--color-text)}.order:last-child{border:0;padding-bottom:0}.summary{flex:1;min-width:0}.summary small,.shortcuts small{display:block;color:var(--color-text-muted);margin-top:.3rem}
+.amount{display:grid;text-align:right;gap:.3rem;font-size:.85rem}.amount span{text-transform:capitalize;color:var(--color-primary-light)}.blank{padding:1.5rem 0 .4rem}.blank p{color:var(--color-text-muted)}
+.links-title{margin:1.75rem 0 .9rem}.shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}.shortcuts a{padding:1.15rem;border:1px solid var(--color-border-soft);border-radius:8px;background:white;color:var(--color-primary);text-decoration:none}.shortcuts a:hover{border-color:var(--color-focus)}
+@media(max-width:540px){.shortcuts{grid-template-columns:1fr}.order{flex-wrap:wrap;gap:.65rem}.amount{width:100%;display:flex;justify-content:space-between}.summary{flex-basis:50%}}
 </style>

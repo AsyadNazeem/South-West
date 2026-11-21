@@ -14,7 +14,7 @@ const VerifyEmail = () => import('@/pages/auth/VerifyEmail.vue')
 const ForgotPassword = () => import('@/pages/auth/ForgotPassword.vue')
 const ResetPassword = () => import('@/pages/auth/ResetPassword.vue')
 const Home = () => import('@/pages/Home.vue')
-const InformationPage = () => import('@/pages/InformationPage.vue')
+import { informationRoutes } from './informationRoutes.js'
 const StoreListing = () => import('@/pages/StoreListing.vue')
 const Categories = () => import('@/pages/Categories.vue')
 const Brands = () => import('@/pages/Brands.vue')
@@ -160,6 +160,7 @@ const routes = [
                 component: ChangePassword,
                 meta: { title: 'Change Password' },
             },
+            { path: 'warranty-claims/:claim?', component: () => import('@/pages/account/WarrantyClaims.vue'), meta: { title: 'Warranty Claims' } },
             {
                 path: 'orders',
                 component: MyOrders,
@@ -189,48 +190,7 @@ const routes = [
     },
 
 
-    {
-        path: '/contact',
-        name: 'info-contact',
-        component: InformationPage,
-        meta: { title: 'Contact South West | Sri Lanka', description: 'Find support information for South West orders and products.', index: true },
-    },
-    {
-        path: '/faq',
-        name: 'info-faq',
-        component: InformationPage,
-        meta: { title: 'FAQs | South West Sri Lanka', description: 'Answers to common questions about shopping with South West.', index: true },
-    },
-    {
-        path: '/shipping',
-        name: 'info-shipping',
-        component: InformationPage,
-        meta: { title: 'Shipping information | South West', description: 'Read delivery information for orders from South West.', index: true },
-    },
-    {
-        path: '/returns',
-        name: 'info-returns',
-        component: InformationPage,
-        meta: { title: 'Returns and refunds | South West', description: 'Information about returns and refunds at South West.', index: true },
-    },
-    {
-        path: '/about',
-        name: 'info-about',
-        component: InformationPage,
-        meta: { title: 'About South West | Sri Lanka', description: 'Learn about the South West online store in Sri Lanka.', index: true },
-    },
-    {
-        path: '/privacy-policy',
-        name: 'info-privacy-policy',
-        component: InformationPage,
-        meta: { title: 'Privacy policy | South West', description: 'Read the South West website privacy policy.', index: true },
-    },
-    {
-        path: '/terms',
-        name: 'info-terms',
-        component: InformationPage,
-        meta: { title: 'Terms and conditions | South West', description: 'Read the South West website terms and conditions.', index: true },
-    },
+    ...informationRoutes,
 ]
 
 const router = createRouter({

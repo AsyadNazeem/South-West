@@ -3,7 +3,13 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-export default defineConfig({
+export default defineConfig(({ isSsrBuild }) => ({
+  publicDir: isSsrBuild ? false : 'public',
+  build: isSsrBuild ? {
+    rolldownOptions: {
+      output: { entryFileNames: '[name].mjs', chunkFileNames: 'assets/[name]-[hash].mjs' },
+    },
+  } : {},
   plugins: [vue()],
   resolve: {
     alias: {
@@ -14,4 +20,4 @@ export default defineConfig({
     port: 5174,
     strictPort: true,
   },
-})
+}))

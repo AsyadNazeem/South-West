@@ -104,6 +104,7 @@ const routes = [
             requiresAuth: true
         },
         children: [
+            { path: 'sales/warranty-claims/:claim?', component: () => import('@/pages/sales/WarrantyClaims.vue'), meta: { permission: 'warranty_claims.view' } },
             { path: 'notifications', name: 'admin-notifications', component: AdminNotificationsFeed, meta: { permission: 'notifications.view' } },
             {
                 path: '',

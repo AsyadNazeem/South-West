@@ -195,6 +195,9 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/customer-addresses', customerAddressListRoutes);
 app.use('/api/item-types', itemTypeRoutes);
 app.use('/api/warranties', warrantyRoutes);
+const warrantyClaims = require('./routes/warrantyClaimRoutes');
+app.use('/api/my/warranty-claims', warrantyClaims.customer);
+app.use('/api/admin/warranty-claims', warrantyClaims.admin);
 app.use("/api/customer-auth", customerAuthRoutes);
 app.use('/api/customer-cart', customerCartRoutes);
 app.use('/api/customer-checkout', customerCheckoutRoutes);
@@ -246,6 +249,7 @@ async function startServer() {
 
         console.log("✅ MySQL database connected successfully");
 
+        if (process.env.WARRANTY_MAIL_WORKER !== 'cron') require('../scripts/warranty-mail').startWorker();
         app.listen(PORT, () => {
             console.log(`🚀 South West Backend running on port ${PORT}`);
         });
