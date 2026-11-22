@@ -15,6 +15,45 @@ const number = ref(''), item = ref(''), phone = ref(''), reason = ref(''), files
 const error = ref(''), success = ref(''), busy = ref(false), progress = ref(0)
 const request = computed(() => detail.value?.requests.find(r => r.status === 'open'))
 const loading = ref(false)
+const agreed = ref(false)
+
+// Terms shown on the new-claim page
+const TERMS = [
+  {
+    title: 'Making a claim',
+    items: [
+      'An invoice is required for every warranty claim.',
+      'Video proof is compulsory for all warranty claims.',
+      'Memory products must be sent to our physical store at Unity Plaza.',
+      'Accessories can be claimed through the website.',
+      'Products must be returned with their original accessories, packaging and relevant documentation.',
+    ],
+  },
+  {
+    title: 'Not covered',
+    note: 'Warranty applies only to technical faults. The following may not be covered, subject to the applicable warranty terms:',
+    items: [
+      'Physical damage',
+      'Liquid damage',
+      'Misuse',
+      'Burn marks',
+      'Unauthorized repairs',
+      'Electrical damage caused by improper use',
+      'Tampering',
+    ],
+  },
+  {
+    title: 'Refunds',
+    items: ['No cash refunds.'],
+  },
+  {
+    title: 'Orders',
+    items: [
+      'We reserve the right to decline or cancel orders due to stock unavailability.',
+      'If a product becomes unavailable after an order is placed, we will inform the customer and discuss the available options, including a refund where applicable.',
+    ],
+  },
+]
 
 // Up to 3 evidence photos per claim card, loaded when the card scrolls into view
 const PREVIEW_COUNT = 3
@@ -70,7 +109,7 @@ async function load() {
   const token = ++version
   clearPreviews()
   detail.value = null; purchase.value = null; error.value = ''; reason.value = ''; files.value = []
-  number.value = ''; item.value = ''; key = crypto.randomUUID()
+  number.value = ''; item.value = ''; agreed.value = false; key = crypto.randomUUID()
   try {
     if (current.value === 'new') return
     const id = current.value
@@ -152,21 +191,20 @@ async function send() {
               </div>
               <span class="status" :class="badgeClass(c.status)">{{ c.status }}</span>
             </header>
-            <p v-if="c.status === 'More Evidence Required'" class="claim-note">We need more evidence to continue with this claim.</p>
 
             <p v-if="c.status === 'More Evidence Required'" class="claim-note">We need more evidence to continue with this claim.</p>
 
-<div v-lazy-preview="c" class="thumbs">
-  <template v-if="previews[c.id]?.length">
-    <RouterLink v-for="p in previews[c.id]" :key="p.id" :to="home + '/' + c.id" class="thumb" aria-label="View claim">
-      <img :src="p.url" alt="Evidence photo">
-    </RouterLink>
-    <RouterLink v-if="extra[c.id]" :to="home + '/' + c.id" class="thumb more">+{{ extra[c.id] }}</RouterLink>
-  </template>
-  <template v-else-if="!previews[c.id]">
-    <span v-for="n in 3" :key="n" class="thumb skeleton" aria-hidden="true"></span>
-  </template>
-</div>
+            <div v-lazy-preview="c" class="thumbs">
+              <template v-if="previews[c.id]?.length">
+                <RouterLink v-for="p in previews[c.id]" :key="p.id" :to="home + '/' + c.id" class="thumb" aria-label="View claim">
+                  <img :src="p.url" alt="Evidence photo">
+                </RouterLink>
+                <RouterLink v-if="extra[c.id]" :to="home + '/' + c.id" class="thumb more">+{{ extra[c.id] }}</RouterLink>
+              </template>
+              <template v-else-if="!previews[c.id]">
+                <span v-for="n in 3" :key="n" class="thumb skeleton" aria-hidden="true"></span>
+              </template>
+            </div>
           </div>
 
           <div class="col side">
@@ -188,6 +226,21 @@ async function send() {
         <button class="btn" :disabled="page * 20 >= count" @click="page++">Next</button>
       </div>
     </template>
+
+    <!-- New claim: terms -->
+    <section v-if="current === 'new'" class="terms" aria-labelledby="terms-title">
+      <h2 id="terms-title">Warranty terms</h2>
+      <p class="muted">Please read these before submitting a claim.</p>
+      <div class="terms-grid">
+        <div v-for="group in TERMS" :key="group.title" class="terms-group">
+          <h3>{{ group.title }}</h3>
+          <p v-if="group.note" class="terms-note">{{ group.note }}</p>
+          <ul>
+            <li v-for="line in group.items" :key="line">{{ line }}</li>
+          </ul>
+        </div>
+      </div>
+    </section>
 
     <!-- New claim: verify purchase -->
     <form v-if="current === 'new'" class="lookup" @submit.prevent="lookup">
@@ -230,6 +283,12 @@ async function send() {
         </label>
         <ClaimUpload @change="files=$event" />
         <progress v-if="busy" aria-label="Upload progress" :value="progress" max="100" />
+
+        <label v-if="purchase" class="agree">
+          <input v-model="agreed" type="checkbox" required>
+          <span>I have read and agree to the warranty terms. *</span>
+        </label>
+
         <button class="btn primary" :disabled="busy">{{ busy ? 'Submitting…' : request ? 'Send additional evidence' : 'Submit claim' }}</button>
       </div>
     </form>
@@ -300,6 +359,15 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .state .muted { margin-bottom: 10px; font-size: 13px; }
 .pager { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; color: var(--color-text-muted); font-size: 13px; }
 
+/* Warranty terms */
+.terms { margin-bottom: 12px; padding: 18px 20px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.terms h2 { margin: 0 0 2px; font-family: var(--font-family-display); font-size: 16px; font-weight: 700; }
+.terms-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 32px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--color-border-soft); }
+.terms-group h3 { margin: 0 0 8px; color: var(--color-text-muted); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.terms-note { margin: 0 0 6px; color: var(--color-text-muted); font-size: 12px; line-height: 1.5; }
+.terms ul { margin: 0; padding-left: 16px; font-size: 13px; line-height: 1.55; }
+.terms li + li { margin-top: 4px; }
+
 /* Forms */
 .lookup h2, .claim-form h2 { margin: 0; font-family: var(--font-family-display); font-size: 16px; font-weight: 700; }
 .request-text { margin: 0; padding-left: 10px; border-left: 2px solid var(--color-primary); color: var(--color-text-muted); font-size: 13px; line-height: 1.5; white-space: pre-line; }
@@ -312,6 +380,10 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .lookup .btn, .claim-form .btn { min-height: 40px; align-self: flex-start; }
 progress { width: 100%; height: 6px; accent-color: var(--color-primary); }
 
+/* Agreement checkbox */
+.claims label.agree { display: flex; align-items: flex-start; gap: 10px; color: var(--color-text); font-size: 13px; font-weight: 500; cursor: pointer; }
+.claims .agree input { flex: none; width: 16px; height: 16px; margin: 2px 0 0; padding: 0; accent-color: var(--color-primary); }
+
 .request-alert { margin: 0 0 12px; padding: 10px 14px; background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)); border: 1px solid var(--color-border); border-left: 3px solid var(--color-primary); border-radius: var(--radius-md); font-size: 13px; }
 .request-alert a { color: var(--color-primary); font-weight: 600; }
 
@@ -320,11 +392,13 @@ progress { width: 100%; height: 6px; accent-color: var(--color-primary); }
 .skeleton-line.short { width: 40%; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 
-@media (pointer: coarse) { .claims input, .claims select, .claims textarea { font-size: 16px; } }
+@media (pointer: coarse) { .claims input:not([type=checkbox]), .claims select, .claims textarea { font-size: 16px; } }
 @media (max-width: 760px) {
   .claim-card, .lookup, .claim-form { grid-template-columns: minmax(0, 1fr); }
   .side { border-left: 0; border-top: 1px solid var(--color-border); }
   .col { padding: 14px; }
+  .terms { padding: 14px; }
+  .terms-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
 }
-@media (prefers-reduced-motion: reduce) { .skeleton-line { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-line, .thumb.skeleton { animation: none; } }
 </style>

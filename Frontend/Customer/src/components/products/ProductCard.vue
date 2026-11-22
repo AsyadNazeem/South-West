@@ -97,6 +97,20 @@ function selectImage(index) {
   imageFailed.value = false
 }
 
+// At most 3 dots, following the active image
+const MAX_DOTS = 3
+const visibleDots = computed(() => {
+  const count = imageSlides.value.length
+  const size = Math.min(MAX_DOTS, count)
+  const start = Math.min(Math.max(currentImageIndex.value - 1, 0), count - size)
+
+  return Array.from({ length: size }, (_, i) => ({
+    index: start + i,
+    // Edge dots get smaller when there are more images beyond them
+    faded: (i === 0 && start > 0) || (i === size - 1 && start + size < count),
+  }))
+})
+
 function handleTouchStart(event) {
   touchStartX.value = event.changedTouches[0]?.clientX ?? null
 }
@@ -442,18 +456,18 @@ onBeforeUnmount(() => {
           </svg>
         </button>
 
-        <div class="image-indicators" aria-label="Product image selection">
-          <button
-            v-for="(slide, index) in imageSlides"
-            :key="slide.src"
-            type="button"
-            class="image-indicator"
-            :class="{ active: currentImageIndex === index }"
-            :aria-label="`Show image ${index + 1} of ${imageSlides.length}`"
-            :aria-pressed="currentImageIndex === index"
-            @click.stop.prevent="selectImage(index)"
-          ></button>
-        </div>
+       <div class="image-indicators" aria-label="Product image selection">
+  <button
+    v-for="dot in visibleDots"
+    :key="dot.index"
+    type="button"
+    class="image-indicator"
+    :class="{ active: currentImageIndex === dot.index, faded: dot.faded }"
+    :aria-label="`Show image ${dot.index + 1} of ${imageSlides.length}`"
+    :aria-pressed="currentImageIndex === dot.index"
+    @click.stop.prevent="selectImage(dot.index)"
+  ></button>
+</div>
       </template>
 
       <div
@@ -726,48 +740,66 @@ onBeforeUnmount(() => {
 
 .image-indicators {
   position: absolute;
-  bottom: 7px;
-  left: 6px;
+  bottom: 8px;
+  left: 8px;
   z-index: 2;
   display: flex;
-  max-width: calc(100% - 100px);
-  overflow-x: auto;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
   border-radius: var(--radius-pill);
-  background: rgb(0 0 0 / 45%);
+  background: rgb(0 0 0 / 38%);
+  backdrop-filter: blur(4px);
 }
 
 .product-card.is-list .image-indicators {
   bottom: 52px;
-  max-width: calc(100% - 12px);
 }
 
 .image-indicator {
   display: grid;
   place-items: center;
-  flex: 0 0 24px;
-  height: 24px;
+  flex: 0 0 12px;
+  height: 16px;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
+  transition: flex-basis var(--transition-fast);
 }
 
 .image-indicator::after {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: var(--radius-pill);
-  background: rgb(255 255 255 / 75%);
+  background: rgb(255 255 255 / 70%);
   content: '';
+  transition: width var(--transition-fast), height var(--transition-fast), background var(--transition-fast);
+}
+
+.image-indicator.faded::after {
+  width: 3px;
+  height: 3px;
+}
+
+.image-indicator.active {
+  flex-basis: 18px;
 }
 
 .image-indicator.active::after {
-  width: 14px;
+  width: 12px;
   background: #fff;
 }
 
 .image-indicator:focus-visible {
   outline: 2px solid #fff;
-  outline-offset: -3px;
+  outline-offset: -2px;
+}
+
+/* Touch screens: a slightly bigger tap area */
+@media (pointer: coarse) {
+  .image-indicator { flex-basis: 16px; height: 22px; }
+  .image-indicator.active { flex-basis: 22px; }
 }
 
 /* ---------- Uploaded campaign frame overlays ---------- */

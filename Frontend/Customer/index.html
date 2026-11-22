@@ -58,6 +58,7 @@
                         const preload = document.createElement('link')
                         preload.rel = 'preload'
                         preload.as = 'image'
+                        preload.fetchPriority = 'high'
                         preload.href = resolveBannerUrl(fallback)
                         const byWidth = new Map()
                         if (Array.isArray(candidates)) {
