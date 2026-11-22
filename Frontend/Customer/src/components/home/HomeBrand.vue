@@ -115,9 +115,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateColumnCount))
       </button>
     </div>
 
-    <p v-if="loading && !brands.length" class="brands-loading">
-      Loading brands...
-    </p>
+    <div v-if="loading && !brands.length" class="brand-grid" aria-busy="true" aria-label="Loading brands">
+      <div v-for="n in columnCount" :key="n" class="brand-card" aria-hidden="true"></div>
+    </div>
     <p v-else-if="loadError" class="brands-loading" role="status">
       Brands are temporarily unavailable.
     </p>
@@ -138,6 +138,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateColumnCount))
             :srcset="getBrandImage(brand).srcset || undefined"
             sizes="(max-width: 420px) 28vw, (max-width: 760px) 18vw, (max-width: 1100px) 15vw, 9vw"
             :alt="brand.name"
+            loading="lazy"
             decoding="async"
             @error="handleBrandImageError(brand.id)"
           />

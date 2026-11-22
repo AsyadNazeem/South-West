@@ -56,7 +56,6 @@ const companyLinks = [
               href="https://www.google.com/maps/search/?api=1&query=4th+Floor%2C+Unity+Plaza%2C+Colombo+04"
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="Visit our store: 4th Floor, Unity Plaza, Colombo 04 (opens in Google Maps)"
             >
               <span class="location-icon">
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">

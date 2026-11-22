@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8"/>
-    <link rel="icon" type="image/png" href="/Favicon.png"/>
+    <link rel="icon" type="image/webp" href="/Favicon.webp"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <meta name="description" content="Shop products by category and brand at South West, Sri Lanka."/>
     <meta name="robots" content="index, follow"/>
@@ -14,9 +14,22 @@
     <meta property="og:image" content="https://southwest.lk/SWShareImage.png"/>
     <meta property="og:type" content="website"/>
     <meta name="twitter:card" content="summary_large_image"/>
+    <link rel="preconnect" href="%VITE_API_URL%" crossorigin>
+    <script>
+        // The current promotion is selected by the public API. Start discovery
+        // while the storefront bundle downloads on a direct homepage visit.
+        if (location.pathname === '/' && !location.search) {
+            const preload = document.createElement('link')
+            preload.rel = 'preload'
+            preload.as = 'fetch'
+            preload.crossOrigin = 'anonymous'
+            preload.href = '%VITE_API_URL%'.replace(/\/$/, '') + '/store/homepage-banners'
+            document.head.appendChild(preload)
+        }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Manrope:wght@400;500;600;700;800&display=optional" rel="stylesheet" media="print" onload="this.media='all'">
     <title>South West | Online shopping in Sri Lanka</title>
 </head>
 <body>

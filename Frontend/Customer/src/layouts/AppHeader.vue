@@ -1,12 +1,15 @@
 <script setup>
-import {computed, nextTick, onMounted, onUnmounted, ref} from 'vue'
+import {computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import api from '@/services/api.js'
-import SeasonalDecorations from '@/components/SeasonalDecorations.vue'
+import { useWebsiteTheme } from '@/composables/useWebsiteTheme'
 import {
   getResponsiveImageSrcSet,
   getResponsiveImageUrl,
 } from '@/utils/mediaUrl'
+
+const SeasonalDecorations = defineAsyncComponent(() => import('@/components/SeasonalDecorations.vue'))
+const { themeSlug } = useWebsiteTheme()
 
 const router = useRouter()
 const searchText = ref('')
@@ -492,17 +495,20 @@ onUnmounted(() => {
             class="search-form"
             role="search"
             @submit.prevent="searchProducts"
-            @keydown="handleSearchKeydown"
+            @focusout="!$event.currentTarget.contains($event.relatedTarget) && closeSearch()"
         >
           <input
               v-model="searchText"
               type="search"
+              role="combobox"
+              @keydown="handleSearchKeydown"
               enterkeyhint="search"
               autocomplete="off"
               placeholder="Search products, brands and accessories"
               aria-label="Search products"
               aria-autocomplete="list"
-              aria-controls="product-search-suggestions"
+              :aria-controls="searchOpen ? 'product-search-suggestions' : undefined"
+              :aria-activedescendant="searchOpen && activeSuggestion >= 0 ? 'product-option-' + activeSuggestion : undefined"
               :aria-expanded="searchOpen"
               @input="scheduleSearch"
               @focus="searchText.trim().length >= 2 && (searchOpen = true)"
@@ -528,71 +534,75 @@ onUnmounted(() => {
 
           <div
               v-if="searchOpen"
-              id="product-search-suggestions"
               class="search-suggestions"
-              role="listbox"
           >
-            <p v-if="searchLoading" class="search-suggestion-state">
+            <p v-if="searchLoading" class="search-suggestion-state" role="status">
               Searching products...
             </p>
 
             <p
                 v-else-if="searchText.trim().length >= 2 && !searchSuggestions.length"
+                role="status"
                 class="search-suggestion-state"
             >
               No matching products found.
             </p>
 
-            <button
-                v-for="(product, index) in searchSuggestions"
-                :key="product.id"
-                type="button"
-                class="search-suggestion"
-                :class="{ active: activeSuggestion === index }"
-                role="option"
-                :aria-selected="activeSuggestion === index"
-                @mousedown.prevent="selectSuggestion(product)"
-            >
-              <img
-                  v-if="getSuggestionImage(product).src"
-                  :src="getSuggestionImage(product).src"
-                  :srcset="getSuggestionImage(product).srcset || undefined"
-                  sizes="48px"
-                  :alt="product.item_name || product.name || 'Product'"
-                  class="search-suggestion-image"
-                  @error="(event) => console.error(
-                    'Search image failed:',
-                    event.target.src,
-                    product
-                  )"
-              />
+            <div id="product-search-suggestions" role="listbox" aria-label="Product suggestions">
+              <button
+                  v-for="(product, index) in searchSuggestions"
+                  :key="product.id"
+                  type="button"
+                  class="search-suggestion"
+                  :class="{ active: activeSuggestion === index }"
+                  :id="'product-option-' + index"
+                  tabindex="-1"
+                  role="option"
+                  :aria-selected="activeSuggestion === index"
+                  @mousedown.prevent
+                  @click="selectSuggestion(product)"
+              >
+                <img
+                    v-if="getSuggestionImage(product).src"
+                    :src="getSuggestionImage(product).src"
+                    :srcset="getSuggestionImage(product).srcset || undefined"
+                    sizes="48px"
+                    :alt="product.item_name || product.name || 'Product'"
+                    class="search-suggestion-image"
+                    @error="(event) => console.error(
+                      'Search image failed:',
+                      event.target.src,
+                      product
+                    )"
+                />
 
-              <span v-else class="search-suggestion-placeholder">
-                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.5" />
-                  <path d="m4 15 5-5 4 4 2-2 5 5" stroke="currentColor" stroke-width="1.5" />
-                </svg>
-              </span>
-
-              <span class="search-suggestion-details">
-                <span class="search-suggestion-name">
-                  {{ product.item_name || product.name || 'Unnamed product' }}
+                <span v-else class="search-suggestion-placeholder">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.5" />
+                    <path d="m4 15 5-5 4 4 2-2 5 5" stroke="currentColor" stroke-width="1.5" />
+                  </svg>
                 </span>
-                <span class="search-suggestion-meta">
-                  <span v-if="product.brand">{{ product.brand }}</span>
-                  <span v-if="product.item_code">{{ product.item_code }}</span>
-                </span>
-              </span>
 
-              <span v-if="getSuggestionPrice(product)" class="search-suggestion-price">
-                {{ getSuggestionPrice(product) }}
-              </span>
-            </button>
+                <span class="search-suggestion-details">
+                  <span class="search-suggestion-name">
+                    {{ product.item_name || product.name || 'Unnamed product' }}
+                  </span>
+                  <span class="search-suggestion-meta">
+                    <span v-if="product.brand">{{ product.brand }}</span>
+                    <span v-if="product.item_code">{{ product.item_code }}</span>
+                  </span>
+                </span>
+
+                <span v-if="getSuggestionPrice(product)" class="search-suggestion-price">
+                  {{ getSuggestionPrice(product) }}
+                </span>
+              </button>
+            </div>
 
             <button
                 type="button"
                 class="search-all-results"
-                @mousedown.prevent="searchProducts"
+                @click="searchProducts"
             >
               Search all results for "{{ searchText.trim() }}"
             </button>
@@ -616,7 +626,7 @@ onUnmounted(() => {
     Seasonal artwork sits directly under the header, in its own band.
     It scrolls away with the page and never covers the header controls.
   -->
-  <SeasonalDecorations />
+  <SeasonalDecorations v-if="['christmas', 'ramadan', 'eid'].includes(themeSlug)" />
 
   <Teleport to="body">
     <div

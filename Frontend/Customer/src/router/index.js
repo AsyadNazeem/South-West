@@ -18,7 +18,7 @@ import { informationRoutes } from './informationRoutes.js'
 const StoreListing = () => import('@/pages/StoreListing.vue')
 const Categories = () => import('@/pages/Categories.vue')
 const Brands = () => import('@/pages/Brands.vue')
-import AccountLayout from '@/layouts/AccountLayout.vue'
+const AccountLayout = () => import('@/layouts/AccountLayout.vue')
 const AccountOverview = () => import('@/pages/account/AccountOverview.vue')
 const PersonalInformation = () => import('@/pages/account/PersonalInformation.vue')
 const AddressBook = () => import('@/pages/account/AddressBook.vue')

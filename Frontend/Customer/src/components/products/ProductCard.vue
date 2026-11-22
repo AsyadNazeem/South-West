@@ -405,7 +405,7 @@ onBeforeUnmount(() => {
           v-if="activeImage.src && !imageFailed"
           :src="activeImage.src"
           :srcset="activeImage.srcset || undefined"
-          :sizes="imageSizes"
+          :sizes="'auto, ' + imageSizes"
           alt=""
           loading="lazy"
           decoding="async"
@@ -726,36 +726,48 @@ onBeforeUnmount(() => {
 
 .image-indicators {
   position: absolute;
-  bottom: 9px;
-  left: 50%;
+  bottom: 7px;
+  left: 6px;
   z-index: 2;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  max-width: calc(100% - 90px);
-  padding: 5px 8px;
+  max-width: calc(100% - 100px);
+  overflow-x: auto;
   border-radius: var(--radius-pill);
-  background: rgb(0 0 0 / 32%);
-  transform: translateX(-50%);
+  background: rgb(0 0 0 / 45%);
+}
+
+.product-card.is-list .image-indicators {
+  bottom: 52px;
+  max-width: calc(100% - 12px);
 }
 
 .image-indicator {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 24px;
+  height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 65%);
+  background: transparent;
   cursor: pointer;
 }
 
-.image-indicator.active {
-  width: 16px;
-  flex-basis: 16px;
+.image-indicator::after {
+  width: 6px;
+  height: 6px;
   border-radius: var(--radius-pill);
+  background: rgb(255 255 255 / 75%);
+  content: '';
+}
+
+.image-indicator.active::after {
+  width: 14px;
   background: #fff;
+}
+
+.image-indicator:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -3px;
 }
 
 /* ---------- Uploaded campaign frame overlays ---------- */
