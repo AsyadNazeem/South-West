@@ -503,12 +503,64 @@
         <div class="checkbox-group">
           <label>
             <input
-                v-model="form.is_new"
-                type="checkbox"
+              v-model="form.is_new"
+              type="checkbox"
             />
             <span>Mark as New</span>
           </label>
-          <small>Show a NEW! badge on customer-facing product cards and details.</small>
+
+          <small>
+            Show a NEW! badge on customer-facing product cards and details.
+          </small>
+
+          <div v-if="form.is_new" style="margin-top: 12px;">
+            <label for="new-label-duration">
+              NEW Label Duration
+            </label>
+
+            <select
+              id="new-label-duration"
+              v-model="form.new_label_duration"
+              class="form-control"
+            >
+              <option value="14_days">2 Weeks</option>
+              <option value="1_month">1 Month</option>
+              <option value="2_months">2 Months</option>
+            </select>
+
+            <small>
+              The NEW badge automatically expires after this period.
+            </small>
+
+            <small
+              v-if="isEditMode && form.new_label_expires_at_ms"
+              style="display: block; margin-top: 8px;"
+            >
+              Current expiry:
+              {{ new Date(Number(form.new_label_expires_at_ms)).toLocaleString("en-LK") }}
+            </small>
+
+            <div
+              v-if="isEditMode && form.new_label_expires_at_ms &&
+                Number(form.new_label_expires_at_ms) <= Date.now()"
+              style="margin-top: 12px;"
+            >
+              <small style="display: block; margin-bottom: 8px;">
+                This NEW label has expired.
+              </small>
+
+              <button
+                type="button"
+                class="btn-secondary"
+                :disabled="form.reactivate_new_label"
+                @click="form.reactivate_new_label = true"
+              >
+                {{ form.reactivate_new_label
+                  ? 'Renewal selected. Save to apply.'
+                  : 'Renew NEW Label' }}
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1125,6 +1177,9 @@ item_name: "",
   is_serialized: false,
   is_active: true,
   is_new: false,
+  new_label_duration: "1_month",
+  new_label_expires_at_ms: null,
+  reactivate_new_label: false,
 
   specifications: []
 })
@@ -1664,6 +1719,14 @@ const loadItem = async () => {
   form.value.is_new =
       Boolean(item.is_new)
 
+  form.value.new_label_duration =
+      item.new_label_duration || "1_month"
+
+  form.value.new_label_expires_at_ms =
+      item.new_label_expires_at_ms ?? null
+
+  form.value.reactivate_new_label = false
+
   /* -----------------------------------------
      Category display value
   ----------------------------------------- */
@@ -1822,7 +1885,15 @@ qb_item_code: null,
       form.value.is_active,
 
       is_new:
-      Boolean(form.value.is_new)
+      Boolean(form.value.is_new),
+
+      new_label_duration:
+      form.value.is_new
+        ? form.value.new_label_duration
+        : undefined,
+
+      reactivate_new_label:
+      Boolean(form.value.is_new && form.value.reactivate_new_label)
     }
 
     let savedItemId

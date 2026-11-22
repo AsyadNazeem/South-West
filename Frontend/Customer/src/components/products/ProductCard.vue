@@ -39,7 +39,7 @@ const discountPercent = computed(() =>
 
 const savings = computed(() => (hasDiscount.value ? comparePrice.value - price.value : 0))
 
-const image = computed(() => {
+const primaryImageRecord = computed(() => {
   const product = props.product
   const directValue = product.image || product.image_url || product.thumbnail || ''
   const gallery = Array.isArray(product.images) ? product.images : []
@@ -48,37 +48,36 @@ const image = computed(() => {
     ? gallery.find(candidate => getResponsiveImageUrl(candidate) === directUrl)
     : null
   const primaryImage = gallery.find(candidate => candidate?.is_primary) || gallery[0]
-  const source = directValue && typeof directValue === 'object'
-    ? { ...(matchingImage || primaryImage || {}), ...directValue }
-    : matchingImage || directValue || primaryImage
-
-  return {
-    src: getResponsiveImageUrl(source) || directUrl,
-    srcset: getResponsiveImageSrcSet(source?.responsive_images),
+  if (!directUrl) return primaryImage
+  if (matchingImage && typeof directValue === 'object') {
+    return { ...matchingImage, ...directValue }
   }
+  return matchingImage || directValue
 })
 
 const imageSlides = computed(() => {
   const gallery = Array.isArray(props.product.images) ? props.product.images : []
-  const candidates = [image.value, ...gallery]
+  const candidates = [primaryImageRecord.value, ...gallery]
   const seen = new Set()
 
-  return candidates
-    .map(candidate => ({
-      src: getResponsiveImageUrl(candidate),
-      srcset: getResponsiveImageSrcSet(candidate?.responsive_images),
-    }))
-    .filter(candidate => {
-      if (!candidate.src || seen.has(candidate.src)) return false
-      seen.add(candidate.src)
-      return true
-    })
+  const slides = []
+  for (const record of candidates) {
+    const src = getResponsiveImageUrl(record)
+    if (!src || seen.has(src)) continue
+    seen.add(src)
+    slides.push({ src, record })
+  }
+  return slides
 })
 
 const currentImageIndex = ref(0)
-const activeImage = computed(() =>
-  imageSlides.value[currentImageIndex.value] || imageSlides.value[0] || { src: '', srcset: '' }
-)
+const activeImage = computed(() => {
+  const slide = imageSlides.value[currentImageIndex.value] || imageSlides.value[0]
+  return {
+    src: slide?.src || '',
+    srcset: getResponsiveImageSrcSet(slide?.record?.responsive_images),
+  }
+})
 const imageFailed = ref(false)
 const touchStartX = ref(null)
 let suppressNextImageClick = false
@@ -484,7 +483,7 @@ onBeforeUnmount(() => {
       </div>
 
       <span v-if="discountPercent" class="tag discount">-{{ discountPercent }}%</span>
-      <span v-if="product.is_new" class="tag new" :class="{ 'has-discount': discountPercent }">NEW!</span>
+<span v-if="product.is_new" class="tag new" :class="{ 'has-discount': discountPercent }">New</span>
       <span v-if="!inStock" class="tag out">Out of stock</span>
 
       <Transition name="toast">
@@ -623,6 +622,7 @@ onBeforeUnmount(() => {
 /* ---------- Image ---------- */
 /* The photo fills the tile; only a thin inset keeps it off the card edge. */
 .image-wrap {
+  container-type: inline-size;
   position: relative;
   aspect-ratio: 1 / 1;
   margin: 6px 6px 0;
@@ -842,8 +842,13 @@ onBeforeUnmount(() => {
 
 .tag.new {
   left: var(--space-2);
-  background: #17365d;
-  color: #fff;
+  background: var(--color-accent, #e0bd70);
+  color: var(--color-on-accent, #30250d);
+  border: 1px solid color-mix(in srgb, var(--color-accent-deep, var(--color-accent, #b38b39)) 55%, transparent);
+  font-size: 10px;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .tag.new.has-discount {

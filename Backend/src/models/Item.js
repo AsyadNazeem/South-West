@@ -219,6 +219,15 @@ qb_item_code: {
                 defaultValue: false
             },
 
+            new_label_duration: {
+                type: DataTypes.ENUM('14_days', '1_month', '2_months'),
+                allowNull: true
+            },
+            new_label_expires_at_ms: {
+                type: DataTypes.BIGINT.UNSIGNED,
+                allowNull: true
+            },
+
             created_at: {
                 type: DataTypes.DATE,
                 allowNull: false

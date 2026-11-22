@@ -188,6 +188,7 @@ async function loadBanners() {
         banners.value = []
     } finally {
         bannersLoading.value = false
+        if (!banners.value.length) enableCatalog()
     }
 }
 
@@ -348,6 +349,20 @@ const isProductListing = computed(() =>
   )
 )
 
+// On a direct mobile landing, let the hero use the connection before starting
+// the offscreen product requests. Scrolling or filtering takes precedence.
+const featuredSlot = ref(null)
+const catalogReady = ref(false)
+const showProducts = computed(() => catalogReady.value || isProductListing.value)
+let featuredObserver
+let catalogTimer
+
+function enableCatalog() {
+  catalogReady.value = true
+  featuredObserver?.disconnect()
+  clearTimeout(catalogTimer)
+}
+
 function scrollToProducts() {
   document.getElementById('products')?.scrollIntoView({
     behavior: prefersReducedMotion() ? 'auto' : 'smooth',
@@ -481,9 +496,11 @@ async function loadProducts(reset = true) {
 }
 
 watch(
-  [searchQuery, selectedCategoryId, selectedBrandId, sortBy, appliedFilters],
-  () => loadProducts(true),
-  { deep: true }
+  [showProducts, searchQuery, selectedCategoryId, selectedBrandId, sortBy, appliedFilters],
+  () => {
+    if (showProducts.value) loadProducts(true)
+  },
+  { immediate: true, deep: true }
 )
 
 let filterOptionsLoaded = false
@@ -528,11 +545,23 @@ onMounted(() => {
   setStructuredData('website', websiteSchema())
   restoreView()
   loadBanners()
-  loadProducts()
   loadCategories()
+  const mobileLanding = !isProductListing.value && window.matchMedia('(max-width: 650px)').matches
+  if (mobileLanding && featuredSlot.value && 'IntersectionObserver' in window) {
+    featuredObserver = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) enableCatalog()
+    }, { rootMargin: '240px' })
+    featuredObserver.observe(featuredSlot.value)
+    // A stalled promotion must not hold up the catalog.
+    catalogTimer = setTimeout(enableCatalog, 2000)
+  } else {
+    enableCatalog()
+  }
 })
 
 onBeforeUnmount(() => {
+    featuredObserver?.disconnect()
+    clearTimeout(catalogTimer)
     stopBannerRotation()
     setStructuredData('organization', null)
     setStructuredData('website', null)
@@ -592,6 +621,8 @@ onBeforeUnmount(() => {
                     :alt="activeBanner.title || 'Homepage promotion'"
                     class="banner-image"
                     fetchpriority="high"
+                    @load="enableCatalog"
+                    @error="enableCatalog"
                   />
                 </picture>
 
@@ -779,13 +810,17 @@ onBeforeUnmount(() => {
         />
 
         <HomeBrand />
-        <HomeDiscount v-if="activeCategory === 'All Products'" :products="products" />
-        <HomeCategoryRails
-          v-if="categories.length"
-          :categories="homepageCategories"
-          :all-categories="categories"
-          @select-category="selectCategory"
-        />
+        <div ref="featuredSlot">
+          <template v-if="catalogReady">
+            <HomeDiscount v-if="activeCategory === 'All Products'" :products="products" />
+            <HomeCategoryRails
+              v-if="categories.length"
+              :categories="homepageCategories"
+              :all-categories="categories"
+              @select-category="selectCategory"
+            />
+          </template>
+        </div>
 
       </template>
 

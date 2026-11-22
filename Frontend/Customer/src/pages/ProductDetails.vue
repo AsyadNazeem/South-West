@@ -1652,7 +1652,12 @@ await Promise.all([
       const staticProduct = readStaticProductData(publicId)
 
       if (staticProduct) {
-        product.value = staticProduct
+        // Static fallback data cannot guarantee a current NEW label status.
+        // Only the live API may confirm that the label is still active.
+        product.value = {
+          ...staticProduct,
+          is_new: false,
+        }
         usingStaticProductData.value = true
         chooseDefaultVariant(staticProduct)
         error.value = ''

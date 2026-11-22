@@ -1,6 +1,7 @@
 
 'use strict';
 
+const { isNewLabelActive } = require('../utils/itemNewLabel');
 const { Op, QueryTypes } = require('sequelize');
 const db = require('../models');
 
@@ -209,6 +210,7 @@ async function getStoreProducts(req, res, { topRatedMode = false } = {}) {
                 'shipping_weight',
                 'shipping_weight_unit',
                 'is_new',
+                'new_label_expires_at_ms',
             ],
             include: [
                 {
@@ -643,7 +645,8 @@ return {
                     condition: product.condition,
                     shipping_weight: product.shipping_weight,
                     shipping_weight_unit: product.shipping_weight_unit,
-                    is_new: Boolean(product.is_new),
+                    is_new: isNewLabelActive(product),
+                    new_label_expires_at_ms: Number(product.new_label_expires_at_ms) || null,
             price: campaignDiscount
     ? campaignDiscount.discounted_price
     : originalPrice,

@@ -13,10 +13,15 @@ const {
 
 const router = express.Router();
 
-router.get('/', getStoreProducts);
-router.get('/top-rated', getTopRatedStoreProducts);
+function revalidateProducts(req, res, next) {
+    res.set('Cache-Control', 'private, no-cache');
+    next();
+}
+
+router.get('/', revalidateProducts, getStoreProducts);
+router.get('/top-rated', revalidateProducts, getTopRatedStoreProducts);
 router.get('/filters', getStoreProductFilters);
-router.get('/:id/related', getRelatedStoreProducts);
+router.get('/:id/related', revalidateProducts, getRelatedStoreProducts);
 router.get('/:id/variants', getStoreProductVariants);
 
 module.exports = router;

@@ -1,3 +1,4 @@
+const { validateLabel, labelChanges } = require('../utils/itemNewLabel');
 const { Op, Sequelize } = require('sequelize');
 
 const {
@@ -340,14 +341,14 @@ const createItem = async (req, res) => {
     shipping_weight_unit,
     condition,
     is_serialized,
-    is_active,
-    is_new
+    is_active
 } = req.body;
 
-      if (is_new !== undefined && typeof is_new !== 'boolean') {
-    await transaction.rollback();
-    return res.status(400).json({ message: 'is_new must be a boolean' });
-}
+        const labelError = validateLabel(req.body);
+        if (labelError) {
+            await transaction.rollback();
+            return res.status(400).json({ message: labelError });
+        }
 
       if (!item_name || !item_name.trim()) {
     await transaction.rollback();
@@ -412,8 +413,8 @@ item_name: item_name.trim(),
 
             is_active:
                 is_active ?? true,
-            is_new: is_new ?? false
-        });
+            ...labelChanges(null, req.body)
+        }, { transaction });
 
         await recordAuditLog({
             userId: req.user ? (req.user.id ?? req.user.userId) : null,
@@ -431,6 +432,8 @@ item_name: item_name.trim(),
                 item_type_id: item.item_type_id,
                 warranty_id: item.warranty_id,
                 is_new: item.is_new,
+                new_label_duration: item.new_label_duration,
+                new_label_expires_at_ms: item.new_label_expires_at_ms,
                 is_active: item.is_active,
             },
             ipAddress: req.ip || null,
@@ -441,6 +444,7 @@ item_name: item_name.trim(),
         });
 
         const createdItem = await Item.findByPk(item.id, {
+            transaction,
             include: [
                 {
                     model: Brand,
@@ -490,9 +494,10 @@ const updateItem = async (req, res) => {
     try {
         const { id } = req.params
 
-        const item = await Item.findByPk(id)
+        const item = await Item.findByPk(id, { transaction, lock: true })
 
         if (!item) {
+            await transaction.rollback();
             return res.status(404).json({
                 message: 'Item not found'
             })
@@ -510,13 +515,13 @@ const updateItem = async (req, res) => {
             shipping_weight_unit,
             condition,
             is_serialized,
-            is_active,
-            is_new
+            is_active
         } = req.body
 
-        if (is_new !== undefined && typeof is_new !== 'boolean') {
+        const labelError = validateLabel(req.body);
+        if (labelError) {
             await transaction.rollback();
-            return res.status(400).json({ message: 'is_new must be a boolean' });
+            return res.status(400).json({ message: labelError });
         }
 
         const oldValues = {
@@ -528,6 +533,8 @@ const updateItem = async (req, res) => {
             item_type_id: item.item_type_id,
             warranty_id: item.warranty_id,
             is_new: item.is_new,
+            new_label_duration: item.new_label_duration,
+            new_label_expires_at_ms: item.new_label_expires_at_ms,
         };
 
         await item.update({
@@ -583,10 +590,8 @@ const updateItem = async (req, res) => {
                 ? is_active
                 : item.is_active,
 
-            is_new: is_new !== undefined
-                ? is_new
-                : item.is_new
-        })
+            ...labelChanges(item, req.body)
+        }, { transaction })
 
         await recordAuditLog({
             userId: req.user ? (req.user.id ?? req.user.userId) : null,
@@ -605,6 +610,8 @@ const updateItem = async (req, res) => {
                 item_type_id: item.item_type_id,
                 warranty_id: item.warranty_id,
                 is_new: item.is_new,
+                new_label_duration: item.new_label_duration,
+                new_label_expires_at_ms: item.new_label_expires_at_ms,
                 is_active: item.is_active,
             },
             ipAddress: req.ip || null,
@@ -615,6 +622,7 @@ const updateItem = async (req, res) => {
         });
 
         const updatedItem = await Item.findByPk(id, {
+            transaction,
             include: [
                 {
                     model: Brand,
