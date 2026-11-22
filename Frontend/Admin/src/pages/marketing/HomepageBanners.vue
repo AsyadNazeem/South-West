@@ -219,7 +219,7 @@ onMounted(loadBanners)
                     v-if="canCreate"
                     class="button button-primary"
                     type="button"
-                    :disabled="banners.length >= 10"
+                    :disabled="loading"
                     @click="createBanner"
                 >
                     <ImagePlus :size="17" />
@@ -250,7 +250,7 @@ onMounted(loadBanners)
                 </div>
                 <div>
                     <span>Total banners</span>
-                    <strong>{{ summary.total }} <small>/ 10</small></strong>
+                    <strong>{{ summary.total }} <small>/ 12</small></strong>
                 </div>
             </article>
 
@@ -350,6 +350,13 @@ onMounted(loadBanners)
                     <div class="banner-title-row">
                         <div class="banner-title">
                             <h2>{{ banner.title || 'Untitled banner' }}</h2>
+                            <p class="banner-placement-label">
+                                {{ banner.placement === 'promo_1'
+                                    ? 'Promotional Banner 1'
+                                    : banner.placement === 'promo_2'
+                                        ? 'Promotional Banner 2'
+                                        : 'Hero Carousel' }}
+                            </p>
                             <p>{{ banner.subtitle || 'No subtitle provided' }}</p>
                         </div>
 
@@ -439,7 +446,7 @@ onMounted(loadBanners)
 
         <footer class="page-footer">
             <span>Homepage banner management</span>
-            <span>{{ summary.total }} of 10 banners used</span>
+            <span>{{ summary.total }} of 12 banner slots used</span>
         </footer>
     </section>
 </template>

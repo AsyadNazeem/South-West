@@ -185,7 +185,9 @@ test('store product image serialization adds metadata per image and retains base
     const storedPath = await writeImageSet('items/images', randomUUID(), [320]);
     const models = {
         Item: { async findAll() { return [{ id: 1, toJSON: () => ({
-            id: 1, item_name: 'Sample', is_new: true, images: [{
+            id: 1, item_name: 'Sample', is_new: true,
+            new_label_expires_at_ms: Date.now() + 14 * 86_400_000,
+            images: [{
                 id: 3, file_path: storedPath, url: `/uploads/${storedPath}`,
                 is_primary: true, sort_order: 0,
             }],

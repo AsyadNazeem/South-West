@@ -5,6 +5,7 @@ import api from '@/services/api'
 import CategoryNav from '@/layouts/CategoryNav.vue'
 import HomeCategory from '@/components/home/HomeCategory.vue'
 import HomeBrand from '@/components/home/HomeBrand.vue'
+import HomePromoBanner from '@/components/home/HomePromoBanner.vue'
 import { organizationSchema, setStructuredData, websiteSchema } from '@/utils/structuredData'
 
 const ProductGrid = defineAsyncComponent(() => import('@/components/products/ProductGrid.vue'))
@@ -17,6 +18,8 @@ const route = useRoute()
 const router = useRouter()
 
 const banners = ref([])
+const promoBanner1 = ref(null)
+const promoBanner2 = ref(null)
 const activeBannerIndex = ref(0)
 const bannersLoading = ref(true)
 const bannerPaused = ref(false)
@@ -172,20 +175,38 @@ async function loadBanners() {
             ? await window.__homepageBannersPromise
             : null
 
+        let allBanners = []
+
         if (earlyBanners !== null && Array.isArray(earlyBanners)) {
-            banners.value = earlyBanners
+            allBanners = earlyBanners
         } else {
             const response = await api.get('/store/homepage-banners')
-            banners.value = Array.isArray(response.data?.data)
-                ? response.data.data.filter(banner => banner.image_url)
+            allBanners = Array.isArray(response.data?.data)
+                ? response.data.data
                 : []
         }
+
+        const validBanners = allBanners.filter(banner => banner?.image_url)
+
+        banners.value = validBanners.filter(
+            banner => !banner.placement || banner.placement === 'hero'
+        )
+
+        promoBanner1.value = validBanners.find(
+            banner => banner.placement === 'promo_1'
+        ) || null
+
+        promoBanner2.value = validBanners.find(
+            banner => banner.placement === 'promo_2'
+        ) || null
 
         activeBannerIndex.value = 0
         startBannerRotation()
     } catch (err) {
         console.error('Failed to load homepage banners:', err)
         banners.value = []
+        promoBanner1.value = null
+        promoBanner2.value = null
     } finally {
         bannersLoading.value = false
         if (!banners.value.length) enableCatalog()
@@ -813,11 +834,18 @@ onBeforeUnmount(() => {
         <div ref="featuredSlot">
           <template v-if="catalogReady">
             <HomeDiscount v-if="activeCategory === 'All Products'" :products="products" />
+
             <HomeCategoryRails
               v-if="categories.length"
               :categories="homepageCategories"
               :all-categories="categories"
+              :promo-banner="promoBanner1"
               @select-category="selectCategory"
+            />
+
+            <HomePromoBanner
+              v-if="promoBanner2"
+              :banner="promoBanner2"
             />
           </template>
         </div>

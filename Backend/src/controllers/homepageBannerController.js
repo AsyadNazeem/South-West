@@ -15,6 +15,17 @@ const {
 const { recordAuditLog } = require('../services/auditLogService');
 
 const MAX_BANNERS = 10;
+const BANNER_PLACEMENTS = ['hero', 'promo_1', 'promo_2'];
+
+function parsePlacement(value) {
+    const placement = value === undefined ? 'hero' : value;
+
+    if (!BANNER_PLACEMENTS.includes(placement)) {
+        throw new BannerError('Invalid banner placement');
+    }
+
+    return placement;
+}
 const BANNER_LOCK_NAME = 'south_west_homepage_banners_limit';
 
 class BannerError extends Error {
@@ -178,6 +189,7 @@ function auditSnapshot(banner) {
 
     return {
         id: value.id,
+        placement: value.placement,
         title: value.title,
         subtitle: value.subtitle,
         image_path: value.image_path,
@@ -284,6 +296,7 @@ const getPublicBanners = async (req, res) => {
         const responsiveImageCache = new Map();
         const data = await Promise.all(banners.map(async (banner) => ({
                 id: banner.id,
+                placement: banner.placement,
                 title: banner.title,
                 subtitle: banner.subtitle,
                 image_url: buildFileUrl(banner.image_path),
@@ -410,6 +423,7 @@ const createBanner = async (req, res) => {
         );
         const linkUrl = validateLink(req.body.link_url);
         const sortOrder = parseSortOrder(req.body.sort_order) ?? 0;
+        const placement = parsePlacement(req.body.placement);
 
         const isActive = req.body.is_active === undefined
             ? false
@@ -436,11 +450,16 @@ const createBanner = async (req, res) => {
                 );
             }
 
-            const count = await HomepageBanner.count({ transaction });
+            const count = await HomepageBanner.count({
+                where: { placement },
+                transaction,
+            });
 
-            if (count >= MAX_BANNERS) {
+            const limit = placement === 'hero' ? MAX_BANNERS : 1;
+
+            if (count >= limit) {
                 throw new BannerError(
-                    `You can create a maximum of ${MAX_BANNERS} banners`,
+                    `You can create a maximum of ${limit} banner(s) in ${placement}`,
                     409
                 );
             }
@@ -449,6 +468,7 @@ const createBanner = async (req, res) => {
                 {
                     title,
                     subtitle,
+                    placement,
                     image_path: uploadedPath,
                     mobile_image_path: mobileUploadedPath,
                     button_text: buttonText,
@@ -503,6 +523,21 @@ const updateBanner = async (req, res) => {
         const mobileUploadedPath = mobile ? getStoredPath(mobile) : null;
 
         const result = await sequelize.transaction(async (transaction) => {
+            const lockRows = await sequelize.query(
+                'SELECT id FROM homepage_banner_locks WHERE id = 1 FOR UPDATE',
+                {
+                    type: QueryTypes.SELECT,
+                    transaction,
+                }
+            );
+
+            if (!lockRows.length) {
+                throw new BannerError(
+                    'Banner creation lock is not configured. Run the required migration.',
+                    500
+                );
+            }
+
             const banner = await HomepageBanner.findByPk(req.params.id, {
                 transaction,
                 lock: transaction.LOCK.UPDATE,
@@ -514,6 +549,28 @@ const updateBanner = async (req, res) => {
 
             const oldValues = auditSnapshot(banner);
             const changes = {};
+
+            if (req.body.placement !== undefined) {
+                const placement = parsePlacement(req.body.placement);
+
+                if (placement !== banner.placement) {
+                    const count = await HomepageBanner.count({
+                        where: { placement },
+                        transaction,
+                    });
+
+                    const limit = placement === 'hero' ? MAX_BANNERS : 1;
+
+                    if (count >= limit) {
+                        throw new BannerError(
+                            `You can create a maximum of ${limit} banner(s) in ${placement}`,
+                            409
+                        );
+                    }
+
+                    changes.placement = placement;
+                }
+            }
 
             if (req.body.title !== undefined) {
                 changes.title = cleanOptionalText(req.body.title, 'title', 150);

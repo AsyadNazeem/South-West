@@ -413,22 +413,32 @@ const createMultiUploader = ({
                         const actualWidth = rotated ? metadata.height : metadata.width;
                         const actualHeight = rotated ? metadata.width : metadata.height;
 
-                        const isDesktopBanner = file.fieldname === 'image'
+                        const placement = req.body.placement === undefined
+                            ? 'hero'
+                            : req.body.placement;
 
-                        const hasValidAspectRatio = isDesktopBanner
-                            ? actualWidth === actualHeight * 3
-                            : actualWidth * 3 === actualHeight * 4
+                        if (!['hero', 'promo_1', 'promo_2'].includes(placement)) {
+                            throw new UploadError('Invalid banner placement');
+                        }
+
+                        const isDesktopBanner = file.fieldname === 'image';
+                        const isPromo = placement !== 'hero';
+
+                        const ratioWidth = isDesktopBanner
+                            ? (isPromo ? 6 : 3)
+                            : (isPromo ? 3 : 4);
+                        const ratioHeight = isDesktopBanner
+                            ? 1
+                            : (isPromo ? 1 : 3);
 
                         if (
                             !actualWidth ||
                             !actualHeight ||
-                            !hasValidAspectRatio
+                            actualWidth * ratioHeight !== actualHeight * ratioWidth
                         ) {
                             throw new UploadError(
-                                isDesktopBanner
-                                    ? 'Desktop banner image must have an exact 3:1 aspect ratio.'
-                                    : 'Mobile banner image must have an exact 4:3 aspect ratio.'
-                            )
+                                `${isDesktopBanner ? 'Desktop' : 'Mobile'} banner image must have an exact ${ratioWidth}:${ratioHeight} aspect ratio.`
+                            );
                         }
 
                         const filename = `${crypto.randomUUID()}.webp`;

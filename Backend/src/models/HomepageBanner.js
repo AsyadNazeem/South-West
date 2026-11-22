@@ -42,6 +42,12 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true,
             },
 
+            placement: {
+                type: DataTypes.ENUM('hero', 'promo_1', 'promo_2'),
+                allowNull: false,
+                defaultValue: 'hero',
+            },
+
             sort_order: {
                 type: DataTypes.INTEGER,
                 allowNull: false,

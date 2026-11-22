@@ -57,6 +57,7 @@ const MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 
 const form = reactive({
+    placement: 'hero',
     title: '',
     subtitle: '',
     button_text: '',
@@ -133,6 +134,7 @@ const loadBanner = async () => {
             throw new Error('Banner details were not returned by the server.')
         }
 
+        form.placement = banner.placement || 'hero'
         form.title = banner.title || ''
         form.subtitle = banner.subtitle || ''
         form.button_text = banner.button_text || ''
@@ -204,7 +206,9 @@ const initializeCropper = async () => {
     destroyCropper()
 
     cropperInstance.value = new Cropper(image, {
-        aspectRatio: cropTarget.value === 'desktop' ? 3 / 1 : 4 / 3,
+        aspectRatio: cropTarget.value === 'desktop'
+            ? (form.placement === 'hero' ? 3 / 1 : 6 / 1)
+            : (form.placement === 'hero' ? 4 / 3 : 3 / 1),
         viewMode: 1,
         autoCropArea: 1,
         responsive: true,
@@ -271,7 +275,9 @@ const applyImageCrop = async () => {
 
     const canvas = cropperInstance.value.getCroppedCanvas({
         width: isDesktop ? 1800 : 1200,
-        height: isDesktop ? 600 : 900,
+        height: isDesktop
+            ? (form.placement === 'hero' ? 600 : 300)
+            : (form.placement === 'hero' ? 900 : 400),
         imageSmoothingEnabled: true,
         imageSmoothingQuality: 'high',
         fillColor: '#ffffff',
@@ -440,6 +446,7 @@ const submitForm = async () => {
     try {
         const payload = new FormData()
 
+        payload.append('placement', form.placement)
         payload.append('title', form.title.trim())
         payload.append('subtitle', form.subtitle.trim())
         payload.append('button_text', form.button_text.trim())
@@ -528,11 +535,37 @@ onBeforeUnmount(() => {
                 <section class="form-card">
                     <div class="section-heading">
                         <div class="section-icon">
+                            <Eye :size="19" />
+                        </div>
+                        <div>
+                            <h2>Banner placement</h2>
+                            <p>Choose where this banner appears on the homepage.</p>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="banner-placement">Display position</label>
+                        <select id="banner-placement" v-model="form.placement">
+                            <option value="hero">Homepage hero carousel</option>
+                            <option value="promo_1">Promotional banner 1</option>
+                            <option value="promo_2">Promotional banner 2</option>
+                        </select>
+                        <p class="field-help">
+                            Hero supports up to 10 banners. Each promotional
+                            position supports one banner. Promotional banners
+                            are optional and do not reserve space when hidden.
+                        </p>
+                    </div>
+                </section>
+
+                <section class="form-card">
+                    <div class="section-heading">
+                        <div class="section-icon">
                             <ImagePlus :size="19" />
                         </div>
                         <div>
                             <h2>Banner image</h2>
-                            <p>Use a high-quality JPG or PNG image, up to 5 MB. Desktop: 3:1 crop.</p>
+                            <p>Use a high-quality JPG or PNG image, up to 5 MB. {{ form.placement === 'hero' ? 'Desktop: 3:1 crop.' : 'Desktop: 6:1 crop.' }}</p>
                         </div>
                     </div>
 
@@ -922,7 +955,9 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div class="crop-modal-footer">
-                    <span>Output: {{ cropTarget === 'desktop' ? '1800 × 600' : '1200 × 900' }} px · Maximum 5 MB</span>
+                    <span>Output: {{ cropTarget === 'desktop'
+            ? (form.placement === 'hero' ? '1800 × 600' : '1800 × 300')
+            : (form.placement === 'hero' ? '1200 × 900' : '1200 × 400') }} px · Maximum 5 MB</span>
                     <div class="crop-modal-actions">
                         <button type="button" class="button button-secondary" @click="closeCropModal">
                             Cancel

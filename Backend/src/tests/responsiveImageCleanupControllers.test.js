@@ -54,6 +54,9 @@ function bannerHarness(initialValues) {
     };
 
     const sequelize = {
+        async query() {
+            return [{ id: 1 }];
+        },
         async transaction(callback) {
             return callback({ LOCK: { UPDATE: 'UPDATE' } });
         }
