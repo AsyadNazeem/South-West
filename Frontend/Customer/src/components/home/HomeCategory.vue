@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const emit = defineEmits(['select-category'])
 const props = defineProps({
+  loading: Boolean,
   categories: {
     type: Array,
     default: () => []
@@ -48,7 +49,8 @@ function getCategoryImage(category) {
 
 <template>
   <section
-    v-if="props.categories.length"
+    v-if="loading || props.categories.length"
+    :aria-busy="loading"
     class="category-section"
     aria-labelledby="homepage-categories-title"
   >
@@ -56,7 +58,13 @@ function getCategoryImage(category) {
       <h2 id="homepage-categories-title">Categories</h2>
     </div>
 
-    <div id="homepage-category-grid" class="category-grid">
+    <div v-if="loading" class="category-grid" aria-hidden="true">
+      <div v-for="n in columnCount" :key="n" class="category-card">
+        <div class="category-image-wrap category-skeleton"></div>
+        <span class="category-name">&nbsp;</span>
+      </div>
+    </div>
+    <div v-else id="homepage-category-grid" class="category-grid">
       <button
         v-for="category in visibleCategories"
         :key="category.id"
@@ -70,12 +78,12 @@ function getCategoryImage(category) {
             :src="getCategoryImage(category).src"
             :srcset="getCategoryImage(category).srcset || undefined"
             sizes="(max-width: 420px) 28vw, 112px"
-            :alt="category.name"
+            alt=""
             loading="lazy"
             decoding="async"
             @error="handleCategoryImageError(category.id)"
           />
-          <div v-else class="category-image-placeholder">
+          <div v-else class="category-image-placeholder" aria-hidden="true">
             {{ category.name }}
           </div>
         </div>
@@ -139,6 +147,8 @@ function getCategoryImage(category) {
   cursor: pointer;
   text-align: center;
 }
+
+.category-skeleton { background: var(--color-surface-muted); }
 
 .category-card:hover {
   background: var(--color-surface-muted);

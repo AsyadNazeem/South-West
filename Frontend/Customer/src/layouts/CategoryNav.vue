@@ -8,13 +8,20 @@ import {
   watch,
 } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '@/services/api.js'
 
 const router = useRouter()
 
-const categories = ref([])
-const loading = ref(true)
-const error = ref('')
+const props = defineProps({
+  roots: { type: Array, required: true },
+  loading: Boolean,
+  error: String,
+})
+
+const byName = (a, b) => a.name.localeCompare(b.name)
+const categories = computed(() => props.roots.map(category => ({
+  ...category,
+  children: Array.isArray(category.children) ? [...category.children].sort(byName) : [],
+})).sort(byName))
 const hoveredCategoryId = ref(null)
 const navRef = ref(null)
 const menuRef = ref(null)
@@ -85,40 +92,6 @@ async function positionDropdown(id) {
 }
 
 watch(hoveredCategoryId, positionDropdown)
-
-async function loadCategories() {
-  loading.value = true
-  error.value = ''
-
-  try {
-    const response = await api.get('/store/categories')
-    const payload = response.data
-
-    const list = Array.isArray(payload?.data)
-        ? payload.data
-        : Array.isArray(payload?.categories)
-            ? payload.categories
-            : []
-
-    categories.value = list
-        .filter(category => category.parent_id == null)
-        .map(category => ({
-          ...category,
-          children: Array.isArray(category.children)
-              ? [...category.children].sort((a, b) =>
-                  a.name.localeCompare(b.name)
-              )
-              : [],
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name))
-  } catch (err) {
-    error.value =
-        err.response?.data?.message ||
-        'Unable to load categories.'
-  } finally {
-    loading.value = false
-  }
-}
 
 function selectMainCategory(category) {
   activeCategory.value = category.name
@@ -199,8 +172,17 @@ function handleOutsidePointer(event) {
   }
 }
 
+async function openKeyboardMenu(category) {
+  hoveredCategoryId.value = category.id
+  await nextTick()
+  menuRef.value?.querySelector('button')?.focus()
+}
+
 function handleEscape(event) {
-  if (event.key === 'Escape') closeMenu()
+  if (event.key !== 'Escape' || hoveredCategoryId.value == null) return
+  const trigger = navRef.value?.querySelector(`[data-category-id="${CSS.escape(String(hoveredCategoryId.value))}"] button`)
+  if (menuRef.value?.contains(document.activeElement)) trigger?.focus()
+  closeMenu()
 }
 
 function handleResize() {
@@ -212,7 +194,6 @@ function handleResize() {
 }
 
 onMounted(() => {
-  loadCategories()
   window.addEventListener('keydown', handleEscape)
   window.addEventListener('resize', handleResize)
   document.addEventListener('pointerdown', handleOutsidePointer)
@@ -267,6 +248,7 @@ onUnmounted(() => {
               :class="{ active: activeCategory === category.name }"
               :aria-haspopup="category.children.length ? 'true' : undefined"
               :aria-expanded="category.children.length ? isOpen(category) : undefined"
+              @keydown.down.prevent="category.children.length && openKeyboardMenu(category)"
               @click="onCategoryClick(category)"
           >
             {{ category.name }}

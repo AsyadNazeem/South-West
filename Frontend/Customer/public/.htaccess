@@ -13,3 +13,9 @@
 </IfModule>
 
 Options -MultiViews
+
+<IfModule mod_headers.c>
+    <FilesMatch "[.]html$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+</IfModule>

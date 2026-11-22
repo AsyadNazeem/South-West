@@ -1,16 +1,17 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import CategoryNav from '@/layouts/CategoryNav.vue'
-import ProductFilters from '@/components/products/ProductFilters.vue'
-import ProductGrid from '@/components/products/ProductGrid.vue'
-import ProductSort from '@/components/products/ProductSort.vue'
 import HomeCategory from '@/components/home/HomeCategory.vue'
 import HomeBrand from '@/components/home/HomeBrand.vue'
-import HomeDiscount from '@/components/home/HomeDiscount.vue'
-import HomeCategoryRails from '@/components/home/HomeCategoryRails.vue'
 import { organizationSchema, setStructuredData, websiteSchema } from '@/utils/structuredData'
+
+const ProductGrid = defineAsyncComponent(() => import('@/components/products/ProductGrid.vue'))
+const HomeCategoryRails = defineAsyncComponent(() => import('@/components/home/HomeCategoryRails.vue'))
+const HomeDiscount = defineAsyncComponent(() => import('@/components/home/HomeDiscount.vue'))
+const ProductFilters = defineAsyncComponent(() => import('@/components/products/ProductFilters.vue'))
+const ProductSort = defineAsyncComponent(() => import('@/components/products/ProductSort.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -23,6 +24,8 @@ const bannerPaused = ref(false)
 let bannerTimer = null
 let touchStartX = 0
 
+const categoriesLoading = ref(true)
+const categoryError = ref('')
 const categories = ref([])
 const selectedCategoryId = ref(null)
 const homepageCategories = computed(() =>
@@ -110,7 +113,7 @@ async function loadCategories() {
             ? payload
             : Array.isArray(payload?.data)
                 ? payload.data
-                : [];
+                : (payload?.categories ?? []);
 
         const flattened = [];
 
@@ -128,7 +131,10 @@ async function loadCategories() {
         categories.value = flattened;
     } catch (error) {
         console.error('Failed to load categories:', error);
+        categoryError.value = error.response?.data?.message || 'Unable to load categories.';
         categories.value = [];
+    } finally {
+        categoriesLoading.value = false
     }
 }
 
@@ -299,8 +305,10 @@ async function loadFilterOptions() {
     availableBrands.value = data.brands ?? []
     availableWarranties.value = data.warranties ?? []
     availableColors.value = data.colors ?? []
+    return true
   } catch (err) {
     console.error('Unable to load product filter options:', err)
+    return false
   }
 }
 
@@ -470,6 +478,14 @@ watch(
   { deep: true }
 )
 
+let filterOptionsLoaded = false
+watch(isProductListing, async listing => {
+  if (listing && !filterOptionsLoaded) {
+    filterOptionsLoaded = true
+    filterOptionsLoaded = await loadFilterOptions()
+  }
+}, { immediate: true })
+
 watch(activeCategory, value => {
   if (value === 'All Products') {
     selectedCategoryId.value = null
@@ -503,10 +519,9 @@ onMounted(() => {
   setStructuredData('organization', organizationSchema())
   setStructuredData('website', websiteSchema())
   restoreView()
-  loadProducts()
-  loadFilterOptions()
-  loadCategories()
   loadBanners()
+  loadProducts()
+  loadCategories()
 })
 
 onBeforeUnmount(() => {
@@ -518,7 +533,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="storefront">
-    <CategoryNav v-model:active-category="activeCategory" />
+    <CategoryNav
+      v-model:active-category="activeCategory"
+      :roots="homepageCategories"
+      :loading="categoriesLoading"
+      :error="categoryError"
+    />
 
     <main
       class="store-container"
@@ -746,26 +766,18 @@ onBeforeUnmount(() => {
 
         <HomeCategory
           :categories="homepageCategories"
+          :loading="categoriesLoading"
           @select-category="selectCategory"
         />
 
-<HomeBrand />
-
-
-<HomeDiscount
-  v-if="
-    !loading &&
-    activeCategory === 'All Products'
-  "
-  :products="products"
-/>
-
-<HomeCategoryRails
-  v-if="categories.length"
-  :categories="homepageCategories"
-  :all-categories="categories"
-  @select-category="selectCategory"
-/>
+        <HomeBrand />
+        <HomeDiscount v-if="activeCategory === 'All Products'" :products="products" />
+        <HomeCategoryRails
+          v-if="categories.length"
+          :categories="homepageCategories"
+          :all-categories="categories"
+          @select-category="selectCategory"
+        />
 
       </template>
 
@@ -960,6 +972,12 @@ onBeforeUnmount(() => {
   border-radius: calc(var(--radius-md) * 1.5);
   background: var(--color-black);
   box-shadow: var(--shadow-md);
+
+}
+
+.homepage-banner,
+.banner-placeholder,
+.hero-fallback {
   aspect-ratio: 3 / 1;
 }
 
@@ -1170,8 +1188,8 @@ onBeforeUnmount(() => {
 .banner-pause {
   right: 18px;
   bottom: 14px;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
 }
 
 .banner-pause svg {
@@ -1182,42 +1200,45 @@ onBeforeUnmount(() => {
 .banner-dots {
   position: absolute;
   z-index: 2;
-  bottom: 22px;
+  bottom: 10px;
   left: 50%;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  max-width: calc(100% - 120px);
+  overflow-x: auto;
   transform: translateX(-50%);
 }
 
 .banner-dot {
-  position: relative;
-  width: 8px;
-  height: 8px;
+  display: grid;
+  flex: 0 0 32px;
+  place-items: center;
+  height: 44px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 55%);
+  background: transparent;
   cursor: pointer;
-  transition: width 0.25s ease, background 0.25s ease;
 }
 
-/* Larger invisible tap area */
 .banner-dot::after {
-  position: absolute;
-  inset: -10px -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: rgb(255 255 255 / 75%);
   content: '';
 }
 
-.banner-dot.active {
-  width: 26px;
+.banner-dot.active::after {
+  width: 22px;
   background: #fff;
+}
+
+.banner-dot:focus-visible {
+  outline-offset: -3px;
 }
 
 .banner-placeholder {
   width: 100%;
-  min-height: 240px;
-  aspect-ratio: 16 / 5;
+
   border-radius: calc(var(--radius-md) * 1.5);
   background: var(--color-surface-muted);
   animation: pulse 1.4s ease-in-out infinite;
@@ -1230,7 +1251,7 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   justify-content: center;
   gap: 12px;
-  min-height: 280px;
+  box-sizing: border-box;
   padding: clamp(24px, 6vw, 72px);
   border-radius: calc(var(--radius-md) * 1.5);
   background: var(--gradient-metal);
@@ -1475,7 +1496,9 @@ onBeforeUnmount(() => {
 
 /* ---------- Phones ---------- */
 @media (max-width: 650px) {
-  .homepage-banner {
+  .homepage-banner,
+  .banner-placeholder,
+  .hero-fallback {
     aspect-ratio: 4 / 3;
   }
 
@@ -1490,7 +1513,7 @@ onBeforeUnmount(() => {
   }
 
   .banner-dots {
-    bottom: 18px;
+    bottom: 10px;
   }
 
   .banner-pause {
