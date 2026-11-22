@@ -18,7 +18,7 @@ const vThumbnail = {
     const observer = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) {
         observer.disconnect()
-        read(file)
+        read(file, false, true)
       }
     })
     observers.set(el, observer)
@@ -31,10 +31,35 @@ const fmtDateTime = v => new Date(v).toLocaleString('en-GB', { day: '2-digit', m
 
 watch(() => props.detail, reset)
 onBeforeUnmount(reset)
-async function read(file, download = false) {
+async function openFullImage(file) {
+  const tab = window.open('', '_blank')
+  if (tab) tab.opener = null
+  try {
+    const { data } = await props.api.get(props.base + '/files/' + file.id, {
+      responseType: 'blob',
+      params: { preview: '1' }
+    })
+    const url = URL.createObjectURL(data)
+    if (tab && !tab.closed) {
+      tab.location.replace(url)
+    } else {
+      const a = document.createElement('a')
+      a.href = url
+      a.target = '_blank'
+      a.rel = 'noopener'
+      a.click()
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch {
+    if (tab && !tab.closed) tab.close()
+    error.value = 'Unable to open evidence.'
+  }
+}
+
+async function read(file, download = false, automatic = false) {
   const gen = generation
   try {
-    const { data } = await props.api.get(props.base + '/files/' + file.id, { responseType: 'blob', params: download ? undefined : { preview: '1' } })
+    const { data } = await props.api.get(props.base + '/files/' + file.id, { responseType: 'blob', params: download ? undefined : automatic ? { thumbnail: '1' } : { preview: '1' } })
     if (gen !== generation) return
     const url = URL.createObjectURL(data)
     if (download) {
@@ -97,7 +122,7 @@ async function read(file, download = false) {
               :class="{ wide: f.mime !== 'image/webp' && previews[f.id] }"
             >
               <div class="tile-media">
-                <a v-if="previews[f.id] && f.mime === 'image/webp'" :href="previews[f.id]" target="_blank" rel="noopener" aria-label="View full-size photo">
+                <a v-if="previews[f.id] && f.mime === 'image/webp'" href="#" aria-label="View full-size photo" @click.prevent="openFullImage(f)">
                   <img :src="previews[f.id]" alt="Submitted evidence">
                 </a>
                 <video v-else-if="previews[f.id]" :src="previews[f.id]" controls />

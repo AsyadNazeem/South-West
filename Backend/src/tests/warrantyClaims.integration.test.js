@@ -15,11 +15,16 @@ test('warranty purchase, submissions, permissions, archives and notification ret
     const { DataTypes } = require('sequelize');
     const socketPath = process.env.WARRANTY_TEST_SOCKET;
     const schema = 'sw_warranty_test_' + randomUUID().replaceAll('-','');
-    const root = await mysql.createConnection({ socketPath, user: 'root' });
+    const root = await mysql.createConnection({
+        socketPath, user: 'root',
+        password: process.env.WARRANTY_TEST_PASSWORD || undefined
+    });
     await root.query('CREATE DATABASE ' + schema);
     t.after(async () => { await root.query('DROP DATABASE ' + schema); await root.end(); });
     const config = require('../config/sequelize-config');
-    config.test = { dialect: 'mysql', username: 'root', database: schema, dialectOptions: { socketPath },
+    config.test = { dialect: 'mysql', username: 'root',
+        password: process.env.WARRANTY_TEST_PASSWORD || undefined,
+        database: schema, dialectOptions: { socketPath },
         timezone: '+00:00', logging: false };
     process.env.NODE_ENV = 'test';
     process.env.JWT_SECRET = randomUUID();
@@ -133,6 +138,12 @@ test('warranty purchase, submissions, permissions, archives and notification ret
     const image = Buffer.from(await (await expect(call(my+'/files/'+detail.evidence[0].id,token),200)).arrayBuffer());
     assert.equal((await require('sharp')(image).metadata()).format,'webp');
     await expect(call(a+'/files/'+detail.evidence[0].id,admin),200);
+
+    const auditBeforeThumbnail = await db.AuditLog.count();
+    await expect(call(a+'/files/'+detail.evidence[0].id+'?thumbnail=1',admin),200);
+    assert.equal(await db.AuditLog.count(),auditBeforeThumbnail,
+        'Automatic thumbnail loading must not create an audit record');
+
     await expect(call(a+'/files/'+detail.evidence[0].id+'?preview=1',admin),200);
     const response = my+'/requests/'+detail.requests[0].id;
     await expect(call(response,other.token,form('2',true)),404);

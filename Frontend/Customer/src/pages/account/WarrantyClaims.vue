@@ -80,7 +80,7 @@ async function loadPreviews(claim) {
     }
     const photos = evidence.filter(f => f.mime === 'image/webp')
     const loaded = await Promise.all(photos.slice(0, PREVIEW_COUNT).map(async f => {
-      const { data } = await api.get(base + '/' + claim.id + '/files/' + f.id, { responseType: 'blob', params: { preview: '1' } })
+      const { data } = await api.get(base + '/' + claim.id + '/files/' + f.id, { responseType: 'blob', params: { thumbnail: '1' } })
       return { id: f.id, url: URL.createObjectURL(data) }
     }))
     if (token !== version) { loaded.forEach(p => URL.revokeObjectURL(p.url)); return }

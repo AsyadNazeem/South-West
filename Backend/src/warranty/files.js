@@ -16,11 +16,13 @@ async function file(req, res) {
     check(evidence, 'Evidence not found.', 404);
     const local = location(evidence.filename);
     await fs.promises.access(local, fs.constants.R_OK);
-    await sequelize.transaction(async transaction => {
-        await event(claim, req, transaction, 'Evidence accessed', claim.status, null, 'File ' + evidence.id);
-        if (req.user) await auditClaim(claim, req.query.preview === '1' ? 'EVIDENCE_PREVIEWED' : 'EVIDENCE_DOWNLOADED', { req, transaction,
-            after: { evidence_id: evidence.id, transfer_state: 'authorized' } });
-    });
+    if (req.query.thumbnail !== '1') {
+        await sequelize.transaction(async transaction => {
+            await event(claim, req, transaction, 'Evidence accessed', claim.status, null, 'File ' + evidence.id);
+            if (req.user) await auditClaim(claim, req.query.preview === '1' ? 'EVIDENCE_PREVIEWED' : 'EVIDENCE_DOWNLOADED', { req, transaction,
+                after: { evidence_id: evidence.id, transfer_state: 'authorized' } });
+        });
+    }
     res.set({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
         'Content-Type': evidence.mime, 'Content-Disposition': 'attachment; filename="' + evidence.filename + '"' });
     await pipeline(fs.createReadStream(local), res);
