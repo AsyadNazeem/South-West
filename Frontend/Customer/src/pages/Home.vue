@@ -168,10 +168,18 @@ async function loadBanners() {
     bannersLoading.value = true
 
     try {
-        const response = await api.get('/store/homepage-banners')
-        banners.value = Array.isArray(response.data?.data)
-            ? response.data.data.filter(banner => banner.image_url)
-            : []
+        const earlyBanners = window.__homepageBannersPromise
+            ? await window.__homepageBannersPromise
+            : null
+
+        if (earlyBanners !== null && Array.isArray(earlyBanners)) {
+            banners.value = earlyBanners
+        } else {
+            const response = await api.get('/store/homepage-banners')
+            banners.value = Array.isArray(response.data?.data)
+                ? response.data.data.filter(banner => banner.image_url)
+                : []
+        }
 
         activeBannerIndex.value = 0
         startBannerRotation()

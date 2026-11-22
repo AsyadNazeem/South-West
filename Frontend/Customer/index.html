@@ -14,17 +14,76 @@
     <meta property="og:image" content="https://southwest.lk/SWShareImage.png"/>
     <meta property="og:type" content="website"/>
     <meta name="twitter:card" content="summary_large_image"/>
-    <link rel="preconnect" href="%VITE_API_URL%" crossorigin>
     <script>
-        // The current promotion is selected by the public API. Start discovery
-        // while the storefront bundle downloads on a direct homepage visit.
+        // Discover the first active promotion before the homepage bundle loads.
         if (location.pathname === '/' && !location.search) {
-            const preload = document.createElement('link')
-            preload.rel = 'preload'
-            preload.as = 'fetch'
-            preload.crossOrigin = 'anonymous'
-            preload.href = '%VITE_API_URL%'.replace(/\/$/, '') + '/store/homepage-banners'
-            document.head.appendChild(preload)
+            const apiUrl = '%VITE_API_URL%'.replace(/\/$/, '')
+            const apiOrigin = new URL(apiUrl, location.href).origin
+            const connectionHint = document.createElement('link')
+            connectionHint.rel = 'preconnect'
+            connectionHint.href = apiOrigin
+            connectionHint.crossOrigin = 'anonymous'
+            document.head.appendChild(connectionHint)
+
+            function resolveBannerUrl(value) {
+                if (typeof value !== 'string' || !value.trim()) return ''
+                const raw = value.trim()
+                if (/^(https?:|blob:|data:)/i.test(raw)) return raw
+                if (raw.startsWith('//')) return location.protocol + raw
+                const normalized = raw.replace(/\\/g, '/').replace(/^\/+/, '')
+                const uploadPath = normalized.startsWith('uploads/')
+                    ? normalized
+                    : 'uploads/' + normalized
+                return new URL('/' + uploadPath, apiOrigin).href
+            }
+
+            window.__homepageBannersPromise = fetch(apiUrl + '/store/homepage-banners')
+                .then(response => {
+                    if (!response.ok) throw new Error('Banner request failed')
+                    return response.json()
+                })
+                .then(payload => {
+                    const banners = Array.isArray(payload.data)
+                        ? payload.data.filter(banner => banner.image_url)
+                        : []
+                    const first = banners[0]
+                    if (first) {
+                        const mobile = window.matchMedia('(max-width: 650px)').matches
+                        const candidates = mobile && first.mobile_image_url
+                            ? first.mobile_responsive_images
+                            : first.responsive_images
+                        const fallback = mobile && first.mobile_image_url
+                            ? first.mobile_image_url
+                            : first.image_url
+                        const preload = document.createElement('link')
+                        preload.rel = 'preload'
+                        preload.as = 'image'
+                        preload.href = resolveBannerUrl(fallback)
+                        const byWidth = new Map()
+                        if (Array.isArray(candidates)) {
+                            for (const candidate of candidates) {
+                                const width = candidate?.width
+                                if (!Number.isSafeInteger(width) || width <= 0) continue
+                                const url = resolveBannerUrl(candidate?.url)
+                                if (!url || byWidth.has(width)) continue
+                                byWidth.set(width, url)
+                            }
+                        }
+                        if (byWidth.size) {
+                            preload.imageSrcset = [...byWidth.entries()]
+                                .sort(([left], [right]) => left - right)
+                                .map(([width, url]) => `${url} ${width}w`)
+                                .join(', ')
+                            preload.imageSizes = '(min-width: 1532px) 1440px, 94vw'
+                        }
+                        if (preload.href) document.head.appendChild(preload)
+                    }
+                    return banners
+                })
+                .catch(error => {
+                    console.warn('Early banner discovery failed:', error)
+                    return null
+                })
         }
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
