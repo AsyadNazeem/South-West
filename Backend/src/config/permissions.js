@@ -90,6 +90,17 @@ const permissionCatalog = [
     { name: 'promotions.update', module: 'promotions', description: 'Update promotions' },
     { name: 'promotions.delete', module: 'promotions', description: 'Delete promotions' },
 
+    { name: 'faqs.view', module: 'faqs', description: 'View FAQs' },
+    { name: 'faqs.create', module: 'faqs', description: 'Create FAQs' },
+    { name: 'faqs.update', module: 'faqs', description: 'Update FAQs' },
+    { name: 'faqs.delete', module: 'faqs', description: 'Delete FAQs' },
+
+    { name: 'contact_information.view', module: 'contact_information', description: 'View contact information settings' },
+    { name: 'contact_information.update', module: 'contact_information', description: 'Update contact information settings' },
+
+    { name: 'homepage_sections.view', module: 'homepage_sections', description: 'View homepage sections' },
+    { name: 'homepage_sections.update', module: 'homepage_sections', description: 'Update homepage sections' },
+
     { name: 'homepage_banners.view', module: 'homepage_banners', description: 'View homepage banners' },
     { name: 'homepage_banners.create', module: 'homepage_banners', description: 'Create homepage banners' },
     { name: 'homepage_banners.update', module: 'homepage_banners', description: 'Update homepage banners' },

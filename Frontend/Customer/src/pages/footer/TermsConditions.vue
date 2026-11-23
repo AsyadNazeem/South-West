@@ -32,7 +32,7 @@ const page = {
       title: 'Returns and refunds',
       text: 'Returns, warranty claims, cancellations, and refunds are subject to the store’s final approved policies and applicable law.',
       link: '/returns',
-      linkText: 'Read returns information',
+      linkText: 'Read Return & Warranty Policy',
     },
     {
       title: 'Changes to these terms',

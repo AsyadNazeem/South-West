@@ -7,6 +7,11 @@ const props = defineProps({
   products: {
     type: Array,
     default: () => []
+  },
+  mode: {
+    type: String,
+    default: 'all',
+    validator: value => ['all', 'discount', 'top-rated'].includes(value)
   }
 })
 
@@ -105,8 +110,9 @@ const discountCampaignRails = computed(() => {
 })
 
 const rails = computed(() => [
-  ...discountCampaignRails.value,
-  ...(topRatedProducts.value.length || topRatedLoading.value || topRatedError.value
+  ...(props.mode !== 'top-rated' ? discountCampaignRails.value : []),
+  ...(props.mode !== 'discount' &&
+    (topRatedProducts.value.length || topRatedLoading.value || topRatedError.value)
     ? [{
         key: 'top-rated',
         title: 'Top rated',

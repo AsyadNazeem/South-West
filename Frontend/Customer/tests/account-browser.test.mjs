@@ -140,6 +140,7 @@ test('account routes at six widths and customer workflows', {
   await page.locator('.claim-form textarea').fill('Sound cuts out')
   const file={name:'fixture.png',mimeType:'image/png',buffer:await fs.readFile(path.join(dist,'Favicon.png'))}
   await page.locator('input[type=file]').setInputFiles(file)
+  await page.getByRole('checkbox', { name: /agree to the warranty terms/ }).check()
   await btn('Submit claim').click()
   await page.getByText('Claim submitted · '+claim.reference).waitFor()
   await page.locator('#claim-response textarea').fill('Photo of the label')

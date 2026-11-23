@@ -16,6 +16,7 @@ import {
   Banknote,
   BarChart3,
   Megaphone,
+  LayoutTemplate,
   Settings,
   ChevronRight,
   LogOut,
@@ -89,11 +90,11 @@ const menuDefinitions = [
     label: 'Sales',
     icon: Banknote,
     children: [
-      { label: 'Warranty Claims', to: '/admin/sales/warranty-claims', permissions: ['warranty_claims.view'] },
       { label: 'Orders', to: '/admin/sales/orders', permissions: ['orders.view'] },
       { label: 'Payments', to: '/admin/sales/payments', permissions: ['payments.view'] },
       { label: 'Invoices', to: '/admin/sales/invoices', permissions: ['invoices.view'] },
       { label: 'Deliveries', to: '/admin/sales/deliveries', permissions: ['deliveries.view'] },
+      { label: 'Warranty Claims', to: '/admin/sales/warranty-claims', permissions: ['warranty_claims.view'] },
       { label: 'Delivery Charges', to: '/admin/sales/delivery-chargers', permissions: ['delivery_charges.view'] }
     ]
   },
@@ -107,6 +108,16 @@ const menuDefinitions = [
       { label: 'Discount Campaigns', to: '/admin/marketing/discount-campaigns', permissions: ['discount_campaigns.view']},
       { label: 'Campaign Frames', to: '/admin/marketing/campaign-frames', permissions: ['discount_campaigns.view']},
       { label: 'Website Themes', to: '/admin/marketing/website-themes', permissions: ['website_themes.view']},
+    ]
+  },
+  {
+    key: 'website-management',
+    label: 'Website Management',
+    icon: LayoutTemplate,
+    children: [
+      { label: 'Homepage Sections', to: '/admin/marketing/homepage-sections', permissions: ['homepage_sections.view'] },
+      { label: 'FAQs', to: '/admin/marketing/faqs', permissions: ['faqs.view'] },
+      { label: 'Contact Information', to: '/admin/website-management/contact-information', permissions: ['contact_information.view'] },
     ]
   },
   {

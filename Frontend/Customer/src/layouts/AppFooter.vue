@@ -1,4 +1,43 @@
 <script setup>
+import { computed, onMounted, ref } from 'vue'
+import api from '@/services/api'
+
+const contactInformation = ref({})
+
+const businessAddress = computed(() => {
+  const address = contactInformation.value.business_address
+  return typeof address === 'string' ? address.trim() : ''
+})
+
+const googleMapsLink = computed(() => {
+  const value = contactInformation.value.google_maps_url
+
+  if (typeof value !== 'string' || !value.trim()) return null
+
+  try {
+    const url = new URL(value)
+    return ['https:', 'http:'].includes(url.protocol)
+      ? url.href
+      : null
+  } catch {
+    return null
+  }
+})
+
+const allowCustomerVisits = computed(() =>
+  contactInformation.value.allow_customer_visits === true ||
+  contactInformation.value.allow_customer_visits === 1
+)
+
+onMounted(async () => {
+  try {
+    const response = await api.get('/store/contact-information')
+    contactInformation.value = response.data?.data || {}
+  } catch (error) {
+    console.error('Unable to load footer contact information:', error)
+  }
+})
+
 const currentYear = new Date().getFullYear()
 
 const shopLinks = [
@@ -12,7 +51,7 @@ const supportLinks = [
   { label: "Contact Us", to: "/contact" },
   { label: "FAQs", to: "/faq" },
   { label: "Shipping Information", to: "/shipping" },
-  { label: "Returns & Refunds", to: "/returns" },
+  { label: "Return & Warranty Policy", to: "/returns" },
 ]
 
 const companyLinks = [
@@ -50,10 +89,11 @@ const companyLinks = [
               essentials and great value. Shop with confidence at South-West.
             </p>
 
-            <!-- Store location: icon tile + text, same look as the benefit items below -->
+            <!-- Business location from Admin Contact Information -->
             <a
+              v-if="businessAddress && googleMapsLink"
               class="location-note"
-              href="https://www.google.com/maps/search/?api=1&query=4th+Floor%2C+Unity+Plaza%2C+Colombo+04"
+              :href="googleMapsLink"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -70,8 +110,8 @@ const companyLinks = [
               </span>
 
               <span class="location-text">
-                <strong>Visit Our Store</strong>
-                <span class="location-address">4th Floor, Unity Plaza, Colombo 04</span>
+                <strong>{{ allowCustomerVisits ? 'Business Location' : 'Online Store Location' }}</strong>
+                <span class="location-address">{{ businessAddress }}</span>
               </span>
 
               <svg class="location-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true">

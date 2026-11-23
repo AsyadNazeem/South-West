@@ -12,7 +12,7 @@ const sections = [
   ['wishlist','Wishlist','M12 21l-8-8C-1 6 7 1 12 7c5-6 13-1 8 6z'],
   ['notifications','Notifications','M4 17h16l-2-3V9a6 6 0 0 0-12 0v5z M10 20a2 2 0 0 0 4 0'],
   ['reviews','My reviews','M3 4h18v13H9l-6 4z M7 9h10 M7 12h6'],
-  ['returns','Returns & cancellations','M8 4L3 9l5 5 M3 9h11a6 6 0 0 1 0 12'],
+  ['returns','Warranty & Order Support','M8 4L3 9l5 5 M3 9h11a6 6 0 0 1 0 12'],
   ['addresses','Saved addresses','M12 22s8-8 8-13a8 8 0 0 0-16 0c0 5 8 13 8 13z M15 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0'],
   ['personal-information','My profile','M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M4 21v-2a8 6 0 0 1 16 0v2'],
   ['change-password','Account security','M5 10h14v11H5z M8 10V7a4 4 0 1 1 8 0v3 M12 14v3'],

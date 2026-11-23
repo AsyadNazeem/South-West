@@ -1730,4 +1730,60 @@ onBeforeUnmount(() => {
     }
 }
 
+
+/* Banner placement dropdown styling */
+#banner-placement {
+    display: block;
+    width: 100%;
+    min-height: 46px;
+    padding: 11px 44px 11px 15px;
+    box-sizing: border-box;
+
+    color: var(--color-text, #172033);
+    background-color: var(--color-surface, #ffffff);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2364758b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 18px;
+
+    border: 1px solid var(--form-border, #e5e7eb);
+    border-radius: 9px;
+
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+
+    font: inherit;
+    font-size: 13px;
+    font-weight: 550;
+    line-height: 1.5;
+
+    cursor: pointer;
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease,
+        background-color 0.2s ease;
+}
+
+#banner-placement:hover {
+    border-color: #94a3b8;
+    background-color: var(--color-surface, #ffffff);
+}
+
+#banner-placement:focus-visible {
+    border-color: #4569dc;
+    box-shadow: 0 0 0 3px rgba(69, 105, 220, 0.12);
+}
+
+#banner-placement:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+#banner-placement option {
+    color: #172033;
+    background-color: #ffffff;
+    font-size: 13px;
+}
+
 </style>

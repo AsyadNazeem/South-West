@@ -1,5 +1,6 @@
 <template>
   <a
+    v-if="whatsappLink"
     :href="whatsappLink"
     class="floating-whatsapp"
     target="_blank"
@@ -22,9 +23,33 @@
 </template>
 
 <script setup>
-import { getWhatsAppLink } from '@/utils/whatsapp'
+import { onMounted, ref } from 'vue'
+import api from '@/services/api'
 
-const whatsappLink = getWhatsAppLink()
+const whatsappLink = ref(null)
+
+async function loadWhatsAppNumber() {
+  try {
+    const response = await api.get('/store/contact-information')
+    const number = response.data?.data?.whatsapp_number
+
+    if (typeof number !== 'string') {
+      whatsappLink.value = null
+      return
+    }
+
+    const digits = number.replace(/\\D/g, '')
+
+    whatsappLink.value = digits
+      ? `https://wa.me/${digits}`
+      : null
+  } catch (error) {
+    whatsappLink.value = null
+    console.error('Unable to load WhatsApp contact information:', error)
+  }
+}
+
+onMounted(loadWhatsAppNumber)
 </script>
 
 <style scoped>

@@ -11,6 +11,32 @@ import {
 const SeasonalDecorations = defineAsyncComponent(() => import('@/components/SeasonalDecorations.vue'))
 const { themeSlug } = useWebsiteTheme()
 
+
+// Support email managed through Admin Contact Information.
+const supportEmail = ref('')
+
+const supportEmailLink = computed(() => {
+  const email = supportEmail.value.trim()
+  return email ? `mailto:${email}` : null
+})
+
+async function loadSupportEmail() {
+  try {
+    const response = await api.get('/store/contact-information')
+    const email = response.data?.data?.support_email
+
+    supportEmail.value =
+      typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+        ? email.trim()
+        : ''
+  } catch (error) {
+    supportEmail.value = ''
+    console.error('Unable to load header support email:', error)
+  }
+}
+
+onMounted(loadSupportEmail)
+
 const router = useRouter()
 const searchText = ref('')
 const searchSuggestions = ref([])
@@ -390,7 +416,11 @@ onUnmounted(() => {
 
         <nav class="top-links" aria-label="Utility navigation">
           <RouterLink to="/" class="shop-link">Shop</RouterLink>
-          <a href="mailto:support@southwest.lk" class="help-link">Help &amp; Support</a>
+          <a
+          v-if="supportEmailLink"
+          :href="supportEmailLink"
+          class="help-link"
+        >Help &amp; Support</a>
 
           <span class="top-divider" aria-hidden="true"></span>
 

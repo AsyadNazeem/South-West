@@ -68,6 +68,9 @@ const CreatePromotionCategories = () => import('@/pages/marketing/CreatePromotio
 const PromotionItems = () => import('@/pages/marketing/PromotionItems.vue')
 const CreatePromotionItems = () => import('@/pages/marketing/CreatePromotionItems.vue')
 const HomepageBanners = () => import('@/pages/marketing/HomepageBanners.vue')
+const HomepageSections = () => import('@/pages/website/HomepageSections.vue')
+const Faqs = () => import('@/pages/website/Faqs.vue')
+const ContactInformation = () => import('@/pages/website/ContactInformation.vue')
 const DiscountCampaigns = () => import('@/pages/marketing/DiscountCampaigns.vue')
 const CreateHomePage = () => import('@/pages/marketing/CreateHomepageBanners.vue')
 const CreateDiscountCampaigns = () => import('@/pages/marketing/DiscountCampaignForm.vue')
@@ -690,6 +693,24 @@ const routes = [
                 name: 'CreatePromotionItems',
                 component: CreatePromotionItems,
                 meta: { permission: 'promotion_items.create' }
+            },
+            {
+                path: 'marketing/homepage-sections',
+                name: 'HomepageSections',
+                component: HomepageSections,
+                meta: { permission: 'homepage_sections.view' }
+            },
+            {
+                path: 'marketing/faqs',
+                name: 'Faqs',
+                component: Faqs,
+                meta: { permission: 'faqs.view' }
+            },
+            {
+                path: 'website-management/contact-information',
+                name: 'ContactInformation',
+                component: ContactInformation,
+                meta: { permission: 'contact_information.view' }
             },
             {
                 path: 'marketing/promotion-items/edit/:id',

@@ -17,6 +17,68 @@ const ProductSort = defineAsyncComponent(() => import('@/components/products/Pro
 const route = useRoute()
 const router = useRouter()
 
+// Default layout if homepage configuration cannot be loaded.
+const DEFAULT_HOMEPAGE_SECTIONS = [
+  'hero_banner',
+  'shopping_benefits',
+  'shop_categories',
+  'shop_brands',
+  'discount_products',
+  'top_rated_products',
+  'promo_banner_1',
+  'category_product_rows',
+  'promo_banner_2',
+  'just_for_you',
+]
+
+const homepageSections = ref(
+  DEFAULT_HOMEPAGE_SECTIONS.map((section_key, sort_order) => ({
+    section_key,
+    is_active: true,
+    sort_order,
+  }))
+)
+
+const homepageSectionKeys = computed(() =>
+  homepageSections.value.map(section => section.section_key)
+)
+
+// Sections in the exact display order configured by the Admin Panel.
+const orderedHomepageSections = computed(() =>
+  [...homepageSections.value]
+    .filter(section => section.is_active)
+    .sort((a, b) => a.sort_order - b.sort_order)
+)
+
+// Return the position configured for a homepage section.
+function homepageSectionOrder(sectionKey) {
+  const section = orderedHomepageSections.value.find(
+    item => item.section_key === sectionKey
+  )
+
+  return section?.sort_order ?? 999
+}
+
+async function loadHomepageSections() {
+  try {
+    const response = await api.get('/store/homepage-sections')
+    const sections = response.data?.data
+
+    if (!Array.isArray(sections)) {
+      throw new Error('Invalid homepage configuration')
+    }
+
+    homepageSections.value = sections
+      .filter(section => section.is_active)
+      .sort((a, b) => a.sort_order - b.sort_order)
+  } catch (error) {
+    console.warn(
+      'Unable to load homepage configuration. Using default layout.',
+      error
+    )
+  }
+}
+
 const banners = ref([])
 const promoBanner1 = ref(null)
 const promoBanner2 = ref(null)
@@ -58,7 +120,7 @@ const BENEFITS = [
     icon: 'M12 3 4 7v10l8 4 8-4V7z M4 7l8 4 8-4 M12 11v10',
   },
   {
-    title: 'Returns & warranty',
+    title: 'Return & Warranty Policy',
     text: 'Details on every product',
     icon: 'M3 8l4-4 M3 8l4 4 M3 8h12a5 5 0 0 1 0 10H9',
   },
@@ -565,6 +627,7 @@ onMounted(() => {
   setStructuredData('organization', organizationSchema())
   setStructuredData('website', websiteSchema())
   restoreView()
+  loadHomepageSections()
   loadBanners()
   loadCategories()
   const mobileLanding = !isProductListing.value && window.matchMedia('(max-width: 650px)').matches
@@ -606,9 +669,14 @@ onBeforeUnmount(() => {
       <template v-if="!isProductListing">
         <h1 class="sr-only">South West online store</h1>
 
-        <section class="homepage-section" aria-label="Promotions">
+        <section
+          v-if="homepageSectionKeys.includes('hero_banner')"
+          class="homepage-section"
+          :style="{ order: homepageSectionOrder('hero_banner') }"
+          aria-label="Promotions"
+        >
           <div
-            v-if="activeBanner"
+            v-if="homepageSectionKeys.includes('hero_banner') && activeBanner"
             class="homepage-banner"
             role="region"
             aria-roledescription="carousel"
@@ -766,13 +834,16 @@ onBeforeUnmount(() => {
           </div>
 
           <div
-            v-else-if="bannersLoading"
+            v-else-if="homepageSectionKeys.includes('hero_banner') && bannersLoading"
             class="banner-placeholder"
             aria-busy="true"
             aria-label="Loading promotions"
           />
 
-          <div v-else class="hero-fallback">
+          <div
+            v-else-if="homepageSectionKeys.includes('hero_banner')"
+            class="hero-fallback"
+          >
             <p class="hero-eyebrow">SOUTH WEST</p>
             <h2>Discover our latest products</h2>
             <p>
@@ -798,7 +869,18 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <ul class="benefits" aria-label="Why shop with us">
+        </section>
+
+        <section
+          v-if="homepageSectionKeys.includes('shopping_benefits')"
+          class="homepage-section"
+          :style="{ order: homepageSectionOrder('shopping_benefits') }"
+          aria-label="Shopping benefits"
+        >
+          <ul
+            class="benefits"
+            aria-label="Why shop with us"
+          >
             <li
               v-for="benefit in BENEFITS"
               :key="benefit.title"
@@ -824,30 +906,85 @@ onBeforeUnmount(() => {
           </ul>
         </section>
 
-        <HomeCategory
-          :categories="homepageCategories"
-          :loading="categoriesLoading"
-          @select-category="selectCategory"
-        />
-
-        <HomeBrand />
-        <div ref="featuredSlot">
-          <template v-if="catalogReady">
-            <HomeDiscount v-if="activeCategory === 'All Products'" :products="products" />
-
-            <HomeCategoryRails
-              v-if="categories.length"
+        <template
+          v-for="section in orderedHomepageSections.filter(item =>
+            ['shop_categories', 'shop_brands'].includes(item.section_key)
+          )"
+          :key="section.section_key"
+        >
+          <div
+            v-if="section.section_key === 'shop_categories'"
+            :style="{ order: homepageSectionOrder('shop_categories') }"
+          >
+            <HomeCategory
               :categories="homepageCategories"
-              :all-categories="categories"
-              :promo-banner="promoBanner1"
+              :loading="categoriesLoading"
               @select-category="selectCategory"
             />
+          </div>
 
-            <HomePromoBanner
-              v-if="promoBanner2"
-              :banner="promoBanner2"
-            />
-          </template>
+          <div
+            v-else-if="section.section_key === 'shop_brands'"
+            :style="{ order: homepageSectionOrder('shop_brands') }"
+          >
+            <HomeBrand />
+          </div>
+        </template>
+        <!-- Mobile catalog lazy-loading observation point. -->
+        <div
+          ref="featuredSlot"
+          class="featured-observer-slot"
+          :style="{
+            order: Math.min(
+              homepageSectionOrder('discount_products'),
+              homepageSectionOrder('top_rated_products'),
+              homepageSectionOrder('promo_banner_1'),
+              homepageSectionOrder('category_product_rows'),
+              homepageSectionOrder('promo_banner_2'),
+              homepageSectionOrder('just_for_you')
+            ) - 0.5
+          }"
+          aria-hidden="true"
+        ></div>
+
+        <div
+          v-if="catalogReady && homepageSectionKeys.includes('discount_products') && activeCategory === 'All Products'"
+          :style="{ order: homepageSectionOrder('discount_products') }"
+        >
+          <HomeDiscount :products="products" mode="discount" />
+        </div>
+
+        <div
+          v-if="catalogReady && homepageSectionKeys.includes('top_rated_products') && activeCategory === 'All Products'"
+          :style="{ order: homepageSectionOrder('top_rated_products') }"
+        >
+          <HomeDiscount mode="top-rated" />
+        </div>
+
+        <div
+          v-if="catalogReady && homepageSectionKeys.includes('promo_banner_1') && promoBanner1"
+          :style="{ order: homepageSectionOrder('promo_banner_1') }"
+        >
+          <HomePromoBanner :banner="promoBanner1" />
+        </div>
+
+        <div
+          v-if="catalogReady && homepageSectionKeys.includes('category_product_rows') && categories.length"
+          :style="{ order: homepageSectionOrder('category_product_rows') }"
+        >
+          <HomeCategoryRails
+            :categories="homepageCategories"
+            :all-categories="categories"
+            :promo-banner="null"
+            @select-category="selectCategory"
+          />
+        </div>
+
+        <div
+          v-if="catalogReady && homepageSectionKeys.includes('promo_banner_2') && promoBanner2"
+          :style="{ order: homepageSectionOrder('promo_banner_2') }"
+        >
+          <HomePromoBanner :banner="promoBanner2" />
         </div>
 
       </template>
@@ -873,10 +1010,14 @@ onBeforeUnmount(() => {
 
       <!-- Product listing -->
       <div
+        v-if="isProductListing || homepageSectionKeys.includes('just_for_you')"
         id="products"
         :class="
           isProductListing ? 'shop-layout' : 'landing-products'
         "
+        :style="!isProductListing
+          ? { order: homepageSectionOrder('just_for_you') }
+          : undefined"
       >
         <!-- Sidebar filters -->
         <aside v-if="isProductListing" class="sidebar">
@@ -997,7 +1138,17 @@ onBeforeUnmount(() => {
   padding: var(--space-6) 0 var(--space-16);
 }
 
+/* Small invisible target for mobile catalog lazy loading. */
+.featured-observer-slot {
+  height: 1px;
+  flex: 0 0 1px;
+  pointer-events: none;
+}
+
+/* Arrange homepage sections using their Admin Panel order. */
 .landing-container {
+  display: flex;
+  flex-direction: column;
   padding-top: var(--space-5);
 }
 

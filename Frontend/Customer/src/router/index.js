@@ -15,7 +15,7 @@ const ForgotPassword = () => import('@/pages/auth/ForgotPassword.vue')
 const ResetPassword = () => import('@/pages/auth/ResetPassword.vue')
 const Home = () => import('@/pages/Home.vue')
 import { informationRoutes } from './informationRoutes.js'
-const StoreListing = () => import('@/pages/StoreListing.vue')
+const StoreListing = () => import('@/pages/footer/StoreListing.vue')
 const Categories = () => import('@/pages/Categories.vue')
 const Brands = () => import('@/pages/Brands.vue')
 const AccountLayout = () => import('@/layouts/AccountLayout.vue')
@@ -184,7 +184,7 @@ const routes = [
             {
                 path: 'returns',
                 component: ReturnsCancellations,
-                meta: { title: 'Returns & Cancellations' },
+                meta: { title: 'Warranty & Order Support' },
             },
         ],
     },
