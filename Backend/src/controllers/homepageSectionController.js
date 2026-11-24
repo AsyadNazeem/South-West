@@ -37,7 +37,6 @@ const serialize = section => {
 const getPublicSections = async (req, res) => {
     try {
         const sections = await HomepageSection.findAll({
-            where: { is_active: true },
             order,
         });
 
@@ -142,14 +141,41 @@ const updateSections = async (req, res) => {
             });
         }
 
-        // Settings are reserved until individual options are implemented.
-        if (settings !== undefined &&
-            Object.keys(settings).length > 0) {
-            return res.status(400).json({
-                message: `Custom settings are not yet supported for ${section_key}`,
-            });
+        const allowedSettings =
+            section_key === 'category_product_rows'
+                ? []
+                : ['after_category_row'];
+
+        if (settings !== undefined) {
+            const keys = Object.keys(settings);
+
+            if (keys.some(key => !allowedSettings.includes(key))) {
+                return res.status(400).json({
+                    message: `Unsupported settings for ${section_key}`,
+                });
+            }
+
+            if (section_key !== 'category_product_rows' &&
+                settings.after_category_row !== undefined &&
+                (!Number.isInteger(settings.after_category_row) ||
+                 settings.after_category_row < 1 ||
+                 settings.after_category_row > 8)) {
+                return res.status(400).json({
+                    message: 'Category row position must be between 1 and 8',
+                });
+            }
         }
     }
+
+    const categorySection = submitted.find(
+        section => section.section_key === 'category_product_rows'
+    );
+
+    const categoryOrder = categorySection.sort_order;
+
+    const isAdjacentToCategoryRows = section =>
+        section.section_key !== 'category_product_rows' &&
+        Math.abs(section.sort_order - categoryOrder) === 1;
 
     try {
         await sequelize.transaction(async transaction => {
@@ -177,7 +203,13 @@ const updateSections = async (req, res) => {
                         title: section.title.trim(),
                         is_active: section.is_active,
                         sort_order: section.sort_order,
-                        settings: {},
+                        settings: isAdjacentToCategoryRows(section) &&
+                            section.settings?.after_category_row !== undefined
+                            ? {
+                                after_category_row:
+                                    section.settings.after_category_row,
+                            }
+                            : {},
                     },
                     {
                         where: { section_key: section.section_key },

@@ -44,8 +44,28 @@ const descriptions = {
   top_rated_products: 'Highest-rated products based on customer reviews.',
   promo_banner_1: 'First promotional banner.',
   category_product_rows: 'Product rows grouped by category.',
-  promo_banner_2: 'Banner displayed within the category product rows.',
+  promo_banner_2: 'Second promotional banner.',
   just_for_you: 'Recommended products on the homepage.',
+}
+
+function isAdjacentToCategoryRows(index) {
+  const current = sections.value[index]
+  if (!current || current.section_key === 'category_product_rows') return false
+
+  return (
+    sections.value[index - 1]?.section_key === 'category_product_rows' ||
+    sections.value[index + 1]?.section_key === 'category_product_rows'
+  )
+}
+
+function updateRowPosition(section, value) {
+  const row = Number(value)
+
+  section.settings = value !== '' && Number.isInteger(row) && row >= 1 && row <= 8
+    ? { after_category_row: row }
+    : {}
+
+  success.value = ''
 }
 
 function normalizeSections(data) {
@@ -108,10 +128,23 @@ function moveSection(index, direction) {
     updated[index],
   ]
 
-  sections.value = updated.map((section, position) => ({
-    ...section,
-    sort_order: position,
-  }))
+  sections.value = updated.map((section, position) => {
+    const adjacent =
+      updated[position - 1]?.section_key === 'category_product_rows' ||
+      updated[position + 1]?.section_key === 'category_product_rows'
+
+    return {
+      ...section,
+      sort_order: position,
+      settings: !adjacent
+        ? Object.fromEntries(
+            Object.entries(section.settings || {}).filter(
+              ([key]) => key !== 'after_category_row'
+            )
+          )
+        : section.settings,
+    }
+  })
 
   success.value = ''
 }
@@ -140,7 +173,12 @@ async function saveChanges() {
     title: section.title.trim(),
     is_active: section.is_active,
     sort_order: index,
-    settings: {},
+    settings: section.section_key !== 'category_product_rows' &&
+      Number.isInteger(section.settings?.after_category_row)
+      ? {
+          after_category_row: section.settings.after_category_row,
+        }
+      : {},
   }))
 
   if (payload.some(section => !section.title)) {
@@ -280,6 +318,28 @@ onMounted(loadSections)
             />
 
             <p>{{ descriptions[section.section_key] || section.section_key }}</p>
+
+            <label
+              v-if="isAdjacentToCategoryRows(index)"
+              class="banner-position-setting"
+            >
+              <span>Move between category product rows</span>
+              <select
+                class="category-row-select"
+                :value="section.settings.after_category_row ?? ''"
+                :disabled="!canUpdate || saving"
+                @change="updateRowPosition(section, $event.target.value)"
+              >
+                <option value="">Normal position</option>
+                <option
+                  v-for="row in 8"
+                  :key="row"
+                  :value="row"
+                >
+                  After Row {{ row }}
+                </option>
+              </select>
+            </label>
           </div>
 
           <label class="visibility-control">
@@ -315,8 +375,8 @@ onMounted(loadSections)
     </div>
 
     <p class="help-text">
-      Note: Promotional Banner 2 remains positioned within the category
-      product rows. Search results and category-filtered product listings
+      Sections immediately above or below Category Product Rows can be
+      inserted between category rows using their position dropdown. Search results and category-filtered product listings
       are not controlled by these homepage visibility settings.
     </p>
   </div>
@@ -577,4 +637,69 @@ button:disabled {
     margin-left: auto;
   }
 }
+
+/* Category row insertion dropdown */
+.banner-position-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--color-background, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 10px;
+}
+
+.banner-position-setting > span {
+  color: var(--color-text-secondary, #64748b);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.category-row-select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 175px;
+  max-width: 100%;
+  padding: 10px 38px 10px 13px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 8px;
+  background-color: var(--color-surface, #fff);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  color: var(--color-text, #172033);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .2s, box-shadow .2s;
+}
+
+.category-row-select:hover:not(:disabled) {
+  border-color: var(--color-primary, #2563eb);
+}
+
+.category-row-select:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+.category-row-select:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .banner-position-setting {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .category-row-select {
+    width: 100%;
+  }
+}
+
 </style>

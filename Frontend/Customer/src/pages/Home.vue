@@ -1,11 +1,12 @@
 <script setup>
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import CategoryNav from '@/layouts/CategoryNav.vue'
 import HomeCategory from '@/components/home/HomeCategory.vue'
 import HomeBrand from '@/components/home/HomeBrand.vue'
 import HomePromoBanner from '@/components/home/HomePromoBanner.vue'
+import HomeInsertedSection from '@/components/home/HomeInsertedSection.vue'
 import { organizationSchema, setStructuredData, websiteSchema } from '@/utils/structuredData'
 
 const ProductGrid = defineAsyncComponent(() => import('@/components/products/ProductGrid.vue'))
@@ -40,7 +41,9 @@ const homepageSections = ref(
 )
 
 const homepageSectionKeys = computed(() =>
-  homepageSections.value.map(section => section.section_key)
+  homepageSections.value
+    .filter(section => section.is_active)
+    .map(section => section.section_key)
 )
 
 // Sections in the exact display order configured by the Admin Panel.
@@ -59,6 +62,80 @@ function homepageSectionOrder(sectionKey) {
   return section?.sort_order ?? 999
 }
 
+// Only the sections immediately surrounding Category Product Rows
+// can be inserted between its individual product rows.
+const insertedHomepageSections = computed(() => {
+  const ordered = [...homepageSections.value].sort(
+    (a, b) => a.sort_order - b.sort_order
+  )
+
+  const categoryIndex = ordered.findIndex(
+    section => section.section_key === 'category_product_rows'
+  )
+
+  if (categoryIndex === -1) return []
+  if (!ordered[categoryIndex].is_active) return []
+
+  // Keep sections in their normal positions until category rows
+  // are available to receive them.
+  if (!catalogReady.value || !homepageCategories.value.length) {
+    return []
+  }
+
+  return ordered.filter((section, index) => {
+    if (!section.is_active) return false
+    if (Math.abs(index - categoryIndex) !== 1) return false
+
+    const row = section.settings?.after_category_row
+
+    return Number.isInteger(row) && row >= 1 && row <= 8
+  })
+})
+
+const mountedInsertionTargets = ref({})
+
+function insertionTarget(sectionKey) {
+  return mountedInsertionTargets.value[sectionKey] || null
+}
+
+async function refreshInsertionTargets() {
+  await nextTick()
+
+  const targets = {}
+
+  for (const section of insertedHomepageSections.value) {
+    const key = section.section_key
+
+    if (!['hero_banner', 'shopping_benefits', 'just_for_you'].includes(key)) {
+      continue
+    }
+
+    const element = document.getElementById(`homepage-insert-${key}`)
+
+    if (element) {
+      targets[key] = element
+    }
+  }
+
+  const previous = mountedInsertionTargets.value
+  const previousKeys = Object.keys(previous)
+  const nextKeys = Object.keys(targets)
+
+  const changed =
+    previousKeys.length !== nextKeys.length ||
+    nextKeys.some(key => previous[key] !== targets[key])
+
+  if (changed) {
+    mountedInsertionTargets.value = targets
+  }
+}
+
+function isInsertedHomepageSection(sectionKey) {
+  return insertedHomepageSections.value.some(
+    section => section.section_key === sectionKey
+  )
+}
+
 async function loadHomepageSections() {
   try {
     const response = await api.get('/store/homepage-sections')
@@ -69,7 +146,6 @@ async function loadHomepageSections() {
     }
 
     homepageSections.value = sections
-      .filter(section => section.is_active)
       .sort((a, b) => a.sort_order - b.sort_order)
   } catch (error) {
     console.warn(
@@ -669,12 +745,16 @@ onBeforeUnmount(() => {
       <template v-if="!isProductListing">
         <h1 class="sr-only">South West online store</h1>
 
-        <section
-          v-if="homepageSectionKeys.includes('hero_banner')"
-          class="homepage-section"
-          :style="{ order: homepageSectionOrder('hero_banner') }"
-          aria-label="Promotions"
+        <Teleport
+          :to="insertionTarget('hero_banner') || 'body'"
+          :disabled="!isInsertedHomepageSection('hero_banner') || !insertionTarget('hero_banner')"
         >
+          <section
+            v-if="homepageSectionKeys.includes('hero_banner')"
+            class="homepage-section"
+            :style="{ order: homepageSectionOrder('hero_banner') }"
+            aria-label="Promotions"
+          >
           <div
             v-if="homepageSectionKeys.includes('hero_banner') && activeBanner"
             class="homepage-banner"
@@ -869,14 +949,19 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-        </section>
+          </section>
+        </Teleport>
 
-        <section
-          v-if="homepageSectionKeys.includes('shopping_benefits')"
-          class="homepage-section"
-          :style="{ order: homepageSectionOrder('shopping_benefits') }"
-          aria-label="Shopping benefits"
+        <Teleport
+          :to="insertionTarget('shopping_benefits') || 'body'"
+          :disabled="!isInsertedHomepageSection('shopping_benefits') || !insertionTarget('shopping_benefits')"
         >
+          <section
+            v-if="homepageSectionKeys.includes('shopping_benefits')"
+            class="homepage-section"
+            :style="{ order: homepageSectionOrder('shopping_benefits') }"
+            aria-label="Shopping benefits"
+          >
           <ul
             class="benefits"
             aria-label="Why shop with us"
@@ -904,7 +989,8 @@ onBeforeUnmount(() => {
               </span>
             </li>
           </ul>
-        </section>
+          </section>
+        </Teleport>
 
         <template
           v-for="section in orderedHomepageSections.filter(item =>
@@ -913,7 +999,7 @@ onBeforeUnmount(() => {
           :key="section.section_key"
         >
           <div
-            v-if="section.section_key === 'shop_categories'"
+            v-if="section.section_key === 'shop_categories' && !isInsertedHomepageSection('shop_categories')"
             :style="{ order: homepageSectionOrder('shop_categories') }"
           >
             <HomeCategory
@@ -924,7 +1010,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div
-            v-else-if="section.section_key === 'shop_brands'"
+            v-else-if="section.section_key === 'shop_brands' && !isInsertedHomepageSection('shop_brands')"
             :style="{ order: homepageSectionOrder('shop_brands') }"
           >
             <HomeBrand />
@@ -948,24 +1034,31 @@ onBeforeUnmount(() => {
         ></div>
 
         <div
-          v-if="catalogReady && homepageSectionKeys.includes('discount_products') && activeCategory === 'All Products'"
+          v-if="catalogReady && homepageSectionKeys.includes('discount_products') && !isInsertedHomepageSection('discount_products') && activeCategory === 'All Products'"
           :style="{ order: homepageSectionOrder('discount_products') }"
         >
           <HomeDiscount :products="products" mode="discount" />
         </div>
 
         <div
-          v-if="catalogReady && homepageSectionKeys.includes('top_rated_products') && activeCategory === 'All Products'"
+          v-if="catalogReady && homepageSectionKeys.includes('top_rated_products') && !isInsertedHomepageSection('top_rated_products') && activeCategory === 'All Products'"
           :style="{ order: homepageSectionOrder('top_rated_products') }"
         >
           <HomeDiscount mode="top-rated" />
         </div>
 
         <div
-          v-if="catalogReady && homepageSectionKeys.includes('promo_banner_1') && promoBanner1"
+          v-if="catalogReady && homepageSectionKeys.includes('promo_banner_1') && !isInsertedHomepageSection('promo_banner_1') && promoBanner1"
           :style="{ order: homepageSectionOrder('promo_banner_1') }"
         >
           <HomePromoBanner :banner="promoBanner1" />
+        </div>
+
+        <div
+          v-if="catalogReady && homepageSectionKeys.includes('promo_banner_2') && !isInsertedHomepageSection('promo_banner_2') && promoBanner2"
+          :style="{ order: homepageSectionOrder('promo_banner_2') }"
+        >
+          <HomePromoBanner :banner="promoBanner2" />
         </div>
 
         <div
@@ -975,17 +1068,45 @@ onBeforeUnmount(() => {
           <HomeCategoryRails
             :categories="homepageCategories"
             :all-categories="categories"
-            :promo-banner="null"
+            :inserted-sections="insertedHomepageSections"
             @select-category="selectCategory"
-          />
+            @vue:mounted="refreshInsertionTargets"
+            @vue:updated="refreshInsertionTargets"
+            @vue:beforeUnmount="mountedInsertionTargets = {}"
+          >
+            <template #inserted-section="{ section }">
+              <HomeInsertedSection
+                v-if="
+                  ['shop_categories', 'shop_brands'].includes(section.section_key) ||
+                  (
+                    catalogReady &&
+                    activeCategory === 'All Products' &&
+                    ['discount_products', 'top_rated_products'].includes(section.section_key)
+                  ) ||
+                  (
+                    catalogReady &&
+                    section.section_key === 'promo_banner_1' &&
+                    promoBanner1
+                  ) ||
+                  (
+                    catalogReady &&
+                    section.section_key === 'promo_banner_2' &&
+                    promoBanner2
+                  )
+                "
+                :section-key="section.section_key"
+                :categories="homepageCategories"
+                :categories-loading="categoriesLoading"
+                :products="products"
+                :promo-banner1="promoBanner1"
+                :promo-banner2="promoBanner2"
+                @select-category="selectCategory"
+              />
+            </template>
+          </HomeCategoryRails>
         </div>
 
-        <div
-          v-if="catalogReady && homepageSectionKeys.includes('promo_banner_2') && promoBanner2"
-          :style="{ order: homepageSectionOrder('promo_banner_2') }"
-        >
-          <HomePromoBanner :banner="promoBanner2" />
-        </div>
+
 
       </template>
 
@@ -1009,6 +1130,10 @@ onBeforeUnmount(() => {
       </nav>
 
       <!-- Product listing -->
+      <Teleport
+        :to="insertionTarget('just_for_you') || 'body'"
+        :disabled="isProductListing || !isInsertedHomepageSection('just_for_you') || !insertionTarget('just_for_you')"
+      >
       <div
         v-if="isProductListing || homepageSectionKeys.includes('just_for_you')"
         id="products"
@@ -1122,6 +1247,7 @@ onBeforeUnmount(() => {
           </button>
         </section>
       </div>
+      </Teleport>
     </main>
   </div>
 </template>

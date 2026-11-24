@@ -416,11 +416,12 @@ onUnmounted(() => {
 
         <nav class="top-links" aria-label="Utility navigation">
           <RouterLink to="/" class="shop-link">Shop</RouterLink>
-          <a
-          v-if="supportEmailLink"
-          :href="supportEmailLink"
-          class="help-link"
-        >Help &amp; Support</a>
+          <RouterLink
+            to="/contact"
+            class="help-link"
+          >
+            Help &amp; Support
+          </RouterLink>
 
           <span class="top-divider" aria-hidden="true"></span>
 
