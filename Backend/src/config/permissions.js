@@ -123,9 +123,7 @@ const permissionCatalog = [
     { name: 'discount_campaigns.update', module: 'discount_campaigns', description: 'Update discount campaigns' },
     { name: 'discount_campaigns.delete', module: 'discount_campaigns', description: 'Delete discount campaigns' },
     { name: 'website_themes.view', module: 'website_themes', description: 'View website themes' },
-    { name: 'website_themes.create', module: 'website_themes', description: 'Create website themes' },
-    { name: 'website_themes.update', module: 'website_themes', description: 'Update website themes' },
-    { name: 'website_themes.delete', module: 'website_themes', description: 'Delete website themes' },
+    { name: 'website_themes.update', module: 'website_themes', description: 'Enable or disable website themes' },
 ];
 
 const seededPermissionNames = new Set([

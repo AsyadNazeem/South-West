@@ -2,53 +2,44 @@
 
 const { Op } = require('sequelize');
 const { WebsiteTheme } = require('../models');
+const registeredThemes = require('../config/websiteThemes');
 
 exports.getActiveTheme = async (req, res) => {
     try {
-        const now = new Date();
+        const registeredSlugs = registeredThemes.map(
+            theme => theme.slug
+        );
 
         const theme = await WebsiteTheme.findOne({
             where: {
                 is_active: true,
-                [Op.and]: [
-                    {
-                        [Op.or]: [
-                            { starts_at: null },
-                            { starts_at: { [Op.lte]: now } },
-                        ],
-                    },
-                    {
-                        [Op.or]: [
-                            { ends_at: null },
-                            { ends_at: { [Op.gte]: now } },
-                        ],
-                    },
-                ],
+                slug: { [Op.in]: registeredSlugs }
             },
             attributes: [
                 'id',
                 'name',
                 'slug',
                 'description',
-                'config',
-                'starts_at',
-                'ends_at',
+                'config'
             ],
             order: [
                 ['updated_at', 'DESC'],
-                ['id', 'DESC'],
-            ],
+                ['id', 'DESC']
+            ]
         });
+
+        res.set('Cache-Control', 'no-store');
 
         return res.status(200).json({
             message: 'Website theme retrieved successfully',
-            data: theme,
+            data: theme || null
         });
+
     } catch (error) {
         console.error('Get active website theme error:', error);
 
         return res.status(500).json({
-            message: 'Failed to retrieve active website theme',
+            message: 'Failed to retrieve active website theme'
         });
     }
 };

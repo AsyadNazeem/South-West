@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useWebsiteTheme } from '@/composables/useWebsiteTheme'
 
 const { themeSlug, decorations, effects } = useWebsiteTheme()
@@ -30,15 +30,119 @@ const hasArtwork = computed(() =>
   isChristmas.value || showLanterns.value || showCrescent.value
 )
 
-const snowflakes = Array.from({ length: 36 }, (_, i) => ({
-  id: i,
-  left: `${(i * 29 + (i % 3) * 7) % 100}%`,
-  delay: `${(i % 12) * -1.7}s`,
-  duration: `${11 + (i % 7)}s`,
-  size: `${3 + (i % 5)}px`,
-  opacity: (0.55 + (i % 4) * 0.12).toFixed(2),
-  drift: `${(i % 2 ? 1 : -1) * (10 + (i % 5) * 6)}px`
-}))
+// Deterministic positions avoid layout changes on every render.
+const snowflakes = Array.from({ length: 90 }, (_, i) => {
+  const layer = i % 3
+  const size = layer === 0 ? 2 + (i % 3)
+    : layer === 1 ? 4 + (i % 3)
+    : 7 + (i % 4)
+
+  return {
+    id: i,
+    left: `${(i * 37.17 + 11) % 100}%`,
+    delay: `${-((i * 3.71) % 24).toFixed(2)}s`,
+    duration: `${layer === 0 ? 22 + (i % 8)
+      : layer === 1 ? 15 + (i % 7)
+      : 10 + (i % 5)}s`,
+    size: `${size}px`,
+    opacity: layer === 0 ? 0.48 : layer === 1 ? 0.75 : 0.95,
+    drift: `${((i % 2 ? 1 : -1) * (35 + (i % 9) * 12))}px`,
+    layer
+  }
+})
+
+// Randomized Santa flight controller
+const santaFlight = ref(null)
+
+let santaAnimation = null
+let santaTimer = null
+let santaDirection = 1
+
+const randomBetween = (min, max) =>
+  min + Math.random() * (max - min)
+
+function stopSantaFlight() {
+  clearTimeout(santaTimer)
+  santaAnimation?.cancel()
+  santaAnimation = null
+}
+
+function flySanta() {
+  const element = santaFlight.value
+
+  if (!element || !isChristmas.value ||
+      effects.value.santaFlight === false ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return
+  }
+
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const width = element.offsetWidth
+  const height = element.offsetHeight
+
+  const minY = Math.min(150, viewportHeight * 0.25)
+  const maxY = Math.max(minY, viewportHeight - height - 40)
+
+  const startY = randomBetween(minY, maxY)
+  const middleY = randomBetween(minY, maxY)
+  const endY = randomBetween(minY, maxY)
+
+  const left = -width - 200
+  const right = viewportWidth + 200
+
+  const startX = santaDirection === 1 ? left : right
+  const endX = santaDirection === 1 ? right : left
+  const facing = santaDirection
+
+  const duration = randomBetween(6000, 10000)
+
+  const transform = (x, y) =>
+    `translate3d(${x}px, ${y}px, 0) scaleX(${facing})`
+
+  santaAnimation = element.animate([
+    {
+      transform: transform(startX, startY),
+      offset: 0
+    },
+    {
+      transform: transform(
+        (startX + endX) / 2,
+        middleY
+      ),
+      offset: 0.5
+    },
+    {
+      transform: transform(endX, endY),
+      offset: 1
+    }
+  ], {
+    duration,
+    easing: 'linear',
+    fill: 'both'
+  })
+
+  santaAnimation.onfinish = () => {
+    santaDirection *= -1
+
+    santaTimer = setTimeout(() => {
+      santaAnimation?.cancel()
+      flySanta()
+    }, randomBetween(1000, 3000))
+  }
+}
+
+watch(santaFlight, (element) => {
+  stopSantaFlight()
+
+  if (element) {
+    santaDirection = Math.random() > 0.5 ? 1 : -1
+    flySanta()
+  }
+}, { flush: 'post' })
+
+onBeforeUnmount(stopSantaFlight)
+
 </script>
 
 <template>
@@ -55,140 +159,42 @@ const snowflakes = Array.from({ length: 36 }, (_, i) => ({
 
     <!-- ================= Christmas ================= -->
 
-    <!-- Garland: a seamless repeating swag, so it stays crisp on every screen width -->
-    <svg
-      v-if="showGarland"
-      class="festive-garland"
-      width="100%"
-      height="44"
-      focusable="false"
-    >
-      <defs>
-        <radialGradient id="sw-glow">
-          <stop offset="0" stop-color="#fff3bd" stop-opacity=".9" />
-          <stop offset="1" stop-color="#fff3bd" stop-opacity="0" />
-        </radialGradient>
-
-        <!-- Rope -->
-        <pattern id="sw-rope" width="240" height="44" patternUnits="userSpaceOnUse">
-          <path d="M0 6Q120 56 240 6" fill="none" stroke="#b58a3d" stroke-width="2" transform="translate(0 -4)" />
-          <path d="M0 6Q120 56 240 6" fill="none" stroke="#1f6a45" stroke-width="7" />
-          <path d="M0 6Q120 56 240 6" fill="none" stroke="#3f9d6b" stroke-width="7" stroke-dasharray="1.5 5" />
-          <path d="M0 6Q120 56 240 6" fill="none" stroke="#0e3b28" stroke-width="7" stroke-dasharray="1 9" stroke-dashoffset="3" />
-          <path d="M0 6Q120 56 240 6" fill="none" stroke="#d9b66c" stroke-width="1.2" stroke-dasharray="1 7" transform="translate(0 -1)" />
-        </pattern>
-
-        <!-- Bows where two swags meet -->
-        <pattern id="sw-knots" width="240" height="44" patternUnits="userSpaceOnUse" patternTransform="translate(-120 0)">
-          <path d="M120 6C108 -3 105 15 120 6C135 -3 135 15 120 6Z" fill="#b8272f" stroke="#e6c36f" stroke-width="1" />
-          <circle cx="120" cy="6" r="3" fill="#d9b66c" stroke="#a97f33" stroke-width=".8" />
-        </pattern>
-
-        <!-- Bulbs, in two groups so they can twinkle alternately -->
-        <pattern id="sw-lights-a" width="240" height="44" patternUnits="userSpaceOnUse">
-          <circle cx="29" cy="24" r="8" fill="url(#sw-glow)" />
-          <rect x="27" y="17" width="4" height="3.5" rx="1" fill="#8a6a2a" />
-          <circle cx="29" cy="24" r="3.4" fill="#ffd45c" />
-
-          <circle cx="120" cy="38" r="8" fill="url(#sw-glow)" />
-          <rect x="118" y="31" width="4" height="3.5" rx="1" fill="#8a6a2a" />
-          <circle cx="120" cy="38" r="3.4" fill="#fff0b8" />
-
-          <circle cx="211" cy="24" r="8" fill="url(#sw-glow)" />
-          <rect x="209" y="17" width="4" height="3.5" rx="1" fill="#8a6a2a" />
-          <circle cx="211" cy="24" r="3.4" fill="#ffd45c" />
-        </pattern>
-
-        <pattern id="sw-lights-b" width="240" height="44" patternUnits="userSpaceOnUse">
-          <circle cx="72" cy="34" r="8" fill="url(#sw-glow)" />
-          <rect x="70" y="27" width="4" height="3.5" rx="1" fill="#8a6a2a" />
-          <circle cx="72" cy="34" r="3.4" fill="#ff6a5f" />
-
-          <circle cx="168" cy="34" r="8" fill="url(#sw-glow)" />
-          <rect x="166" y="27" width="4" height="3.5" rx="1" fill="#8a6a2a" />
-          <circle cx="168" cy="34" r="3.4" fill="#ff6a5f" />
-        </pattern>
-      </defs>
-
-      <rect width="100%" height="44" fill="url(#sw-rope)" />
-      <rect class="lights lights-a" width="100%" height="44" fill="url(#sw-lights-a)" />
-      <rect class="lights lights-b" width="100%" height="44" fill="url(#sw-lights-b)" />
-      <rect width="100%" height="44" fill="url(#sw-knots)" />
-    </svg>
-
-    <!-- Hanging ornaments -->
-    <div v-if="isChristmas" class="festive-hangers">
-
-      <div
-        v-if="decorations.trees"
-        class="hanger"
-        style="--x: 8%; --x-sm: 6%; --string: 42px; --w: 44px; --delay: -.7s"
-      >
-        <span class="hanger-string"></span>
-        <svg viewBox="0 0 60 78" class="hanger-art">
-          <path d="M30 0V12" stroke="#c9a45e" stroke-width="2"/>
-          <path d="M30 12L15 32H23L10 47H24L16 61H44L36 47H50L37 32H45L30 12Z" fill="#17613c" stroke="#d7b66d" stroke-width="1.5"/>
-          <path d="M27 61H33V72H27Z" fill="#a16c3b"/>
-          <circle cx="30" cy="27" r="2.5" fill="#f1d28a"/>
-          <circle cx="22" cy="43" r="2.5" fill="#c94742"/>
-          <circle cx="39" cy="49" r="2.5" fill="#f1d28a"/>
-          <path d="M30 5L27 10H33Z" fill="#e6c36f"/>
-        </svg>
-      </div>
-
-      <div
-        class="hanger"
-        style="--x: 27%; --x-sm: 28%; --string: 46px; --w: 38px; --delay: -2.2s"
-      >
-        <span class="hanger-string"></span>
-        <svg viewBox="0 0 58 78" class="hanger-art">
-          <path d="M29 0V17" stroke="#c9a45e" stroke-width="2"/>
-          <path d="M20 18Q29 11 38 18" fill="none" stroke="#d7b66d" stroke-width="2"/>
-          <path d="M15 27Q29 15 43 27V47Q43 62 29 66Q15 62 15 47Z" fill="#b52e36" stroke="#e6c36f" stroke-width="2"/>
-          <path d="M18 34H40M18 49H40" stroke="#e6c36f" stroke-width="2"/>
-          <path d="M29 22V61" stroke="#e6c36f" stroke-width="1.5"/>
-          <path d="M29 66V72" stroke="#c9a45e" stroke-width="2"/>
-        </svg>
-      </div>
-
-      <div
-        class="hanger"
-        style="--x: 50%; --x-sm: 51%; --string: 48px; --w: 38px; --delay: -1.4s"
-      >
-        <span class="hanger-string"></span>
-        <svg viewBox="0 0 58 78" class="hanger-art">
-          <path d="M29 0V18" stroke="#c9a45e" stroke-width="2"/>
-          <path d="M29 19L34 31L47 32L37 41L40 54L29 47L18 54L21 41L11 32L24 31Z" fill="#e5c36e" stroke="#aa7e36" stroke-width="1.5"/>
-          <circle cx="29" cy="36" r="3" fill="#fff0c2"/>
-        </svg>
-      </div>
-
-      <div
-        class="hanger"
-        style="--x: 73%; --x-sm: 74%; --string: 42px; --w: 40px; --delay: -3s"
-      >
-        <span class="hanger-string"></span>
-        <svg viewBox="0 0 60 78" class="hanger-art">
-          <path d="M30 0V15" stroke="#c9a45e" stroke-width="2"/>
-          <path d="M21 20Q30 11 39 20L43 28H17Z" fill="#c93d3d" stroke="#e8c777" stroke-width="1.5"/>
-          <path d="M17 28H43L40 51Q30 65 20 51Z" fill="#d6a944" stroke="#9b742d" stroke-width="2"/>
-          <path d="M23 35H37M25 43H35" stroke="#fff0c2" stroke-width="2"/>
-          <path d="M30 58V66" stroke="#c9a45e" stroke-width="2"/>
-        </svg>
-      </div>
-
-      <div
-        class="hanger"
-        style="--x: 92%; --x-sm: 93%; --string: 46px; --w: 36px; --delay: -1.9s"
-      >
-        <span class="hanger-string"></span>
-        <svg viewBox="0 0 58 78" class="hanger-art">
-          <path d="M29 0V17" stroke="#c9a45e" stroke-width="2"/>
-          <path d="M29 17L34 29L47 30L37 39L40 52L29 45L18 52L21 39L11 30L24 29Z" fill="#d7b15c" stroke="#f6df9c" stroke-width="1.5"/>
-        </svg>
-      </div>
-
+    <!-- Photorealistic Christmas garland -->
+    <div v-if="showGarland" class="christmas-realistic-garland">
+      <img
+        src="/themes/christmas/decorations/christmas-garland.webp"
+        alt=""
+        decoding="async"
+        draggable="false"
+      />
     </div>
+
+    <!-- Flying Santa and reindeer -->
+    <Teleport to="body">
+      <div
+        v-if="isChristmas && effects.santaFlight !== false"
+        class="christmas-santa-sky"
+        aria-hidden="true"
+      >
+        <div ref="santaFlight" class="christmas-santa-flight">
+          <div class="christmas-santa-float">
+            <div class="christmas-santa-trail">
+              <span v-for="n in 12" :key="n"
+               :style="{ '--i': n }"
+              />
+            </div>
+            <img
+              src="/themes/christmas/decorations/santa-sleigh.webp"
+              alt=""
+              width="1000"
+              height="334"
+              decoding="async"
+              draggable="false"
+            />
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Snowfall (falls behind the sticky header, over the page) -->
     <div v-if="showSnowfall" class="seasonal-snowfall">
@@ -209,101 +215,42 @@ const snowflakes = Array.from({ length: 36 }, (_, i) => ({
     </div>
 
 
-    <!-- ================= Ramadan / Eid ================= -->
+    <template v-if="isRamadan">
+      <template v-if="showLanterns">
+        <img class="ramadan-festoon" src="/themes/ramadan/decorations/ramadan-header.webp" alt="" />
+        <img
+          v-for="id in ['01', '02', '03']"
+          :key="id"
+          class="ramadan-lantern"
+          :class="['lantern-' + id, { swaying: effects.lanternSway }]"
+          :src="`/themes/ramadan/decorations/ramadan-lantern-${id}.webp`"
+          alt=""
+        />
+        <span
+          v-for="(position, index) in [15, 34, 66, 85]"
+          :key="position"
+          class="ramadan-star"
+          :style="{ '--position': position + '%', '--drop': index % 2 ? '20%' : '39%', '--phase': -index * 1.7 + 's' }"
+        >
+          <img src="/themes/ramadan/decorations/ramadan-star.webp" alt="" />
+        </span>
+        <i v-for="x in [10, 22, 31, 69, 80, 90]" :key="x" class="ramadan-spark"
+          :style="{ left: x + '%', top: (25 + x % 43) + '%', '--phase': -(x % 7) + 's' }" />
+      </template>
+      <img v-if="showCrescent" class="ramadan-moon" src="/themes/ramadan/decorations/ramadan-crescent.webp" alt="" />
+    </template>
 
-    <!-- Gold rail with small diamonds -->
-    <svg
-      v-if="showLanterns || showCrescent"
-      class="festive-rail"
-      width="100%"
-      height="16"
-      focusable="false"
-    >
-      <defs>
-        <pattern id="rail-pattern" width="28" height="16" patternUnits="userSpaceOnUse">
-          <path d="M0 3H28" stroke="#c6a052" stroke-width="1.5" />
-          <path d="M14 3L19 8.5L14 14L9 8.5Z" fill="#d9b66b" stroke="#a98535" stroke-width=".8" />
-        </pattern>
-      </defs>
-
-      <rect width="100%" height="16" fill="url(#rail-pattern)" />
-    </svg>
-
-    <div v-if="isIslamicFestival" class="festive-hangers">
-
-      <div
-        v-if="showLanterns"
-        class="hanger"
-        style="--x: 12%; --x-sm: 12%; --string: 24px; --w: 40px; --delay: -1.5s"
-      >
-        <span class="hanger-string"></span>
-        <svg viewBox="0 0 70 112" class="hanger-art lantern-art">
-          <path d="M35 0V23" stroke="#c6a052" stroke-width="2"/>
-          <path d="M25 24Q35 15 45 24L48 31H22Z" fill="#c6a052"/>
-          <path d="M22 31H48L44 43L51 83L35 98L19 83L26 43Z" fill="#0b624b" stroke="#d9b66b" stroke-width="2"/>
-          <path class="lantern-lit" d="M26 44H44L40 78L35 87L30 78Z" fill="#f2d68b" opacity=".88"/>
-          <path d="M22 53H48M20 78H50" stroke="#e4c273" stroke-width="2"/>
-          <path d="M35 98V106" stroke="#c6a052" stroke-width="2"/>
-          <path d="M35 106L31 111H39Z" fill="#c6a052"/>
-        </svg>
-      </div>
-
-      <div
-        v-if="showLanterns"
-        class="hanger"
-        style="--x: 31%; --x-sm: 31%; --string: 30px; --w: 26px; --delay: -2.6s"
-      >
-        <span class="hanger-string"></span>
-        <svg viewBox="0 0 40 44" class="hanger-art">
-          <path d="M20 0V16" stroke="#c6a052" stroke-width="2"/>
-          <path d="M20 16L22.1 22.9L28.5 19.5L25.1 25.9L32 28L25.1 30.1L28.5 36.5L22.1 33.1L20 40L17.9 33.1L11.5 36.5L14.9 30.1L8 28L14.9 25.9L11.5 19.5L17.9 22.9Z" fill="#e2c272" stroke="#a98535" stroke-width="1"/>
-          <circle cx="20" cy="28" r="2.4" fill="#fff0bd"/>
-        </svg>
-      </div>
-
-      <div
-        v-if="showCrescent"
-        class="hanger"
-        style="--x: 50%; --x-sm: 50%; --string: 20px; --w: 50px; --delay: -3s"
-      >
-        <span class="hanger-string"></span>
-        <svg viewBox="0 0 80 100" class="hanger-art crescent-art">
-          <path d="M40 0V25" stroke="#c6a052" stroke-width="2"/>
-          <path d="M48 30C20 28 15 65 40 77C56 84 72 71 73 55C65 65 51 65 42 56C32 47 35 35 48 30Z" fill="#d5ae5a" stroke="#f0d58d" stroke-width="1.5"/>
-          <path class="crescent-star" d="M58 25L61 33L69 35L61 38L58 46L55 38L47 35L55 33Z" fill="#f1d68e"/>
-        </svg>
-      </div>
-
-      <div
-        v-if="showLanterns"
-        class="hanger"
-        style="--x: 69%; --x-sm: 69%; --string: 34px; --w: 26px; --delay: -.9s"
-      >
-        <span class="hanger-string"></span>
-        <svg viewBox="0 0 40 44" class="hanger-art">
-          <path d="M20 0V16" stroke="#c6a052" stroke-width="2"/>
-          <path d="M20 16L22.1 22.9L28.5 19.5L25.1 25.9L32 28L25.1 30.1L28.5 36.5L22.1 33.1L20 40L17.9 33.1L11.5 36.5L14.9 30.1L8 28L14.9 25.9L11.5 19.5L17.9 22.9Z" fill="#e2c272" stroke="#a98535" stroke-width="1"/>
-          <circle cx="20" cy="28" r="2.4" fill="#fff0bd"/>
-        </svg>
-      </div>
-
-      <div
-        v-if="showLanterns"
-        class="hanger"
-        style="--x: 88%; --x-sm: 87%; --string: 30px; --w: 40px; --delay: -.8s"
-      >
-        <span class="hanger-string"></span>
-        <svg viewBox="0 0 70 112" class="hanger-art lantern-art">
-          <path d="M35 0V23" stroke="#c6a052" stroke-width="2"/>
-          <path d="M25 24Q35 15 45 24L48 31H22Z" fill="#c6a052"/>
-          <path d="M22 31H48L44 43L51 83L35 98L19 83L26 43Z" fill="#a77b32" stroke="#e7cb83" stroke-width="2"/>
-          <path class="lantern-lit" d="M26 44H44L40 78L35 87L30 78Z" fill="#fff0bd" opacity=".9"/>
-          <path d="M22 53H48M20 78H50" stroke="#f5dfa1" stroke-width="2"/>
-          <path d="M35 98V106" stroke="#c6a052" stroke-width="2"/>
-        </svg>
-      </div>
-
-    </div>
+    <template v-if="isEid">
+      <template v-if="showLanterns">
+        <img class="eid-festoon" src="/themes/eid/decorations/eid-header.webp" alt="" />
+        <img v-for="side in ['left', 'right']" :key="side" :class="['eid-garland', side]"
+          src="/themes/eid/decorations/eid-garland.webp" alt="" />
+        <img v-for="name in ['lantern', 'star', 'hanging-ornament']" :key="name"
+          :class="['eid-pendant', 'eid-' + name, { sway: effects.ornamentSway !== false }]"
+          :src="`/themes/eid/decorations/eid-${name}.webp`" alt="" />
+      </template>
+      <img v-if="showCrescent" class="eid-crescent" src="/themes/eid/decorations/eid-crescent.webp" alt="" />
+    </template>
 
   </div>
 </template>
@@ -323,137 +270,57 @@ const snowflakes = Array.from({ length: 36 }, (_, i) => ({
   pointer-events: none;
 }
 
-/* ---------- Garland & rail ---------- */
-
-.festive-garland,
-.festive-rail {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 2;
-  display: block;
-  width: 100%;
-}
-
-.festive-garland {
-  filter: drop-shadow(0 3px 2px rgb(0 0 0 / 14%));
-}
-
-.festive-rail {
-  filter: drop-shadow(0 2px 1px rgb(0 0 0 / 12%));
-}
-
-.lights {
-  animation: bulb-twinkle 2.6s ease-in-out infinite;
-}
-
-.lights-b {
-  animation-delay: -1.3s;
-}
-
-@keyframes bulb-twinkle {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-/* ---------- Hanging ornaments ---------- */
-
-.festive-hangers {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-}
-
-.hanger {
-  --scale: 1;
-  --wpx: calc(var(--w, 40px) * var(--scale));
-
-  position: absolute;
-  top: 0;
-  left: var(--x);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: var(--wpx);
-  margin-left: calc(var(--wpx) / -2);
-  transform-origin: 50% 0;
-  animation: ornament-sway 5.5s ease-in-out var(--delay, 0s) infinite;
-  filter: drop-shadow(0 4px 3px rgb(0 0 0 / 16%));
-}
-
-.hanger-string {
-  width: 1px;
-  height: var(--string, 40px);
-  background: linear-gradient(#b9934d, #e2c77e);
-}
-
-.hanger-art {
-  display: block;
-  width: var(--wpx);
-  height: auto;
-  overflow: visible;
-}
-
-@keyframes ornament-sway {
-  0%, 100% { transform: rotate(-3deg); }
-  50% { transform: rotate(3deg); }
-}
-
-/* Lanterns glow softly, like a candle */
-.lantern-lit {
-  animation: lantern-flicker 3.4s ease-in-out infinite alternate;
-}
-
-.seasonal-artwork--eid .lantern-lit {
-  animation-duration: 2.6s;
-}
-
-@keyframes lantern-flicker {
-  0% { opacity: 0.78; }
-  100% { opacity: 1; }
-}
-
-.lantern-art,
-.crescent-art {
-  filter: drop-shadow(0 0 7px rgb(246 205 117 / 45%));
-}
-
-.crescent-star {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: star-twinkle 3s ease-in-out infinite;
-}
-
-@keyframes star-twinkle {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(0.82); opacity: 0.7; }
-}
-
-/* ---------- Snowfall ---------- */
+/* ---------- Realistic layered snowfall ---------- */
 
 .seasonal-snowfall {
   position: fixed;
   inset: 0;
-  z-index: 190; /* above the page, below the sticky header (200) */
+  z-index: 190;
   overflow: hidden;
   pointer-events: none;
+  contain: layout paint;
 }
 
 .seasonal-snowflake {
   position: absolute;
-  top: -12px;
+  top: -16px;
   display: block;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0 7px rgb(255 255 255 / 90%), 0 0 1px rgb(120 140 170 / 55%);
-  will-change: transform;
+  background: radial-gradient(circle at 35% 30%, #fff 0%, #f5faff 48%, #d5e5f4 100%);
+  box-shadow: 0 0 5px rgb(255 255 255 / 65%);
   animation: seasonal-snow-fall linear infinite;
 }
 
+.seasonal-snowflake:nth-child(3n + 1) {
+  filter: blur(0.5px);
+}
+
+.seasonal-snowflake:nth-child(3n + 3) {
+  box-shadow: 0 0 9px rgb(255 255 255 / 80%);
+}
+
 @keyframes seasonal-snow-fall {
-  0% { transform: translate3d(0, -10px, 0); }
-  50% { transform: translate3d(var(--drift, 16px), 50vh, 0); }
-  100% { transform: translate3d(calc(var(--drift, 16px) * -0.6), 105vh, 0); }
+  0% {
+    transform: translate3d(0, -20px, 0);
+  }
+  25% {
+    transform: translate3d(calc(var(--drift) * 0.6), 26vh, 0);
+  }
+  50% {
+    transform: translate3d(var(--drift), 53vh, 0);
+  }
+  75% {
+    transform: translate3d(calc(var(--drift) * 0.35), 80vh, 0);
+  }
+  100% {
+    transform: translate3d(calc(var(--drift) * -0.3), 110vh, 0);
+  }
+}
+
+@media (max-width: 700px) {
+  .seasonal-snowflake:nth-child(2n) {
+    display: none;
+  }
 }
 
 /* ---------- Phones ---------- */
@@ -462,29 +329,241 @@ const snowflakes = Array.from({ length: 36 }, (_, i) => ({
   .seasonal-artwork {
     --band-h: 92px;
   }
-
-  .hanger {
-    --scale: 0.8;
-    left: var(--x-sm, var(--x));
-  }
-
-  .hanger-string {
-    height: calc(var(--string, 40px) * 0.92);
-  }
 }
 
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .hanger,
-  .lights,
-  .lantern-lit,
-  .crescent-star {
-    animation: none;
-  }
-
   .seasonal-snowflake {
     display: none;
   }
+}
+
+/* ---------- Photorealistic Christmas decorations ---------- */
+
+.seasonal-artwork--christmas {
+  height: 0;
+}
+
+.seasonal-artwork--christmas:has(.christmas-realistic-garland) {
+  height: 110px;
+}
+
+.christmas-realistic-garland {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  background-image: url('/themes/christmas/decorations/christmas-garland.webp');
+  background-repeat: repeat-x;
+  background-size: auto 150px;
+  background-position: center -22px;
+}
+
+.christmas-realistic-garland img {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .seasonal-artwork--christmas:has(.christmas-realistic-garland) {
+    height: 82px;
+  }
+
+  .christmas-realistic-garland {
+    background-size: auto 112px;
+    background-position: center -16px;
+  }
+}
+
+
+/* ---------- Flying Santa and reindeer ---------- */
+
+.christmas-santa-sky {
+  position: fixed;
+  inset: 0;
+  z-index: 185;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.christmas-santa-flight {
+  --santa-width: 420px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--santa-width);
+  transform: translateX(-200%);
+}
+
+.christmas-santa-float {
+  position: relative;
+  animation: christmas-santa-bob 4s ease-in-out infinite;
+}
+
+.christmas-santa-float img {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 5px 8px rgb(0 0 0 / 18%));
+}
+
+.christmas-santa-trail {
+  position: absolute;
+  top: 65%;
+  left: 0;
+}
+
+.christmas-santa-trail span {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fff0b0;
+  box-shadow: 0 0 8px 2px #ffc85c;
+  animation: christmas-santa-sparkle 1.8s linear infinite;
+  animation-delay: calc(var(--i) * -0.15s);
+}
+
+@keyframes christmas-santa-bob {
+  0%, 100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-22px) rotate(1deg);
+  }
+}
+
+@keyframes christmas-santa-sparkle {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(
+      calc(var(--i) * -13px),
+      calc(var(--i) * 3px - 18px)
+    ) scale(0.2);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .christmas-santa-flight {
+    --santa-width: 240px;
+    top: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .christmas-santa-sky {
+    display: none;
+  }
+}
+
+.seasonal-artwork--ramadan {
+  --band-h: clamp(106px, 6vw, 110px);
+  --lantern-height: clamp(84px, 5vw, 90px);
+  --moon-height: clamp(68px, 4vw, 80px);
+  --festoon-width: min(40%, calc(var(--band-h) * 3.29));
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 0%, #194d3c, var(--color-primary-hover) 84%);
+  box-shadow: inset 0 -1px rgb(212 175 55 / 55%);
+  user-select: none;
+}
+
+.ramadan-festoon, .ramadan-lantern, .ramadan-moon, .ramadan-star {
+  position: absolute;
+  display: block;
+  translate: -50% 0;
+}
+.ramadan-festoon {
+  top: 0;
+  left: 50%;
+  width: var(--festoon-width);
+  height: auto;
+}
+.ramadan-lantern {
+  top: 0;
+  height: var(--lantern-height);
+  width: auto;
+  transform-origin: center top;
+  filter: drop-shadow(0 3px 5px rgb(255 187 77 / 25%));
+}
+.lantern-01 { left: 5%; --period: 5.8s; --phase: -2s; }
+.lantern-02 { left: 26%; height: calc(var(--lantern-height) * .79); --period: 7.1s; --phase: -5s; }
+.lantern-03 { left: 74%; height: calc(var(--lantern-height) * .91); --period: 6.4s; --phase: -1s; }
+.ramadan-moon {
+  top: 9%;
+  left: 94%;
+  height: var(--moon-height);
+  width: auto;
+}
+.ramadan-star {
+  left: var(--position);
+  top: 0;
+  height: var(--drop);
+  width: 1px;
+  background: rgb(222 188 108 / 64%);
+}
+.ramadan-star:nth-of-type(2) {
+  left: min(var(--position), calc(50% - var(--festoon-width) / 2 - 12px));
+}
+.ramadan-star:nth-of-type(3) {
+  left: max(var(--position), calc(50% + var(--festoon-width) / 2 + 12px));
+}
+.ramadan-star img {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  translate: -50% 0;
+  width: clamp(10px, 1.2vw, 19px);
+  height: auto;
+}
+.ramadan-spark {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #ffe1a1;
+  box-shadow: 0 0 4px #d6af63;
+  opacity: .55;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ramadan-lantern.swaying { animation: ramadan-sway var(--period) ease-in-out var(--phase) infinite alternate; }
+  .ramadan-star img, .ramadan-spark { animation: ramadan-twinkle 4.8s ease-in-out var(--phase) infinite alternate; }
+}
+@keyframes ramadan-sway {
+  from { transform: rotate(-3deg); }
+  to { transform: rotate(3deg); }
+}
+@keyframes ramadan-twinkle {
+  from { opacity: .55; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 1024px) {
+  .seasonal-artwork--ramadan {
+    --band-h: clamp(75px, 8.5vw, 85px);
+    --lantern-height: clamp(58px, 7vw, 65px);
+    --moon-height: 54px;
+  }
+}
+@media (max-width: 650px) {
+  .seasonal-artwork--ramadan {
+    --band-h: clamp(55px, 15vw, 65px);
+    --lantern-height: clamp(39px, 11vw, 50px);
+    --moon-height: clamp(34px, 9vw, 46px);
+    --festoon-width: min(46%, calc(var(--band-h) * 3.25));
+  }
+  .ramadan-star:first-of-type { left: 20%; }
+  .ramadan-star:last-of-type { left: 80%; }
+  .lantern-01 { left: 8%; }
+  .ramadan-moon { left: 91%; }
+  .lantern-02, .lantern-03, .ramadan-star:nth-of-type(2), .ramadan-star:nth-of-type(3),
+  .ramadan-spark:nth-of-type(even) { display: none; }
 }
 </style>

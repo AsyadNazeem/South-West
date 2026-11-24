@@ -29,6 +29,30 @@ module.exports = (sequelize, DataTypes) => {
             config: {
                 type: DataTypes.JSON,
                 allowNull: false,
+                get() {
+                    const value = this.getDataValue('config');
+
+                    if (typeof value === 'string') {
+                        try {
+                            return JSON.parse(value);
+                        } catch {
+                            return {};
+                        }
+                    }
+
+                    return value;
+                },
+                set(value) {
+                    if (typeof value === 'string') {
+                        try {
+                            value = JSON.parse(value);
+                        } catch {
+                            throw new Error('Invalid website theme configuration JSON.');
+                        }
+                    }
+
+                    this.setDataValue('config', value);
+                },
             },
             is_active: {
                 type: DataTypes.BOOLEAN,

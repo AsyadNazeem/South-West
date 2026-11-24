@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { useWebsiteTheme } from '@/composables/useWebsiteTheme'
 import CategoryNav from '@/layouts/CategoryNav.vue'
 import HomeCategory from '@/components/home/HomeCategory.vue'
 import HomeBrand from '@/components/home/HomeBrand.vue'
@@ -15,6 +16,7 @@ const HomeDiscount = defineAsyncComponent(() => import('@/components/home/HomeDi
 const ProductFilters = defineAsyncComponent(() => import('@/components/products/ProductFilters.vue'))
 const ProductSort = defineAsyncComponent(() => import('@/components/products/ProductSort.vue'))
 
+const { floralArtwork, themeSlug } = useWebsiteTheme()
 const route = useRoute()
 const router = useRouter()
 
@@ -90,6 +92,14 @@ const insertedHomepageSections = computed(() => {
 
     return Number.isInteger(row) && row >= 1 && row <= 8
   })
+})
+
+// Share an existing section's integer flex order. The greeting follows the category
+// block in the DOM, and never moves a section out of its configured rail.
+const greetingOrder = computed(() => {
+  const sections = orderedHomepageSections.value.filter(s => !isInsertedHomepageSection(s.section_key))
+  const anchor = sections.find(s => s.section_key === 'shop_categories') || sections[0]
+  return anchor?.sort_order
 })
 
 const mountedInsertionTargets = ref({})
@@ -1248,6 +1258,47 @@ onBeforeUnmount(() => {
         </section>
       </div>
       </Teleport>
+      <aside v-if="!isProductListing && themeSlug === 'christmas' && greetingOrder != null"
+        class="floral-greeting christmas-greeting" :style="{ order: greetingOrder }" aria-labelledby="christmas-greeting-title">
+        <img src="/themes/christmas/decorations/christmas-greeting.webp" alt="" loading="lazy" decoding="async" />
+        <div>
+          <h2 id="christmas-greeting-title">Merry Christmas</h2>
+          <p>Wishing you and your loved ones a joyful and wonderful Christmas.</p>
+        </div>
+      </aside>
+
+      <aside v-if="!isProductListing && themeSlug === 'ramadan' && greetingOrder != null"
+        class="ramadan-greeting" :style="{ order: greetingOrder }" aria-labelledby="ramadan-greeting-title">
+        <img src="/themes/ramadan/decorations/ramadan-greeting.webp" alt="" loading="lazy"
+          decoding="async" width="1200" height="400" />
+        <div>
+          <h2 id="ramadan-greeting-title">Ramadan Kareem</h2>
+          <p>Wishing you a peaceful and blessed Ramadan.</p>
+        </div>
+      </aside>
+      <div v-if="!isProductListing && themeSlug === 'sinhala-tamil-new-year' && greetingOrder != null"
+        class="avurudu-divider" :style="{ order: greetingOrder }" aria-hidden="true">
+        <img src="/themes/sinhala-tamil-new-year/avurudu-rabana.webp" alt="" loading="lazy" />
+        <img src="/themes/sinhala-tamil-new-year/avurudu-kolam.webp" alt="" loading="lazy" />
+        <img src="/themes/sinhala-tamil-new-year/avurudu-sweets.webp" alt="" loading="lazy" />
+      </div>
+      <aside v-if="!isProductListing && floralArtwork && greetingOrder != null" class="floral-greeting"
+        :style="{ order: greetingOrder }" aria-labelledby="floral-greeting-title">
+        <img :src="floralArtwork + 'greeting.webp'" alt="" loading="lazy" />
+        <div v-if="themeSlug === 'sinhala-tamil-new-year'" lang="si">
+          <h2 id="floral-greeting-title">සුබ සිංහල හා දෙමළ අලුත් අවුරුද්දක් වේවා!</h2>
+          <p>ඔබ සැමට සාමය, සතුට හා සෞභාග්‍යය පිරි සුබ අලුත් අවුරුද්දක් වේවා!</p>
+        </div>
+        <h2 v-else id="floral-greeting-title">Happy Valentine’s Day</h2>
+      </aside>
+      <aside v-if="!isProductListing && themeSlug === 'eid' && greetingOrder != null"
+        class="eid-greeting" :style="{ order: greetingOrder }" aria-labelledby="eid-greeting-title">
+        <img src="/themes/eid/decorations/eid-greeting.webp" alt="" loading="lazy" decoding="async" />
+        <div>
+          <h2 id="eid-greeting-title">Eid Mubarak</h2>
+          <p>Wishing you and your loved ones a joyful and blessed Eid.</p>
+        </div>
+      </aside>
     </main>
   </div>
 </template>

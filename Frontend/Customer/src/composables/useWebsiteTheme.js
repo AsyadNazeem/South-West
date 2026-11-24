@@ -110,6 +110,11 @@ async function loadActiveTheme(force = false) {
   return loadingPromise
 }
 
+const floralPrefixes = {
+  'sinhala-tamil-new-year': '/themes/sinhala-tamil-new-year/avurudu-',
+  'valentines-day': '/themes/valentines-day/valentine-',
+}
+const floralArtwork = computed(() => floralPrefixes[themeSlug.value] || '')
 const themeSlug = computed(() => activeTheme.value?.slug || '')
 
 const themeConfig = computed(() => {
@@ -136,6 +141,7 @@ export function useWebsiteTheme() {
     isThemeLoading,
     themeError,
     themeSlug,
+    floralArtwork,
     themeConfig,
     decorations,
     effects,

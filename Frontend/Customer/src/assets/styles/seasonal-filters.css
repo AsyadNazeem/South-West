@@ -1,0 +1,80 @@
+:root[data-website-theme="eid"] {
+  --filter-motif: url('/themes/eid/decorations/eid-card-star.webp');
+  --filter-line: #cdb584;
+  --filter-paper: #fffdf6;
+  & .sidebar .filters .group:first-of-type {
+    background: url('/themes/eid/decorations/eid-card-corner.webp') top 8px right / 22px auto no-repeat;
+  }
+}
+:root[data-website-theme="ramadan"] {
+  --filter-motif: url('/themes/ramadan/decorations/ramadan-crescent.webp');
+  --filter-line: #c6ad77;
+  --filter-paper: #fbf8ed;
+}
+:root[data-website-theme="new-year"] {
+  --filter-motif: url('/themes/new-year/burst.webp');
+  --filter-line: #c6af78;
+  --filter-paper: #fdfcf9;
+}
+:root[data-website-theme="sinhala-tamil-new-year"] {
+  --filter-motif: url('/themes/sinhala-tamil-new-year/avurudu-sun.webp');
+  --filter-line: #cfaf70;
+  --filter-paper: #fff7e4;
+  & .filters .filters-head { border-bottom-color: #617344; }
+}
+:root:is([data-website-theme="eid"],[data-website-theme="ramadan"],[data-website-theme="new-year"],[data-website-theme="sinhala-tamil-new-year"]) .sidebar {
+  /* Keep the existing inline panel above viewport decorations, below navigation. */
+  position: relative; z-index: 10;
+  & .filters {
+    border: 1px solid var(--filter-line);
+    border-radius: 14px; background: var(--filter-paper);
+    box-shadow: 0 4px 18px rgb(54 42 24 / 10%);
+  }
+  & :is(.filters-head,.filters-toggle) {
+    padding: 12px 14px; min-height: 48px;
+    border: 0; border-bottom: 2px solid var(--filter-line);
+    border-radius: 13px 13px 0 0;
+    background: linear-gradient(115deg,var(--color-primary-hover),var(--color-primary));
+    color: #fffaf0;
+  }
+  & :is(.filters-head h2,.filters-toggle-label) {
+    display: flex; align-items: center; gap: 8px; margin: 0;
+    color: inherit; font-size: 16px; font-weight: 650;
+    &::before { content:''; width: 25px; height: 25px; background: var(--filter-motif) center / contain no-repeat; }
+  }
+  & .filters-head .text-link { color: #fff0c8; text-decoration: underline; text-underline-offset: 3px; }
+  & .filters .group { margin: 0 14px; padding: 16px 0; border: 0; }
+  & .group + .group { border-top: 1px solid color-mix(in srgb,var(--filter-line) 65%,transparent); }
+  & .group h3 { margin-bottom: 8px; font-size: 14px; color: var(--color-primary); }
+  & .option { padding: 4px; gap: 8px; border-radius: 5px; }
+  & .option.selected { background: color-mix(in srgb,var(--color-primary) 8%,var(--filter-paper)); color: var(--color-primary-hover); }
+  & .option input { accent-color: var(--color-primary); }
+  & .range-track { height: 4px; border-radius: 3px; }
+  & .range-input::-webkit-slider-thumb { border: 2px solid var(--filter-line); }
+  & .range-input::-moz-range-thumb { border: 2px solid var(--filter-line); }
+  & .text-link.apply {
+    background: var(--color-primary); color: white; border: 1px solid var(--filter-line);
+    border-radius: 7px; min-height: 34px; padding: 5px 14px;
+  }
+  & .view-more { color: var(--color-primary); text-decoration: underline; text-underline-offset: 3px; }
+  & :is(button,input):focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+  & :is(.filters-head button,.filters-toggle):focus-visible { outline: 2px solid var(--filter-line); outline-offset: -3px; }
+  @media (hover:hover) {
+    & .option:hover { background: color-mix(in srgb,var(--filter-line) 18%,var(--filter-paper)); }
+    & .apply:hover { background: var(--color-primary-hover); }
+  }
+  @media (max-width:850px) {
+    & .filters-body { border: 0; margin: 0; padding: 0; background: transparent; }
+    & .filters-toggle[aria-expanded="false"] { border-bottom: 0; border-radius: 13px; }
+    & .filters-head { min-height: 0; padding: 0 14px; background: transparent; border: 0; }
+    & .filters-head h2 { display: none; }
+    & .filters-head .text-link { color: var(--color-primary); min-height: 44px; }
+    & .filters-body .group:first-of-type { padding-top: 0; }
+    & .filters-toggle .filters-toggle-label { margin-right: auto; }
+    & .filters-count { background: var(--filter-line); color: #282019; }
+    & :is(.option, .apply, .view-more) { min-height: 44px; }
+  }
+}
+@media (min-width:651px) and (max-width:850px) {
+  :root:is([data-website-theme="eid"],[data-website-theme="ramadan"],[data-website-theme="new-year"],[data-website-theme="sinhala-tamil-new-year"]) .shop-layout { grid-template-columns: minmax(0,1fr); }
+}

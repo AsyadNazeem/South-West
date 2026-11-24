@@ -94,86 +94,49 @@ input {
 
 /* Ramadan: emerald, antique gold and softly tinted ivory */
 :root[data-website-theme="ramadan"] {
-  --color-primary: #075b46;
-  --color-primary-hover: #064332;
-  --color-primary-light: #168568;
-  --color-on-primary: #fffdf4;
-  --color-accent: #d8b45e;
-  --color-accent-deep: #a98535;
+  --color-on-primary: #fffdf7;
   --color-on-accent: #30250d;
-  --color-black: #123b30;
-  --color-page-bg: #f6f7ed;
-  --color-store-bg: #edf1df;
-  --color-surface: #fffdf5;
-  --color-surface-muted: #eaf0df;
-  --color-text: #1b3027;
-  --color-text-label: #1b3027;
-  --color-text-muted: #66786c;
-  --color-border: #d8dfc8;
-  --color-border-soft: #e8eadb;
-  --color-border-strong: #17634c;
-  --color-focus: #075b46;
-  --gradient-metal: linear-gradient(120deg, #063d30 0%, #0b6a4e 48%, #064332 100%);
-  --gradient-button: linear-gradient(135deg, #0b7658, #064332);
-  --search-button-bg: linear-gradient(135deg, #e6c777, #b8923f);
-  --search-button-fg: #30250d;
-  --shadow-md: 0 6px 22px rgb(25 67 49 / 12%);
+  --color-black: #082820;
+  --color-store-bg: var(--color-page-bg);
+  --color-text-label: var(--color-text);
+  --color-border-soft: #eae5d8;
+  --color-border-strong: #47735f;
+  --gradient-metal: var(--color-primary);
+  --gradient-button: var(--color-primary);
+  --search-button-bg: var(--color-accent);
+  --search-button-fg: var(--color-on-accent);
+  --shadow-md: 0 4px 16px rgb(8 40 32 / 12%);
 }
 
-/* Eid: richer green with a brighter celebratory gold */
+/* Eid: royal blue and champagne gold */
 :root[data-website-theme="eid"] {
-  --color-primary: #08765a;
-  --color-primary-hover: #06543f;
-  --color-primary-light: #24a17b;
-  --color-on-primary: #fffdf4;
-  --color-accent: #e2bd63;
-  --color-accent-deep: #bd9138;
-  --color-on-accent: #30250d;
-  --color-black: #104535;
-  --color-page-bg: #f4f8ee;
-  --color-store-bg: #eaf2e3;
-  --color-surface: #fffef8;
-  --color-surface-muted: #e8f2e7;
-  --color-text: #1b3028;
-  --color-text-label: #1b3028;
-  --color-text-muted: #667b6d;
-  --color-border: #d2e3d3;
-  --color-border-soft: #e3ede0;
-  --color-border-strong: #08765a;
-  --color-focus: #08765a;
-  --gradient-metal: linear-gradient(120deg, #07533e 0%, #10835e 48%, #06412f 100%);
-  --gradient-button: linear-gradient(135deg, #15936b, #07543e);
-  --search-button-bg: linear-gradient(135deg, #f0cf7c, #c39a3e);
-  --search-button-fg: #30250d;
-  --shadow-md: 0 6px 22px rgb(25 67 49 / 12%);
+  --color-on-primary: #fffdf7;
+  --color-on-accent: #30240a;
+  --color-black: #102856;
+  --color-store-bg: var(--color-page-bg);
+  --color-text-label: var(--color-text);
+  --color-border-soft: #ead9b5;
+  --color-border-strong: #566e9a;
+  --gradient-metal: var(--color-primary);
+  --gradient-button: var(--color-primary);
+  --search-button-bg: #ead9b5;
+  --search-button-fg: #102856;
+  --shadow-md: 0 5px 18px rgb(35 48 33 / 12%);
 }
 
 /* Valentine's Day */
-:root[data-website-theme="valentines-day"] {
-  --color-primary: #bd2858;
-  --color-primary-hover: #941d45;
-  --color-primary-light: #e15a83;
-  --color-on-primary: #fffaff;
-  --color-accent: #f0b1c4;
-  --color-accent-deep: #bd6684;
-  --color-on-accent: #4a1830;
-  --color-black: #67233f;
-  --color-page-bg: #fff4f6;
-  --color-store-bg: #fce9ee;
-  --color-surface: #fffdfd;
-  --color-surface-muted: #fce9ee;
-  --color-text: #34212a;
-  --color-text-label: #34212a;
-  --color-text-muted: #856c77;
-  --color-border: #efd1dc;
-  --color-border-soft: #f5e2e9;
-  --color-border-strong: #bd2858;
-  --color-focus: #bd2858;
-  --gradient-metal: linear-gradient(120deg, #762342, #b82c5d 52%, #67203d);
-  --gradient-button: linear-gradient(135deg, #d63d70, #9e2049);
-  --search-button-bg: linear-gradient(135deg, #f8cfdb, #e9a5b9);
-  --search-button-fg: #4a1830;
-  --shadow-md: 0 6px 22px rgb(103 35 63 / 13%);
+:root:is([data-website-theme="valentines-day"], [data-website-theme="sinhala-tamil-new-year"]) {
+  --color-black: var(--color-primary-hover);
+  --color-on-primary: #fffaf2;
+  --color-on-accent: #3c2418;
+  --color-store-bg: var(--color-page-bg);
+  --color-text-label: var(--color-text);
+  --color-border-soft: var(--color-border);
+  --color-border-strong: var(--color-accent-deep);
+  --gradient-metal: linear-gradient(115deg, var(--color-primary-hover), var(--color-primary) 55%, var(--color-primary-hover));
+  --gradient-button: var(--color-primary);
+  --search-button-bg: #f5d9a0;
+  --search-button-fg: var(--color-on-accent);
 }
 
 /* Black Friday */
@@ -247,6 +210,16 @@ input {
     inset 0 -3px 0 var(--color-accent);
 }
 
+/* Thin brass rule and a visible focus ring on the emerald header. */
+:root[data-website-theme="ramadan"] .main-header {
+  box-shadow: inset 0 -1px var(--color-accent);
+}
+
+:root[data-website-theme="ramadan"] .site-header :is(a, button):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* Search button: themed colours, kept off the suggestion list buttons */
 :root[data-website-theme] .search-form .search-submit {
   background: var(--search-button-bg);
@@ -279,4 +252,49 @@ input {
   body {
     transition: none;
   }
+}
+/* Champagne details follow the existing shopping surfaces and controls. */
+:root[data-website-theme="new-year"] {
+  --color-store-bg: #f5f5fa;
+  --color-border-soft: #dcd8ce;
+  --gradient-metal: linear-gradient(105deg, #101932, #263858 60%, #101932);
+}
+:root[data-website-theme="new-year"] :is(.product-card, .category-card, .brand-card, .directory-card, .benefits, .filters, .checkout-page .panel, .cart-items, .order-summary) {
+  border-color: #d6c9af;
+  box-shadow: 0 3px 12px rgb(26 37 67 / 7%);
+}
+:root[data-website-theme="new-year"] :is(.section-head, .rail-header, .category-section-heading, .shop-heading, .directory-heading, .store-heading) :is(h1,h2)::before {
+  content: '';
+  display: inline-block;
+  width: 1.25em;
+  height: 1.25em;
+  margin-right: .34em;
+  vertical-align: -.18em;
+  background: url('/themes/new-year/burst.webp') center / contain no-repeat;
+}
+:root[data-website-theme="new-year"] .product-card .card-link {
+  background: linear-gradient(105deg, #fffdf8, #fff 68%);
+  border-top: 1px solid #ece3cf;
+}
+:root[data-website-theme="new-year"] :is(.cart-btn:not(.added), .load-more-button):not(:disabled) {
+  color: #fff7e9;
+  background: #223254;
+  border: 1px solid #b69a63;
+}
+:root[data-website-theme="new-year"] .floating-whatsapp {
+  box-shadow: 0 0 0 2px #e7c98d, 0 3px 12px rgb(15 24 47 / 22%);
+}
+:root[data-website-theme="new-year"] .floating-whatsapp::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  background: url('/themes/new-year/burst.webp') center / contain no-repeat;
+  pointer-events: none;
+}
+@media (max-width: 650px) {
+  :root[data-website-theme="new-year"] .category-rail .rail-prev { left: -4px; }
+  :root[data-website-theme="new-year"] .category-rail .rail-next { right: -4px; }
 }

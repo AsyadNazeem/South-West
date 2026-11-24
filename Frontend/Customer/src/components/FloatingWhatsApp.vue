@@ -3,11 +3,28 @@
     v-if="whatsappLink"
     :href="whatsappLink"
     class="floating-whatsapp"
+    :class="{ 'floating-whatsapp--art': floralArtwork || ['christmas', 'ramadan', 'eid'].includes(themeSlug) }"
     target="_blank"
     rel="noopener noreferrer"
     aria-label="Chat with us on WhatsApp"
   >
-    <svg
+    <img
+      v-if="themeSlug === 'christmas'"
+      class="christmas-whatsapp-logo"
+      src="/themes/christmas/decorations/whatsapp-christmas.webp"
+      alt=""
+      width="177"
+      height="192"
+      decoding="async"
+      draggable="false"
+      aria-hidden="true"
+    />
+    <img v-else-if="themeSlug === 'ramadan'" class="ramadan-whatsapp-logo"
+      src="/themes/ramadan/decorations/ramadan-whatsapp.webp" alt="" aria-hidden="true" draggable="false" />
+    <img v-else-if="floralArtwork" class="floral-whatsapp-logo" :src="floralArtwork + 'whatsapp.webp'" alt="" />
+    <img v-else-if="themeSlug === 'eid'" class="eid-whatsapp-logo"
+      src="/themes/eid/decorations/eid-whatsapp.webp" alt="" draggable="false" />
+    <svg v-else
   xmlns="http://www.w3.org/2000/svg"
   viewBox="0 0 32 32"
   width="32"
@@ -25,6 +42,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '@/services/api'
+import { useWebsiteTheme } from '@/composables/useWebsiteTheme'
+
+const { floralArtwork, themeSlug } = useWebsiteTheme()
+
 
 const whatsappLink = ref(null)
 
@@ -86,5 +107,61 @@ onMounted(loadWhatsAppNumber)
     height: 52px;
     font-size: 29px;
   }
+}
+
+
+/* ---------- Christmas WhatsApp logo ---------- */
+
+.floating-whatsapp--art {
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.floating-whatsapp--art:hover {
+  background: transparent;
+  box-shadow: none;
+}
+
+.christmas-whatsapp-logo {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 64px;
+  height: auto;
+  max-width: none;
+  transform: translateX(-50%);
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(
+    0 4px 6px rgba(0, 0, 0, 0.18)
+  );
+}
+
+@media (max-width: 768px) {
+  .christmas-whatsapp-logo {
+    width: 59px;
+  }
+}
+
+.floating-whatsapp:has(.ramadan-whatsapp-logo, .floral-whatsapp-logo, .eid-whatsapp-logo) {
+  width: 66px;
+  height: 68px;
+}
+@media (max-width: 768px) {
+  .floating-whatsapp:has(.ramadan-whatsapp-logo, .floral-whatsapp-logo, .eid-whatsapp-logo) {
+    width: 60px;
+    height: 60px;
+  }
+}
+.ramadan-whatsapp-logo, .floral-whatsapp-logo, .eid-whatsapp-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .floating-whatsapp:has(.ramadan-whatsapp-logo, .floral-whatsapp-logo, .eid-whatsapp-logo) { transition: none; }
 }
 </style>

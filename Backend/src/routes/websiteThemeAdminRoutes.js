@@ -9,34 +9,18 @@ const { requirePermission } = require('../middleware/requirePermission');
 
 router.use(authMiddleware);
 
+// List developer-managed website themes.
 router.get(
     '/',
     requirePermission('website_themes.view'),
     controller.getAllThemes
 );
 
-router.post(
-    '/',
-    requirePermission('website_themes.create'),
-    controller.createTheme
-);
-
-router.put(
-    '/:id',
-    requirePermission('website_themes.update'),
-    controller.updateTheme
-);
-
+// Enable or disable an existing website theme.
 router.patch(
     '/:id/status',
     requirePermission('website_themes.update'),
     controller.updateThemeStatus
-);
-
-router.delete(
-    '/:id',
-    requirePermission('website_themes.delete'),
-    controller.deleteTheme
 );
 
 module.exports = router;

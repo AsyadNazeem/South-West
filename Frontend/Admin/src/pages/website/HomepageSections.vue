@@ -9,6 +9,7 @@ import {
   Save,
   X,
 } from 'lucide-vue-next'
+import api from '@/api/axios'
 import { hasPermission } from '@/auth/authorization'
 import {
   getHomepageSections,
@@ -17,6 +18,28 @@ import {
 
 const sections = ref([])
 const originalSections = ref([])
+const categoryRows = ref([])
+const categoryRowsError = ref(false)
+
+async function loadCategoryRows() {
+  try {
+    const response = await api.get('/store/categories')
+    const payload = response.data
+    const roots = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : (payload?.categories ?? [])
+
+    categoryRows.value = roots
+      .filter(category => category.parent_id == null)
+      .slice(0, 8)
+  } catch (err) {
+    console.error('Unable to load homepage category names:', err)
+    categoryRowsError.value = true
+  }
+}
+
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
@@ -204,7 +227,10 @@ async function saveChanges() {
   }
 }
 
-onMounted(loadSections)
+onMounted(() => {
+  loadSections()
+  loadCategoryRows()
+})
 </script>
 
 <template>
@@ -332,11 +358,11 @@ onMounted(loadSections)
               >
                 <option value="">Normal position</option>
                 <option
-                  v-for="row in 8"
+                  v-for="row in (categoryRowsError ? 8 : categoryRows.length)"
                   :key="row"
                   :value="row"
                 >
-                  After Row {{ row }}
+                  After {{ categoryRows[row - 1]?.name || `Row ${row}` }}
                 </option>
               </select>
             </label>

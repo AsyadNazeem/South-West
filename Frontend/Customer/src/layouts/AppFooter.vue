@@ -1,6 +1,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import api from '@/services/api'
+import { useWebsiteTheme } from '@/composables/useWebsiteTheme'
+
+const { floralArtwork, themeSlug, decorations } = useWebsiteTheme()
+
 
 const contactInformation = ref({})
 
@@ -63,6 +67,52 @@ const companyLinks = [
 
 <template>
   <footer class="app-footer">
+
+    <!-- Christmas snow and gift decorations -->
+    <div
+      v-if="themeSlug === 'christmas'"
+      class="christmas-footer-decoration"
+      aria-hidden="true"
+    >
+      <div class="christmas-footer-snow"></div>
+
+      <img
+        class="christmas-footer-gifts-left"
+        src="/themes/christmas/decorations/christmas-footer-left-v2.webp"
+        alt=""
+        loading="lazy"
+        decoding="async"
+        draggable="false"
+      />
+
+      <img
+        class="christmas-footer-gifts-right"
+        src="/themes/christmas/decorations/christmas-footer-right-v2.webp"
+        alt=""
+        loading="lazy"
+        decoding="async"
+        draggable="false"
+      />
+    </div>
+
+    <div v-if="themeSlug === 'ramadan'" class="ramadan-footer-decoration" aria-hidden="true">
+      <img src="/themes/ramadan/decorations/ramadan-footer-left.webp" alt="" loading="lazy" decoding="async" />
+      <img src="/themes/ramadan/decorations/ramadan-footer-right.webp" alt="" loading="lazy" decoding="async" />
+    </div>
+
+    <div v-if="themeSlug === 'new-year' && decorations.ribbons !== false" class="new-year-ribbons" aria-hidden="true">
+      <img v-for="side in ['left', 'right']" :key="side" src="/themes/new-year/ribbon.webp"
+        width="460" height="150" alt="" loading="lazy" decoding="async" />
+    </div>
+
+    <div v-if="floralArtwork" class="floral-footer" aria-hidden="true">
+      <img v-for="side in ['left', 'right']" :key="side" :src="floralArtwork + 'footer-' + side + '.webp'" loading="lazy" alt="" />
+    </div>
+    <div v-if="themeSlug === 'eid'" class="eid-footer" aria-hidden="true">
+      <img v-for="side in ['left', 'right']" :key="side"
+        :src="`/themes/eid/decorations/eid-footer-${side}.webp`" alt="" loading="lazy" decoding="async" />
+    </div>
+
     <!-- Main footer -->
     <div class="footer-main">
       <div class="footer-container">
@@ -636,4 +686,111 @@ const companyLinks = [
     font-size: 15px;
   }
 }
+
+
+
+/* ---------- Christmas footer decorations ---------- */
+
+.christmas-footer-decoration {
+  --gift-height: clamp(94px, 7.9vw, 118px);
+  --snow-height: 23px;
+
+  position: relative;
+  width: 100%;
+  height: var(--gift-height);
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.christmas-footer-snow {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--snow-height);
+  background-image: url('/themes/christmas/decorations/christmas-footer-snow-v2.webp');
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  background-position: center bottom;
+}
+
+.christmas-footer-decoration img {
+  position: absolute;
+  bottom: 0;
+  display: block;
+  width: auto;
+  height: var(--gift-height);
+  max-width: 36%;
+  object-fit: contain;
+  object-position: left bottom;
+  z-index: 1;
+}
+
+.christmas-footer-gifts-left {
+  left: 0;
+}
+
+.christmas-footer-gifts-right {
+  right: 0;
+  object-position: right bottom;
+}
+
+.app-footer:has(.christmas-footer-decoration) {
+  border-top: none;
+}
+
+@media (max-width: 1024px) {
+  .christmas-footer-decoration {
+    --gift-height: 80px;
+    --snow-height: 18px;
+  }
+}
+
+@media (max-width: 650px) {
+  .christmas-footer-decoration {
+    --gift-height: 50px;
+    --snow-height: 11px;
+  }
+}
+
+.app-footer:has(.ramadan-footer-decoration) {
+  border-top: 0;
+  --footer-muted: var(--color-text-muted);
+  --footer-border: var(--color-border);
+}
+
+.ramadan-footer-decoration {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  height: clamp(108px, 8vw, 120px);
+  background: var(--color-page-bg);
+  border-bottom: 1px solid var(--color-border);
+  pointer-events: none;
+  user-select: none;
+}
+.ramadan-footer-decoration img {
+  height: 100%;
+  max-width: 32%;
+  object-fit: contain;
+  object-position: bottom;
+}
+@media (max-width: 1024px) {
+  .ramadan-footer-decoration { height: clamp(72px, 8vw, 82px); }
+}
+@media (max-width: 650px) {
+  .ramadan-footer-decoration { height: clamp(48px, 13vw, 55px); }
+}
+.new-year-ribbons {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  height: clamp(48px, 6vw, 92px);
+  border-block: 1px solid #a28a50;
+  background: #101932;
+  pointer-events: none;
+}
+.new-year-ribbons img { width: auto; height: 94%; max-width: 37%; object-fit: contain; object-position: left bottom; }
+.new-year-ribbons img:last-child { transform: scaleX(-1); }
 </style>

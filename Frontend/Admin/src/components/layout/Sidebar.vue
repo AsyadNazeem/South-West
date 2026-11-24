@@ -104,10 +104,8 @@ const menuDefinitions = [
     icon: Megaphone,
     children: [
       { label: 'Promotions', to: '/admin/marketing/promotions', permissions: ['promotions.view'] },
-      { label: 'Homepage Banners', to: '/admin/marketing/homepage-banners', permissions: ['homepage_banners.view']},
-      { label: 'Discount Campaigns', to: '/admin/marketing/discount-campaigns', permissions: ['discount_campaigns.view']},
       { label: 'Campaign Frames', to: '/admin/marketing/campaign-frames', permissions: ['discount_campaigns.view']},
-      { label: 'Website Themes', to: '/admin/marketing/website-themes', permissions: ['website_themes.view']},
+      { label: 'Discount Campaigns', to: '/admin/marketing/discount-campaigns', permissions: ['discount_campaigns.view']},
     ]
   },
   {
@@ -116,8 +114,10 @@ const menuDefinitions = [
     icon: LayoutTemplate,
     children: [
       { label: 'Homepage Sections', to: '/admin/marketing/homepage-sections', permissions: ['homepage_sections.view'] },
+      { label: 'Homepage Banners', to: '/admin/marketing/homepage-banners', permissions: ['homepage_banners.view']},
       { label: 'FAQs', to: '/admin/marketing/faqs', permissions: ['faqs.view'] },
       { label: 'Contact Information', to: '/admin/website-management/contact-information', permissions: ['contact_information.view'] },
+      { label: 'Website Themes', to: '/admin/marketing/website-themes', permissions: ['website_themes.view']},
     ]
   },
   {

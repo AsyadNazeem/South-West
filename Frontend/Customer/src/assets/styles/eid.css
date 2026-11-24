@@ -1,0 +1,175 @@
+:root[data-website-theme="eid"] {
+  --eid-line: #d4bb87;
+  --eid-paper: #fffdf6;
+  --eid-pattern: url('/themes/eid/decorations/eid-background.svg');
+  --eid-corner: url('/themes/eid/decorations/eid-card-corner.webp');
+  --eid-shadow: 0 4px 14px rgb(74 55 23 / 8%);
+
+  & :is(body, .storefront, .store-page, .directory-page, .product-page, .cart-page, .checkout-page, .information-page, .account, .eid-footer) {
+    background: var(--color-page-bg) var(--eid-pattern) repeat;
+  }
+  & .seasonal-artwork--eid {
+    --band: clamp(108px, 6vw, 115px);
+    height: var(--band);
+    overflow: hidden;
+    background: var(--color-primary-hover);
+    border-bottom: 1px solid var(--eid-line);
+  }
+  & .seasonal-artwork--eid img { position: absolute; top: 0; width: auto; translate: -50% 0; }
+  & .eid-festoon { left: 50%; height: 99%; max-width: 49%; object-fit: contain; object-position: top; }
+  & .eid-garland { height: 49%; max-width: 16%; object-fit: contain; object-position: top; }
+  & .eid-garland.left { left: 17%; }
+  & .eid-garland.right { left: 83%; }
+  & .eid-pendant { transform-origin: center top; filter: drop-shadow(0 2px 4px rgb(227 181 100 / 21%)); }
+  & .eid-lantern { left: 5%; height: 82%; --period: 5.8s; --delay: -2s; }
+  & .eid-star { left: 29%; height: 61%; --period: 6.6s; --delay: -4s; }
+  & .eid-hanging-ornament { left: 71%; height: 74%; --period: 7s; --delay: -1s; }
+  & img.eid-crescent { left: 94%; top: 8%; height: 72%; }
+
+  & .eid-greeting {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    margin-top: var(--space-5);
+    padding: 20px clamp(18px, 4vw, 64px);
+    min-height: clamp(128px, 12vw, 175px);
+    color: #fff9ed;
+    background: #102856;
+    border: 1px solid var(--eid-line);
+    border-radius: var(--radius-md);
+  }
+  & .eid-greeting img {
+    position: absolute; inset: 0 0 0 auto; z-index: -1;
+    height: 100%; width: auto; max-width: 100%;
+    object-fit: cover; object-position: right;
+    mask-image: linear-gradient(to right, transparent, black 28%);
+  }
+  & .eid-greeting > div { max-width: 62%; }
+  & .eid-greeting h2 { color: #ffdf9f; font: normal clamp(35px, 4vw, 58px)/1.04 Georgia, serif; }
+  & .eid-greeting p { margin-top: 6px; font-size: clamp(12px, 1.15vw, 16px); }
+  & .eid-greeting h2::before {
+    content: ''; display: block; width: 110px; height: 13px; margin-bottom: 8px;
+    background: url('/themes/eid/decorations/eid-section-divider.webp') center / contain no-repeat;
+  }
+
+  & :is(.product-card, .category-card, .directory-card, .brand-card) {
+    border-radius: 6px 18px 6px 18px;
+    background-color: var(--eid-paper);
+    border-color: var(--eid-line);
+    box-shadow: var(--eid-shadow);
+  }
+  & :is(.category-card, .directory-card, .brand-card) {
+    position: relative;
+    color: var(--color-primary);
+  }
+  & :is(.category-card, .directory-card, .brand-card)::after {
+    content: ''; position: absolute; inset: 4px 4px auto auto;
+    width: clamp(18px, 2.6vw, 38px); aspect-ratio: 1;
+    background: var(--eid-corner) top right / contain no-repeat;
+    pointer-events: none;
+  }
+  & .product-card .image-wrap { background: white; }
+  & .product-card .body {
+    border-top: 1px solid var(--eid-line);
+    box-shadow: inset 0 -3px var(--color-primary), inset 0 -5px #ead9b5;
+    background: var(--eid-pattern) left bottom -33px / 38px 38px repeat-x;
+  }
+  & .product-card .body:has(.brand) {
+    background-image: var(--eid-corner), var(--eid-pattern);
+    background-size: 30px auto, 38px 38px;
+    background-position: right 4px top 3px, left bottom -33px;
+    background-repeat: no-repeat, repeat-x;
+  }
+  & .product-card .brand { max-width: calc(100% - 30px); background-color: #e8edf8; color: #17356d; }
+  & .product-card .cart-btn:not(.added, :disabled) { background: var(--color-primary); border-color: #c9a227; color: #fff9ed; }
+  & .wishlist-btn:not(.active) { border-color: var(--eid-line); }
+  & :is(.rail-view-all, .view-all-brands, .load-more-button):not(:disabled) {
+    border: 1px solid #ad904c; background: var(--color-primary); color: white;
+  }
+  & .rail-view-all { padding: 5px 10px; border-radius: var(--radius-pill); }
+  & :is(.rail-header, .section-head, .category-section-heading, .shop-heading, .directory-heading, .store-heading, .similar-products-header) {
+    border-bottom: 1px solid var(--eid-line); padding-bottom: 8px;
+    & :is(h1,h2) { color: var(--color-primary); }
+    & :is(h1,h2)::before {
+      content: ''; display: inline-block; vertical-align: -.1em;
+      height: 1em; width: 1em; margin-right: .4em;
+      background: url('/themes/eid/decorations/eid-card-star.webp') center / contain no-repeat;
+    }
+  }
+  & :is(.benefits, .product-layout, .details-section, .filters, .checkout-page .panel, .cart-items, .order-summary,
+    .information-card, .account .content, .dropdown-menu, .directory-state:not(.error), .empty-cart, .state:not([role="alert"]), .skeleton-card) {
+    border-color: var(--eid-line); background-color: var(--eid-paper);
+  }
+  & :is(.category-name,.directory-card h2,.brand-card h2) { color: var(--color-primary); }
+  & :is(.sort-control select, .store-toolbar, .benefit-icon) { border-color: var(--eid-line); }
+  & .benefit-icon { background: #f6edd9; box-shadow: inset 0 0 0 1px var(--eid-line); }
+  & .empty-cart::before {
+    content: ''; display: block; width: 96px; height: 68px; margin: 0 auto 12px;
+    background: url('/themes/eid/decorations/eid-gifts.webp') center / contain no-repeat;
+  }
+  & .empty-cart .empty-icon { display: none; }
+  & .eid-footer {
+    display: flex; align-items: end; justify-content: space-between;
+    height: clamp(100px, 8vw, 118px); border-bottom: 1px solid var(--eid-line); pointer-events: none;
+  }
+  & .eid-footer img { height: 100%; width: auto; max-width: 34%; object-fit: contain; object-position: left bottom; }
+  & .eid-footer img:last-child { object-position: right bottom; }
+  & .app-footer:has(.eid-footer) { border-top: 0; }
+  & .site-header :is(button,a):focus-visible { outline: 2px solid #dbb767; outline-offset: 2px; }
+
+  & .eid-ambient { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 8; }
+  & .eid-ambient i {
+    position: absolute; left: .7%; top: 24%; width: 4px; height: 7px;
+    border-radius: 1px; background: #ccaa60; opacity: .55; rotate: 28deg;
+  }
+  & .eid-ambient i:nth-child(even) { left: auto; right: .7%; }
+  & .eid-ambient i:nth-child(3n) {
+    width: 11px; height: 11px; top: 47%;
+    background: url('/themes/eid/decorations/eid-card-star.webp') center / contain no-repeat;
+  }
+  & .eid-ambient i:nth-child(4n) { top: 63%; }
+  & .eid-ambient i:nth-child(5n), .eid-ambient i:nth-child(7) { top: 82%; }
+  & .eid-ambient i:last-child { top: 91%; }
+}
+@media (hover: hover) {
+  :root[data-website-theme="eid"] :is(.product-card,.category-card,.brand-card,.directory-card):hover {
+    border-color: #ad8a38; box-shadow: 0 0 0 1px #d4b772, 0 7px 18px rgb(83 59 17 / 13%);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .eid-pendant.sway { animation: eid-sway var(--period) ease-in-out var(--delay) infinite alternate; }
+  .eid-ambient i { animation: eid-drift 6s ease-in-out infinite alternate; }
+  .eid-ambient i:nth-child(even) { animation-delay: -3s; }
+  .eid-ambient i:nth-child(3n) { animation-duration: 8s; animation-delay: -5s; }
+}
+@keyframes eid-sway { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+@keyframes eid-drift {
+  from { transform: translateY(5px) rotate(-12deg); opacity: .25; }
+  to { transform: translateY(-11px) rotate(16deg); opacity: .8; }
+}
+@media (prefers-reduced-motion: reduce) { .eid-ambient { display: none; } }
+@media (max-width: 1024px) {
+  :root[data-website-theme="eid"] .seasonal-artwork--eid { --band: clamp(75px, 8vw, 85px); }
+  :root[data-website-theme="eid"] .eid-footer { height: clamp(65px, 8vw, 80px); }
+}
+@media (max-width: 650px) {
+  :root[data-website-theme="eid"] {
+    & .seasonal-artwork--eid { --band: clamp(55px, 15vw, 65px); }
+    & .eid-star, & .eid-hanging-ornament, & .eid-ambient i:nth-child(n+4) { display: none; }
+    & .eid-lantern { left: 7%; }
+    & img.eid-crescent { left: 92%; }
+    & .eid-garland { height: 22%; max-width: 13%; }
+    & .eid-garland.left { left: 18%; }
+    & .eid-garland.right { left: 82%; }
+    & .eid-footer { height: clamp(42px, 13vw, 55px); }
+    & .product-card .body:has(.brand) { background-size: 18px auto, 38px 38px; }
+    & .category-rail .rail-prev { left: -4px; }
+    & .category-rail .rail-next { right: -4px; }
+    & .eid-greeting { padding-inline: 16px; }
+    & .eid-greeting h2 { font-size: clamp(27px, 7.7vw, 35px); }
+    & .eid-greeting img { mask-image: linear-gradient(to right, transparent 12%, black 66%); }
+    & .eid-greeting > div { max-width: 54%; }
+  }
+}

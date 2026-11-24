@@ -9,7 +9,9 @@ import {
 } from '@/utils/mediaUrl'
 
 const SeasonalDecorations = defineAsyncComponent(() => import('@/components/SeasonalDecorations.vue'))
-const { themeSlug } = useWebsiteTheme()
+const FloralHeader = defineAsyncComponent(() => import('@/components/FloralHeader.vue'))
+const NewYearFireworks = defineAsyncComponent(() => import('@/components/NewYearFireworks.vue'))
+const { floralArtwork, themeSlug } = useWebsiteTheme()
 
 
 // Support email managed through Admin Contact Information.
@@ -508,7 +510,31 @@ onUnmounted(() => {
       <div class="header-container main-header-inner">
 
 <RouterLink to="/" class="brand" aria-label="South West home">
-  <picture>
+  <picture v-if="themeSlug === 'christmas'">
+    <source srcset="/themes/christmas/christmas-logo.webp" type="image/webp" />
+    <img
+      src="/SW-Christmas-logo.png"
+      alt="South West Christmas"
+      class="brand-logo"
+      width="2170"
+      height="725"
+      decoding="async"
+    />
+  </picture>
+  <img
+    v-else-if="themeSlug === 'ramadan'"
+    class="brand-logo ramadan-brand"
+    src="/themes/ramadan/ramadan-logo.webp"
+    alt="South West"
+    width="594"
+    height="131"
+  />
+  <img v-else-if="themeSlug === 'new-year'" class="brand-logo new-year-brand"
+    src="/themes/new-year/logo.webp" width="580" height="124" alt="South West" />
+  <img v-else-if="floralArtwork" class="brand-logo floral-brand" :src="floralArtwork + 'logo.webp'" alt="South West" />
+  <img v-else-if="themeSlug === 'eid'" class="brand-logo eid-brand"
+    src="/themes/eid/eid-logo.webp" alt="South West" width="593" height="128" />
+  <picture v-else>
     <source srcset="/SWLogo.webp" type="image/webp" />
     <img
       src="/SWLogo.png"
@@ -658,6 +684,9 @@ onUnmounted(() => {
     It scrolls away with the page and never covers the header controls.
   -->
   <SeasonalDecorations v-if="['christmas', 'ramadan', 'eid'].includes(themeSlug)" />
+
+  <FloralHeader v-if="floralArtwork" />
+  <NewYearFireworks v-if="themeSlug === 'new-year'" />
 
   <Teleport to="body">
     <div
@@ -1534,4 +1563,8 @@ onUnmounted(() => {
     animation: none !important;
   }
 }
+.brand .ramadan-brand, .brand .new-year-brand, .brand .floral-brand, .brand .eid-brand {
+  width: min(100%, 165px);
+}
+
 </style>

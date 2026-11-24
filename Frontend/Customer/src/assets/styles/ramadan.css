@@ -1,0 +1,186 @@
+:root[data-website-theme="ramadan"] {
+  --ramadan-ivory: #fffdf7;
+  --ramadan-line: #d8c49b;
+  --ramadan-shadow: 0 3px 12px rgb(68 52 23 / 8%);
+  --ramadan-corner: url('/themes/ramadan/decorations/ramadan-corner.webp');
+  --ramadan-pattern: url('/themes/ramadan/decorations/ramadan-background.svg');
+
+  & :is(body, .storefront, .store-page, .directory-page, .product-page, .cart-page, .checkout-page) {
+    background-color: #faf6eb;
+    background-image: var(--ramadan-pattern);
+    background-size: 88px 88px;
+  }
+
+  & :is(.product-card, .category-card, .brand-card, .directory-card) {
+    background-color: var(--ramadan-ivory);
+    border-color: var(--ramadan-line);
+    box-shadow: var(--ramadan-shadow);
+  }
+  & :is(.category-card, .brand-card, .directory-card) {
+    position: relative;
+    color: var(--color-primary);
+  }
+  & :is(.category-card, .brand-card, .directory-card)::after {
+    content: '';
+    position: absolute;
+    inset: 3px 3px auto auto;
+    width: clamp(16px, 2vw, 30px);
+    aspect-ratio: 1;
+    background: var(--ramadan-corner) right top / contain no-repeat;
+    pointer-events: none;
+  }
+  & .product-card .image-wrap { background: #fff; }
+  & .product-card .body {
+    background: var(--ramadan-pattern) left bottom / 34px 34px repeat-x;
+    background-position: left bottom -30px;
+    border-top: 1px solid #eadfc8;
+  }
+  & .product-card .body:has(.brand) {
+    background-image: var(--ramadan-corner), var(--ramadan-pattern);
+    background-position: right 4px top 3px, left bottom -30px;
+    background-size: 24px auto, 34px 34px;
+    background-repeat: no-repeat, repeat-x;
+  }
+  & .product-card .brand { max-width: calc(100% - 28px); }
+  & .product-card .cart-btn:not(.added, :disabled) {
+    background: var(--color-primary);
+    border-color: #c8a657;
+    color: var(--ramadan-ivory);
+  }
+  & .product-card .wishlist-btn:not(.active) { border-color: var(--ramadan-line); }
+
+  & :is(.category-name, .directory-card h2, .brand-card h2) { color: var(--color-primary); }
+  & :is(.rail-header, .section-head, .category-section-heading, .similar-products-header, .shop-heading, .store-heading, .directory-heading) :is(h1, h2) {
+    color: var(--color-primary);
+  }
+  & :is(.rail-header, .section-head, .category-section-heading, .similar-products-header, .shop-heading, .store-heading, .directory-heading) :is(h1, h2)::before {
+    content: '';
+    display: inline-block;
+    width: 1.1em;
+    height: 1em;
+    margin-inline-end: .38em;
+    vertical-align: -.1em;
+    background: url('/themes/ramadan/decorations/ramadan-crescent.webp') center / contain no-repeat;
+  }
+  & :is(.rail-header, .section-head, .category-section-heading, .similar-products-header, .shop-heading, .store-heading, .directory-heading) {
+    border-bottom: 1px solid var(--ramadan-line);
+    padding-bottom: 8px;
+  }
+
+  & :is(.benefits, .filters, .product-layout, .details-section, .cart-page .order-summary, .cart-page .cart-items,
+    .checkout-page .panel, .empty-cart, .directory-state:not(.error), .state:not([role="alert"])) {
+    background-color: var(--ramadan-ivory);
+    border-color: var(--ramadan-line);
+  }
+  & .benefit-icon { background: #f4edde; box-shadow: inset 0 0 0 1px var(--ramadan-line); }
+  & :is(.sort-control select, .rail-view-all, .view-all-brands, .store-toolbar) { border-color: var(--ramadan-line); }
+  & :is(.load-more-button, .rail-view-all, .view-all-brands):not(:disabled) {
+    background: var(--color-primary);
+    border: 1px solid #b69752;
+    color: var(--ramadan-ivory);
+  }
+
+  & .rail-view-all { padding: 4px 10px; border-radius: var(--radius-pill); }
+
+  & .ramadan-greeting {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    min-height: clamp(118px, 12vw, 166px);
+    margin-top: var(--space-5);
+    padding: 18px clamp(18px, 4vw, 60px);
+    border: 1px solid #a57f38;
+    border-radius: var(--radius-md);
+    background: #042117;
+    color: #fff8e3;
+  }
+  & .ramadan-greeting img {
+    position: absolute;
+    z-index: -1;
+    inset: 0 0 0 auto;
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    object-fit: cover;
+    object-position: right;
+    mask-image: linear-gradient(to right, transparent, black 25%);
+  }
+  & .ramadan-greeting > div { max-width: 62%; }
+  & .ramadan-greeting h2 {
+    color: #f4d58c;
+    font: normal clamp(28px, 3.5vw, 52px)/1.03 Georgia, serif;
+  }
+  & .ramadan-greeting p { font-size: clamp(12px, 1vw, 16px); margin-top: 6px; }
+  & .ramadan-greeting p::after {
+    content: '';
+    display: block;
+    width: 90px;
+    height: 12px;
+    margin-top: 8px;
+    background: url('/themes/ramadan/decorations/ramadan-divider.webp') center / contain no-repeat;
+  }
+
+  & .ramadan-ambient {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    z-index: 9;
+    pointer-events: none;
+  }
+  & .ramadan-ambient i {
+    position: absolute;
+    left: 1%;
+    top: 27%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #c5a35e;
+    opacity: .45;
+    box-shadow: 0 0 4px #eed79c;
+  }
+  & .ramadan-ambient i:nth-child(even) { left: auto; right: 1%; }
+  & .ramadan-ambient i:nth-child(2n+3) { top: 60%; }
+  & .ramadan-ambient i:nth-child(3n) { top: 84%; }
+  & .ramadan-ambient i:nth-child(4) { top: 48%; }
+  & .ramadan-ambient i:nth-child(3n) {
+    width: 9px; height: 9px;
+    background: url('/themes/ramadan/decorations/ramadan-star.webp') center / contain no-repeat;
+    box-shadow: none;
+  }
+}
+@media (hover: hover) {
+  :root[data-website-theme="ramadan"] :is(.product-card, .category-card, .brand-card, .directory-card):hover {
+    border-color: #af863c;
+    box-shadow: 0 0 0 1px #dcc487, 0 6px 18px rgb(89 65 20 / 14%);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-website-theme="ramadan"] .ramadan-ambient i { animation: ramadan-drift 9s ease-in-out infinite alternate; }
+  :root[data-website-theme="ramadan"] .ramadan-ambient i:nth-child(even) { animation-delay: -5s; }
+  :root[data-website-theme="ramadan"] .ramadan-ambient i:nth-child(3n) { animation-duration: 6s; animation-delay: -3s; }
+}
+@keyframes ramadan-drift {
+  from { transform: translateY(6px); opacity: .2; }
+  to { transform: translateY(-12px); opacity: .7; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-website-theme="ramadan"] .ramadan-ambient { display: none; }
+  :root[data-website-theme="ramadan"] .product-card:hover,
+  :root[data-website-theme="ramadan"] .product-card:hover .image-link img { transform: none; }
+}
+@media (max-width: 650px) {
+  :root[data-website-theme="ramadan"] {
+    --ramadan-pattern: linear-gradient(rgb(250 246 235 / 48%), rgb(250 246 235 / 48%)), url('/themes/ramadan/decorations/ramadan-background.svg');
+  }
+  :root[data-website-theme="ramadan"] .category-rail .rail-prev { left: -4px; }
+  :root[data-website-theme="ramadan"] .category-rail .rail-next { right: -4px; }
+  :root[data-website-theme="ramadan"] .product-card .body {
+    background: var(--ramadan-ivory);
+  }
+  :root[data-website-theme="ramadan"] .product-card .body:has(.brand) {
+    background: var(--ramadan-corner) right 3px top 3px / 16px auto no-repeat;
+  }
+  :root[data-website-theme="ramadan"] .ramadan-ambient i:nth-child(n+3) { display: none; }
+}

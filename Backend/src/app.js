@@ -87,6 +87,7 @@ const discountCampaignRoutes = require('./routes/discountCampaignRoutes');
 const campaignFrameRoutes = require('./routes/campaignFrameRoutes');
 const websiteThemeRoutes = require('./routes/websiteThemeRoutes');
 const websiteThemeAdminRoutes = require('./routes/websiteThemeAdminRoutes');
+const { syncWebsiteThemes } = require('./services/websiteThemeRegistryService');
 const storeBrandRoutes = require('./routes/storeBrandRoutes');
 const itemPaymentPriceRoutes = require('./routes/itemPaymentPriceRoutes');
 
@@ -258,6 +259,17 @@ const PORT = process.env.PORT || 5001;
 async function startServer() {
     try {
         await sequelize.authenticate();
+
+        // Synchronize developer-managed storefront themes.
+        const themeSync = await syncWebsiteThemes();
+
+        console.log(
+            `[Website Themes] Created: ${themeSync.created}, ` +
+            `Updated: ${themeSync.updated}, ` +
+            `Unchanged: ${themeSync.unchanged}, ` +
+            `Disabled: ${themeSync.disabled}`
+        );
+
 
         console.log("✅ MySQL database connected successfully");
 
