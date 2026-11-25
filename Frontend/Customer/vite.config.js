@@ -9,7 +9,7 @@ export default defineConfig(({ isSsrBuild }) => ({
     rolldownOptions: {
       output: { entryFileNames: '[name].mjs', chunkFileNames: 'assets/[name]-[hash].mjs' },
     },
-  } : {},
+  } : { manifest: true },
   plugins: [vue()],
   resolve: {
     alias: {

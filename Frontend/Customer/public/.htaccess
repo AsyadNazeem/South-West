@@ -1,18 +1,74 @@
+Options -MultiViews
+ErrorDocument 404 /404.html
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /
 
-    RewriteRule ^index\.html$ - [L]
+    # This is the customer document root. Separate applications own these paths.
+    RewriteCond %{HTTP_HOST} !^(www\.)?southwest\.lk(:[0-9]+)?$ [NC]
+    RewriteRule ^ - [L]
+    RewriteRule ^(api|uploads|admin|node26-test\.southwest\.lk|\.well-known)(/|$) - [L,NC]
 
-    # Serve prerendered information pages at their original extensionless URLs.
-    RewriteRule ^(contact|faq|shipping|returns|about|privacy-policy|terms)$ $1.html [END]
+    # Match only storefront aliases. Internal .html mappings terminate with END.
+    RewriteRule ^index\.html/*$ https://southwest.lk/ [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/shop$
+    RewriteRule ^shop(?:\.html)?/*$ https://southwest.lk/shop [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/categories$
+    RewriteRule ^categories(?:\.html)?/*$ https://southwest.lk/categories [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/brands$
+    RewriteRule ^brands(?:\.html)?/*$ https://southwest.lk/brands [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/offers$
+    RewriteRule ^offers(?:\.html)?/*$ https://southwest.lk/offers [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/contact$
+    RewriteRule ^contact(?:\.html)?/*$ https://southwest.lk/contact [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/faq$
+    RewriteRule ^faq(?:\.html)?/*$ https://southwest.lk/faq [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/shipping$
+    RewriteRule ^shipping(?:\.html)?/*$ https://southwest.lk/shipping [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/returns$
+    RewriteRule ^returns(?:\.html)?/*$ https://southwest.lk/returns [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/about$
+    RewriteRule ^about(?:\.html)?/*$ https://southwest.lk/about [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/privacy-policy$
+    RewriteRule ^privacy-policy(?:\.html)?/*$ https://southwest.lk/privacy-policy [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/terms$
+    RewriteRule ^terms(?:\.html)?/*$ https://southwest.lk/terms [R=301,END,NC]
+    RewriteRule ^product/([A-Za-z0-9-]+-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?:/index\.html|\.html)/*$ https://southwest.lk/product/$1 [R=301,END,NC]
+    RewriteCond %{REQUEST_URI} !^/product/[^/]+$
+    RewriteRule ^product/([A-Za-z0-9-]+-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/*$ https://southwest.lk/product/$1 [R=301,END,NC]
 
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule . /index.html [L]
+    # Preserve original escaping in opaque checkout and claim tokens.
+    RewriteCond %{REQUEST_URI} ^(/.+?)/+$
+    RewriteRule ^(?:cart|login|register|set-password|verify-email|forgot-password|reset-password|auth/google/callback|checkout(?:/address)?(?:/[^/]+)?|account(?:/(?:personal-information|addresses|change-password|notifications|orders|wishlist|reviews|returns|warranty-claims(?:/[^/]+)?))?)/+$ https://southwest.lk%1 [R=301,END,NE]
+
+    RewriteCond %{HTTP_HOST} ^(www\.)?southwest\.lk(:[0-9]+)?$ [NC]
+    RewriteCond %{HTTP_HOST} ^www\. [NC]
+    RewriteRule ^ https://southwest.lk%{REQUEST_URI} [R=301,END,NE]
+
+    # TLS-terminating proxies may set this internal variable at the trusted vhost.
+    RewriteCond %{HTTP_HOST} ^southwest\.lk(:[0-9]+)?$ [NC]
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{ENV:SW_FRONTEND_HTTPS} !=1
+    RewriteRule ^ https://southwest.lk%{REQUEST_URI} [R=301,END,NE]
+
+    RewriteRule ^app-shell\.html$ - [R=404,END]
+
+    RewriteRule ^(contact|faq|shipping|returns|about|privacy-policy|terms|shop|categories|brands|offers)$ $1.html [END]
+    RewriteRule ^$ index.html [END]
+
+    # A build snapshot can establish the presence of HTML only. An absent
+    # snapshot is also normal for newly published products.
+    RewriteCond %{REQUEST_FILENAME}.html -f
+    RewriteRule ^product/([A-Za-z0-9-]+-[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$ product/$1.html [END]
+    RewriteRule ^product/[^/]+-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ app-shell.html [END,NC]
+    RewriteRule ^product(/|$) - [R=404,END]
+
+    RewriteRule ^(cart|login|register|set-password|verify-email|forgot-password|reset-password|auth/google/callback)$ app-shell.html [END]
+    RewriteRule ^checkout(/address)?(/[^/]+)?$ app-shell.html [END]
+    RewriteRule ^account(/(personal-information|addresses|change-password|notifications|orders|wishlist|reviews|returns|warranty-claims(/[^/]+)?))?$ app-shell.html [END]
+    # Other paths use the server's normal static-file or 404 response.
 </IfModule>
-
-Options -MultiViews
 
 <IfModule mod_headers.c>
     <FilesMatch "[.]html$">

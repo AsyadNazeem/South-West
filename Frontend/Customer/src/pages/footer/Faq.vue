@@ -40,27 +40,26 @@ onMounted(loadFaqs)
 
 <template>
   <div class="faq-page">
-    <div v-if="loading" class="faq-state" role="status">
-      <div class="faq-spinner" aria-hidden="true"></div>
-      <p>Loading frequently asked questions...</p>
-    </div>
-
-    <div v-else-if="error" class="faq-state" role="alert">
-      <h2>Unable to load FAQs</h2>
-      <p>{{ error }}</p>
-      <button type="button" class="faq-retry" @click="loadFaqs">
-        Try again
-      </button>
-    </div>
-
     <InformationPageLayout
-      v-else
       breadcrumb="FAQs"
       eyebrow="HELP CENTRE"
       title="Frequently Asked Questions"
       intro="Quick answers to common questions about shopping and orders at South West."
       :faq-items="faqItems"
-    />
+    >
+      <div v-if="loading" class="faq-state" role="status">
+        <div class="faq-spinner" aria-hidden="true"></div>
+        <p>Loading frequently asked questions...</p>
+      </div>
+
+      <div v-else-if="error" class="faq-state" role="alert">
+        <h2>Unable to load FAQs</h2>
+        <p>{{ error }}</p>
+        <button type="button" class="faq-retry" @click="loadFaqs">
+          Try again
+        </button>
+      </div>
+    </InformationPageLayout>
   </div>
 </template>
 

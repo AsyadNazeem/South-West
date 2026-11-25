@@ -1,4 +1,5 @@
 <script setup>
+import { productPathFor } from '@/utils/productSeo.js'
 import AccountPageHeader from '@/components/account/AccountPageHeader.vue'
 import { accountFeedback } from '@/utils/accountFeedback'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -352,8 +353,8 @@ onMounted(async () => {
               <ul v-if="(orderDetails[order.id].items || []).length" class="items">
                 <li v-for="item in orderDetails[order.id].items" :key="item.id">
                   <RouterLink
-                    v-if="item.item?.slug && item.item?.public_id"
-                    :to="`/product/${item.item.slug}-${item.item.public_id}`"
+                    v-if="productPathFor(item.item)"
+                    :to="productPathFor(item.item)"
                     class="item-name"
                   >{{ item.item.item_name || 'Product' }}</RouterLink>
                   <span v-else class="item-name">{{ item.item?.item_name || 'Product' }}</span>

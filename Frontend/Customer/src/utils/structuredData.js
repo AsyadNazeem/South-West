@@ -16,6 +16,16 @@ export function setStructuredData(key, value) {
   script.textContent = JSON.stringify(value)
 }
 
+export function merchantReturnPolicySchema() {
+  return {
+    '@type': 'MerchantReturnPolicy',
+    applicableCountry: 'LK',
+    returnPolicyCategory:
+      'https://schema.org/MerchantReturnNotPermitted',
+    merchantReturnLink: `${SITE_URL}/returns`,
+  }
+}
+
 export function organizationSchema() {
   return {
     '@context': 'https://schema.org',
@@ -23,6 +33,7 @@ export function organizationSchema() {
     name: 'South West',
     url: SITE_URL,
     logo: `${SITE_URL}/SWLogo.webp`,
+    hasMerchantReturnPolicy: merchantReturnPolicySchema(),
   }
 }
 

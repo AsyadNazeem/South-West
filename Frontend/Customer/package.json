@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --ssrManifest && vite build --ssr scripts/render-information.mjs --outDir node_modules/.cache/southwest-information && node node_modules/.cache/southwest-information/render-information.mjs && node scripts/generate-sitemap.mjs",
+    "build": "vite build --ssrManifest && vite build --ssr scripts/render-information.mjs --outDir node_modules/.cache/southwest-information && node node_modules/.cache/southwest-information/render-information.mjs && node scripts/generate-sitemap.mjs && node scripts/homepageStructuredData.mjs",
     "preview": "vite preview",
     "sitemap:generate": "node scripts/generate-sitemap.mjs",
     "test": "node --test tests/*.test.mjs"
@@ -13,6 +13,7 @@
   "dependencies": {
     "axios": "^1.20.0",
     "dompurify": "^3.4.17",
+    "entities": "7.0.1",
     "lucide-vue-next": "^1.0.0",
     "vue": "^3.5.42",
     "vue-router": "^5.4.0"

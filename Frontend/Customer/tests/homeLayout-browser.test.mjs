@@ -20,6 +20,12 @@ test('late promotion data keeps the benefits strip in place at mobile and deskto
     const banners = Promise.withResolvers()
     await page.route('**/*', async route => {
       const url = new URL(route.request().url())
+      if (url.pathname.endsWith('/store/homepage-sections')) {
+        const data = ['hero_banner', 'shopping_benefits', 'just_for_you'].map((section_key, sort_order) => ({
+          section_key, sort_order, is_active: true,
+        }))
+        return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: { data } })
+      }
       if (url.origin === origin) {
         const file = url.pathname === '/' ? 'index.html' : url.pathname
         return route.fulfill({ path: path.join(dist, file) })

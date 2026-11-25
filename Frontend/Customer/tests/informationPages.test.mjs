@@ -12,7 +12,7 @@ const headings = {
   '/contact': 'Contact Us',
   '/faq': 'Frequently Asked Questions',
   '/shipping': 'Shipping Information',
-  '/returns': 'Returns & Refunds',
+  '/returns': 'Return and Warranty Policy',
   '/about': 'Technology Shopping, Made Simple',
   '/privacy-policy': 'Privacy Policy',
   '/terms': 'Terms & Conditions',
@@ -33,7 +33,12 @@ test('the seven information routes retain their sitemap entries and production r
 // Compare crawler-visible content (including closed FAQ answers), links, and all SEO tags.
 async function snapshot(page) {
   return page.evaluate(() => {
-    const main = document.querySelector('.information-page')
+    const main = document.querySelector('main.contact-page, main.information-page').cloneNode(true)
+    // Remote contact details and FAQ answers settle after mount. Assert their
+    // respective states separately, then compare the invariant page content.
+    main.querySelector('.status-panel')?.remove()
+    main.querySelector('.faq-state')?.remove()
+    main.querySelector('.faq-list')?.remove()
     return {
       text: main.textContent.replace(/\s+/g, ' ').trim(),
       links: Array.from(main.querySelectorAll('a'), link => [link.textContent.trim(), link.getAttribute('href')]),
@@ -75,6 +80,10 @@ test('information pages work before JavaScript, on refresh and through footer na
       if (route.request().method() === 'OPTIONS') return route.fulfill({
         status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' },
       })
+      if (url.pathname.endsWith('/store/faqs')) return route.fulfill({
+        headers: { 'access-control-allow-origin': '*' },
+        json: { data: [{ question: 'Fixture question?', answer: 'Fixture answer.' }] },
+      })
       if (url.hostname.startsWith('api.')) return route.fulfill({
         headers: { 'access-control-allow-origin': '*' }, json: { data: [] },
       })
@@ -83,12 +92,16 @@ test('information pages work before JavaScript, on refresh and through footer na
   }
   const sitemap = await readFile(path.join(root, 'dist/sitemap.xml'), 'utf8')
   for (const route of informationRoutes) {
+    const contact = route.path === '/contact'
+    const main = contact ? '.contact-page' : '.information-page'
+    const container = contact ? '.contact-shell' : '.information-container'
     const url = origin + route.path
     assert.equal(sitemap.split(`<loc>${site}${route.path}</loc>`).length, 2)
     const response = await staticPage.goto(url)
     assert.equal(response.status(), 200)
     assert.equal(staticPage.url(), url)
     assert.equal(await staticPage.locator('h1').textContent(), headings[route.path])
+    if (contact || route.path === '/faq') await staticPage.getByRole('status').first().waitFor()
     const expected = await snapshot(staticPage)
     assert.deepEqual(expected.canonical, [site + route.path])
     assert.equal(expected.title, route.meta.title)
@@ -98,14 +111,14 @@ test('information pages work before JavaScript, on refresh and through footer na
     assert.equal(meta['og:url'], site + route.path)
     assert.equal(meta['og:title'], route.meta.title)
     assert.equal(meta['og:description'], route.meta.description)
-    assert.equal(await staticPage.locator('.information-container').evaluate(el => getComputedStyle(el).maxWidth === '1040px' || el.clientWidth <= 1040), true)
+    assert.equal(await staticPage.locator(container).evaluate(el => getComputedStyle(el).maxWidth === '1040px' || el.clientWidth <= 1040), true)
     for (const [, href] of expected.links) {
-      assert.ok([...Object.keys(headings), '/', '/shop', '/account/orders'].includes(href), href)
+      assert.ok([...Object.keys(headings), '/', '/shop', '/account/orders', '/account/warranty-claims/new'].includes(href), href)
     }
     if (baseline) {
       await page.goto(baseline + route.path)
       await page.locator('.app-footer').waitFor()
-      await page.locator('.information-page').waitFor()
+      await page.locator(main).waitFor()
       assert.deepEqual(await snapshot(page), expected, 'Previous rendered page differs at ' + route.path)
     }
     for (const width of [375, 1440]) {
@@ -113,9 +126,15 @@ test('information pages work before JavaScript, on refresh and through footer na
       await page.goto(url)
       await page.reload()
       await page.locator('.app-footer').waitFor()
-      await page.locator('.information-page').waitFor()
+      await page.locator(main).waitFor()
+      if (contact) await page.getByText(/customer support email.*being finalised/).waitFor()
+      if (route.path === '/faq') {
+        const answer = page.locator('details', { hasText: 'Fixture question?' })
+        await answer.locator('summary').click()
+        assert.equal(await answer.locator('.faq-answer p').innerText(), 'Fixture answer.')
+      }
       assert.deepEqual(await snapshot(page), expected)
-      assert.ok(await page.locator('.information-page').evaluate(el => el.scrollWidth <= innerWidth))
+      assert.ok(await page.locator(main).evaluate(el => el.scrollWidth <= innerWidth))
     }
     const next = informationRoutes[(informationRoutes.indexOf(route) + 1) % informationRoutes.length]
     await page.locator(`.app-footer a[href="${next.path}"]`).first().click()

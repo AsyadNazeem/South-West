@@ -1,4 +1,5 @@
 <script setup>
+import { productPathFor } from '@/utils/productSeo.js'
 import {computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import api from '@/services/api.js'
@@ -180,9 +181,7 @@ function getSuggestionPrice(product) {
 }
 
 function getSuggestionLink(product) {
-  if (!product.slug || !product.public_id) return '/'
-
-  return `/product/${product.slug}-${product.public_id}`
+  return productPathFor(product) || '/'
 }
 
 function scheduleSearch() {
@@ -417,7 +416,7 @@ onUnmounted(() => {
         <span class="welcome">Welcome to South West</span>
 
         <nav class="top-links" aria-label="Utility navigation">
-          <RouterLink to="/" class="shop-link">Shop</RouterLink>
+          <RouterLink to="/shop" class="shop-link">Shop</RouterLink>
           <RouterLink
             to="/contact"
             class="help-link"

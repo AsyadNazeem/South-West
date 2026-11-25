@@ -1,4 +1,5 @@
 <script setup>
+import { productPathFor } from '@/utils/productSeo.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
@@ -194,14 +195,7 @@ const stockChip = computed(() => {
   return { tone: 'ok', text: 'In stock' }
 })
 
-const link = computed(() => {
-  const slug = props.product.slug
-  const publicId = props.product.public_id
-
-  if (!slug || !publicId) return '/'
-
-  return `/product/${slug}-${publicId}`
-})
+const link = computed(() => productPathFor(props.product) || '/')
 
 function formatPrice(value) {
   return `Rs. ${Number(value).toLocaleString('en-LK', { maximumFractionDigits: 0 })}`

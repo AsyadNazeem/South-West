@@ -1,9 +1,12 @@
 import { escapeHtml, updateMeta, updateCanonical } from './htmlMeta.mjs'
+import { removeHomepageOrganizationSchema } from './homepageStructuredData.mjs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { loadEnv } from 'vite'
+import { selectDefaultVariant } from '../src/utils/productOffer.js'
+import { productSchema as sharedProductSchema } from '../src/utils/structuredData.js'
 
-const SITE_URL = 'https://southwest.lk'
+import { productMetadata, productPathFor, SITE_ORIGIN as SITE_URL } from '../src/utils/productSeo.js'
 const env = loadEnv('production', process.cwd(), '')
 const apiBase = (process.env.VITE_API_URL || env.VITE_API_URL)?.replace(/\/+$/, '')
 
@@ -29,10 +32,6 @@ const staticPaths = [
 const urls = new Set(staticPaths)
 const seenCursors = new Set()
 const products = []
-
-const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i
-const uuidPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 async function fetchProducts() {
   let seed = ''
@@ -68,21 +67,11 @@ async function fetchProducts() {
     }
 
     for (const product of payload.data) {
-      const slug = String(product?.slug || '').trim()
-      const publicId = String(product?.public_id || '').trim()
-
-      if (
-        product?.is_active === false ||
-        !slugPattern.test(slug) ||
-        !uuidPattern.test(publicId)
-      ) {
-        continue
-      }
-
-      const path = `/product/${slug}-${publicId}`
+      const path = productPathFor(product)
+      if (product?.is_active === false || !path) continue
 
       urls.add(path)
-      products.push({ ...product, slug, publicId, path })
+      products.push({ ...product, path })
     }
 
     const pagination = payload.pagination
@@ -184,135 +173,6 @@ function cleanProductDescription(value) {
   return getPlainDescription(value).slice(0, 5000)
 }
 
-function createMetaDescription(product) {
-  const name = String(
-    product.item_name || product.name || product.product_name || 'Product'
-  ).trim()
-
-  const brand = String(
-    product.brand_name ||
-    (typeof product.brand === 'string' ? product.brand : product.brand?.name) ||
-    ''
-  ).trim()
-
-  const displayName =
-    brand && !name.toLowerCase().startsWith(brand.toLowerCase())
-      ? `${brand} ${name}`
-      : name
-
-  const excludedValue =
-    /\b(verify|depending on|varies by|varies depending|if included|where applicable|not specified|to be confirmed|tbc)\b|\bapprox(?:imately)?\b|~/i
-
-  const nameLower = name.toLowerCase()
-
-  const priorities = [
-    /^(processor|cpu)\s*:/i,
-    /^(sequential read speed|read speed)\s*:/i,
-    /^(memory speed|available speeds)\s*:/i,
-    /^(usb standard)\s*:/i,
-    /^(colour temperature|color temperature|cct)\s*:/i,
-    /^(led beads|led count|number of leds)\s*:/i,
-    /^(battery capacity)\s*:/i,
-    /^(display size|screen size|panel size)\s*:/i,
-    /^(storage|storage capacity|capacity)\s*:/i,
-    /^(ram)\s*:/i,
-    /^(form factor)\s*:/i,
-    /^(interface|connection|connectivity)\s*:/i,
-    /^(brightness|dimming)\s*:/i,
-  ]
-
-  const description = getPlainDescription(product.description)
-
-  const lines = description
-    .split('\n')
-    .map(line => line.replace(/^[\s•●▪\-]+/, '').trim())
-    .filter(Boolean)
-
-  const features = []
-
-  for (const pattern of priorities) {
-    const line = lines.find(item => pattern.test(item))
-    if (!line || excludedValue.test(line)) continue
-
-    const value = line.replace(/^[^:：]+[:：]\s*/, '').trim()
-    const valueLower = value.toLowerCase()
-
-    const titleNumbers = nameLower.match(/\d+(?:\.\d+)?/g) || []
-    const featureNumbers = valueLower.match(/\d+(?:\.\d+)?/g) || []
-
-    const numbersAlreadyInTitle =
-      featureNumbers.length > 0 &&
-      featureNumbers.every(number => titleNumbers.includes(number))
-
-    if (
-      !value ||
-      value.length > 65 ||
-      excludedValue.test(value) ||
-      nameLower.includes(valueLower) ||
-      numbersAlreadyInTitle ||
-      features.some(item => item.toLowerCase() === valueLower)
-    ) {
-      continue
-    }
-
-    features.push(value)
-
-    if (features.length === 2) break
-  }
-
-  const suffix = 'at South West Sri Lanka.'
-
-  const candidates = [
-    features.length === 2
-      ? `Shop ${displayName} featuring ${features.join(' and ')} ${suffix}`
-      : '',
-    features.length === 1
-      ? `Shop ${displayName} featuring ${features[0]} ${suffix}`
-      : '',
-  ].filter(Boolean)
-
-  for (const candidate of candidates) {
-    if (candidate.length <= 160) return candidate
-  }
-
-  if (description && !excludedValue.test(description)) {
-    const cleanDescription = description.replace(/\s+/g, ' ').trim()
-    const descriptiveCandidate = `${cleanDescription} ${suffix}`
-
-    if (descriptiveCandidate.length <= 160) {
-      return descriptiveCandidate
-    }
-
-    const availableLength = 157 - suffix.length
-    const truncatedDescription = cleanDescription
-      .slice(0, availableLength)
-      .replace(/[\s,;:.-]+$/, '')
-
-    return `${truncatedDescription}...`
-  }
-
-  const fallback = `Shop ${displayName} ${suffix}`
-
-  if (fallback.length <= 160) return fallback
-
-  const truncated = fallback.slice(0, 157)
-  const lastSpace = truncated.lastIndexOf(' ')
-
-  return `${truncated.slice(0, lastSpace > 100 ? lastSpace : 157).replace(/[\s,;:.-]+$/, '')}...`
-}
-function getProductImage(product) {
-  const primaryImage = Array.isArray(product.images)
-    ? product.images.find(image => image?.is_primary) || product.images[0]
-    : null
-
-  return (
-    product.image ||
-    product.image_url ||
-    primaryImage?.url ||
-    `${SITE_URL}/SWShareImage.png`
-  )
-}
-
 function getActualProductImage(product) {
   const primaryImage = Array.isArray(product.images)
     ? product.images.find(image => image?.is_primary) || product.images[0]
@@ -324,91 +184,6 @@ function getActualProductImage(product) {
     primaryImage?.url ||
     null
   )
-}
-
-function getProductSchema(product, variant, canonicalUrl, imageUrl) {
-  const priceSource = variant || product
-  const rawPrice =
-    priceSource?.selling_price ??
-    priceSource?.price ??
-    priceSource?.unit_price ??
-    priceSource?.sale_price ??
-    product.price
-
-  const price = Number(rawPrice)
-
-  if (!Number.isFinite(price) || price <= 0) return null
-
-  let parsedImage
-
-  try {
-    parsedImage = new URL(imageUrl)
-  } catch {
-    return null
-  }
-
-  if (parsedImage.protocol !== 'https:' || parsedImage.pathname === '/') {
-    return null
-  }
-
-  const stockSource = variant || product
-  const rawQuantity =
-    stockSource.available_quantity ??
-    stockSource.stock_quantity ??
-    stockSource.available_stock ??
-    stockSource.quantity_in_stock
-
-  const quantity =
-    rawQuantity !== null && rawQuantity !== undefined && rawQuantity !== ''
-      ? Number(rawQuantity)
-      : NaN
-
-  const hasStockInformation =
-    Number.isFinite(quantity) ||
-    typeof stockSource.in_stock === 'boolean'
-
-  if (!hasStockInformation) return null
-
-  const inStock =
-    stockSource.is_active !== false &&
-    stockSource.in_stock !== false &&
-    (Number.isFinite(quantity) ? quantity > 0 : stockSource.in_stock === true)
-
-  const brandName = String(
-    product.brand_name ||
-    (typeof product.brand === 'string' ? product.brand : product.brand?.name) ||
-    ''
-  ).trim()
-
-  const name = String(
-    product.item_name || product.name || product.product_name || ''
-  ).trim()
-
-  if (!name) return null
-
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'Product',
-    name,
-    description: cleanProductDescription(product.description),
-    image: parsedImage.href,
-    sku: product.item_code || product.sku || undefined,
-    brand: brandName
-      ? {
-          '@type': 'Brand',
-          name: brandName,
-        }
-      : undefined,
-    offers: {
-      '@type': 'Offer',
-      priceCurrency: 'LKR',
-      price: price.toFixed(2),
-      url: canonicalUrl,
-      availability: inStock
-        ? 'https://schema.org/InStock'
-        : 'https://schema.org/OutOfStock',
-    },
-  }
 }
 
 function createStaticProductData(product, variants) {
@@ -423,25 +198,14 @@ function createProductHtml(template, product, variant, variants) {
     product.item_name || product.name || product.product_name || 'Product'
   ).trim()
 
-  const title = `${name} | South West Sri Lanka`
-  const description = createMetaDescription(product)
-
-  const canonicalUrl = `${SITE_URL}${product.path}`
-
-  let imageUrl = getProductImage(product)
-
-  try {
-    imageUrl = new URL(imageUrl, SITE_URL).href
-  } catch {
-    imageUrl = `${SITE_URL}/SWShareImage.png`
-  }
+  const { title, description, canonicalUrl, image: imageUrl, type } = productMetadata(product)
 
   const productSchema = variant
-    ? getProductSchema(
+    ? sharedProductSchema(
         product,
-        variant,
         canonicalUrl,
-        getActualProductImage(product)
+        getActualProductImage(product),
+        variant
       )
     : null
 
@@ -482,7 +246,7 @@ function createProductHtml(template, product, variant, variants) {
 
   html = updateMeta(html, 'name', 'description', description)
   html = updateMeta(html, 'name', 'robots', 'index, follow')
-  html = updateMeta(html, 'property', 'og:type', 'product')
+  html = updateMeta(html, 'property', 'og:type', type)
   html = updateMeta(html, 'property', 'og:title', title)
   html = updateMeta(html, 'property', 'og:description', description)
   html = updateMeta(html, 'property', 'og:url', canonicalUrl)
@@ -499,13 +263,35 @@ function createProductHtml(template, product, variant, variants) {
         .replaceAll('>', '\\u003e')
         .replaceAll('&', '\\u0026')
 
-      return `<script type="application/ld+json">${json}</script>`
+      const key = schema === productSchema ? 'product' : 'breadcrumb'
+      return `<script id="southwest-jsonld-${key}" type="application/ld+json">${json}</script>`
     })
     .join('\n    ')
 
   const staticProductData = `<script id="southwest-product-data" type="application/json">${createStaticProductData(product, variants)}</script>`
 
+  const initialContent = `<main class="product-page" data-static-product-preview>
+      <nav class="breadcrumbs" aria-label="Breadcrumb">
+        <a href="/">Home</a>
+        <span aria-hidden="true">/</span>
+        <a href="/shop">Shop</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">${escapeHtml(name)}</span>
+      </nav>
+      <section class="state-message">
+        <h1>${escapeHtml(name)}</h1>
+        <p>Product details require JavaScript to load.</p>
+      </section>
+    </main>`
+
+  const appContainer = '<div id="app"></div>'
+
+  if (html.split(appContainer).length !== 2) {
+    throw new Error('Expected exactly one empty application container.')
+  }
+
   return html
+    .replace(appContainer, () => `<div id="app">${initialContent}</div>`)
     .replace('</head>', () => `    ${jsonLd}\n    ${staticProductData}\n</head>`)
 }
 
@@ -524,13 +310,10 @@ async function generateProductPages(template) {
     )
 
     for (const { product, variants } of results) {
-      const variant =
-        variants?.find(item => item.is_default === true) ||
-        variants?.[0] ||
-        null
+      const variant = selectDefaultVariant(variants)
 
-      const outputDirectory = resolve('dist', 'product', `${product.slug}-${product.publicId}`)
-      const outputFile = resolve(outputDirectory, 'index.html')
+      const outputDirectory = resolve('dist', 'product')
+      const outputFile = resolve('dist', '.' + product.path + '.html')
 
       await mkdir(outputDirectory, { recursive: true })
       await writeFile(
@@ -577,7 +360,9 @@ let generatedPages = 0
 let template = null
 
 try {
-  template = await readFile(distIndex, 'utf8')
+  template = removeHomepageOrganizationSchema(
+    await readFile(distIndex, 'utf8')
+  )
 } catch (error) {
   if (error.code !== 'ENOENT') throw error
 

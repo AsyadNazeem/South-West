@@ -1,11 +1,13 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '@/services/api'
+import { listingContent } from '@/router/listingContent.js'
 import {
   getResponsiveImageSrcSet,
   getResponsiveImageUrl,
 } from '@/utils/mediaUrl'
 
+const content = listingContent['/categories']
 const categories = ref([])
 const loading = ref(true)
 const error = ref('')
@@ -41,13 +43,13 @@ onMounted(loadCategories)
   <main class="directory-page">
     <div class="directory-container">
       <nav class="directory-breadcrumb">
-        <RouterLink to="/">Home</RouterLink><span>/</span><span>Categories</span>
+        <RouterLink to="/">Home</RouterLink><span>/</span><span>{{ content.breadcrumb }}</span>
       </nav>
 
       <header class="directory-heading">
-        <p class="directory-eyebrow">FIND WHAT YOU NEED</p>
-        <h1>Shop by Category</h1>
-        <p>Explore our product categories and discover what you're looking for.</p>
+        <p class="directory-eyebrow">{{ content.eyebrow }}</p>
+        <h1>{{ content.heading }}</h1>
+        <p>{{ content.description }}</p>
       </header>
 
       <div v-if="loading" class="directory-state">Loading categories...</div>

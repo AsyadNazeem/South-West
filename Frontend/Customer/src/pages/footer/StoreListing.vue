@@ -1,6 +1,8 @@
 <script setup>
+import { productPathFor } from '@/utils/productSeo.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { listingContent } from '@/router/listingContent.js'
 import api from '@/services/api'
 import ProductGrid from '@/components/products/ProductGrid.vue'
 import ProductSort from '@/components/products/ProductSort.vue'
@@ -59,25 +61,19 @@ function getCategoryIds(parentId) {
 }
 
 const isOffers = computed(() => route.path === '/offers')
-const title = computed(() => isOffers.value ? 'Special Offers' : 'All Products')
-const description = computed(() => isOffers.value
-  ? 'Explore products with active discounts and special prices.'
-  : 'Browse our complete collection of products.')
+const content = computed(() => listingContent[
+  isOffers.value ? '/offers' : '/shop'
+])
+const title = computed(() => content.value.heading)
+const description = computed(() => content.value.description)
 
 const visibleProducts = computed(() => products.value)
 
-function getStructuredProductPath(product) {
-  const slug = String(product?.slug || '').trim()
-  const publicId = String(product?.public_id || '').trim()
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(slug)) return ''
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(publicId)) return ''
-  return `/product/${slug}-${publicId}`
-}
 
 function updateItemListSchema() {
   const seen = new Set()
   const entries = products.value.flatMap(product => {
-    const path = getStructuredProductPath(product)
+    const path = productPathFor(product)
     const id = String(product?.public_id || '')
     if (!path || !id || seen.has(id)) return []
     seen.add(id)
@@ -233,7 +229,7 @@ onBeforeUnmount(() => setStructuredData('item-list', null))
 
       <header class="store-heading">
         <div>
-          <p class="store-eyebrow">SOUTH WEST STORE</p>
+          <p class="store-eyebrow">{{ content.eyebrow }}</p>
           <h1>{{ title }}</h1>
           <p>{{ description }}</p>
         </div>

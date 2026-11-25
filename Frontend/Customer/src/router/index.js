@@ -1,8 +1,10 @@
+import { listingMeta } from './listingMeta.js'
 
 import { createRouter, createWebHistory } from 'vue-router'
-import { setPageMeta } from '@/composables/usePageMeta'
+import { setPageMeta, uniqueCanonical } from '@/composables/usePageMeta'
 import { rememberCampaignParams, trackPageView } from '@/services/analytics'
 import {
+    productPublicId,
     isProductRouteIndexable,
     shouldPreserveStaticProductMeta,
 } from '@/utils/productSeo'
@@ -38,25 +40,25 @@ const routes = [
         path: '/shop',
         name: 'store-shop',
         component: StoreListing,
-        meta: { title: 'Shop products | South West Sri Lanka', description: 'Browse products available from South West, Sri Lanka.', index: true },
+        meta: listingMeta['/shop'],
     },
     {
         path: '/offers',
         name: 'store-offers',
         component: StoreListing,
-        meta: { title: 'Special offers | South West Sri Lanka', description: 'Explore current offers and discounted products at South West.', index: true },
+        meta: listingMeta['/offers'],
     },
     {
         path: '/categories',
         name: 'store-categories',
         component: Categories,
-        meta: { title: 'Shop by category | South West Sri Lanka', description: 'Explore product categories available from South West.', index: true },
+        meta: listingMeta['/categories'],
     },
     {
         path: '/brands',
         name: 'store-brands',
         component: Brands,
-        meta: { title: 'Shop by brand | South West Sri Lanka', description: 'Browse brands available at South West online store.', index: true },
+        meta: listingMeta['/brands'],
     },
 
     {
@@ -191,32 +193,51 @@ const routes = [
 
 
     ...informationRoutes,
+    { path: '/:pathMatch(.*)*', component: () => import('@/pages/NotFound.vue'), meta: { title: 'Page not found | South West', index: false } },
 ]
 
 const router = createRouter({
     history: createWebHistory(),
+    sensitive: true,
     routes,
     scrollBehavior() {
         return { top: 0 }
     },
 })
 
-router.afterEach((to) => {
+router.beforeEach(to => {
+    let path = to.path.replace(/\/+$/, '') || '/'
+    const lower = path.toLowerCase()
+    if (Object.hasOwn(listingMeta, lower) || informationRoutes.some(route => route.path === lower)) path = lower
+    const product = path.match(/^\/product\/([^/]+)$/i)
+    if (product && productPublicId(product[1])) path = '/product/' + product[1]
+    if (path !== to.path) return { path, query: to.query, hash: to.hash, replace: true }
+})
+
+router.afterEach((to, from) => {
     const index = to.meta.index === true && isProductRouteIndexable(to.query)
     const preserveStaticProductMeta = shouldPreserveStaticProductMeta({
         routeName: to.name,
         routePath: to.path,
         hasQuery: !isProductRouteIndexable(to.query),
-        canonicalHref: document.head.querySelector('link[rel="canonical"]')?.href,
+        canonicalHref: uniqueCanonical()?.href,
         ogType: document.head.querySelector('meta[property="og:type"]')?.content,
         robotsContent: document.head.querySelector('meta[name="robots"]')?.content,
     })
 
-    if (!preserveStaticProductMeta) {
+    // ProductDetails owns product metadata after lookup. Query-only navigation
+    // keeps that identity and updates the existing indexing policy.
+    if (to.name === 'product-details' && from.path === to.path) {
+        const robots = document.head.querySelector('meta[name="robots"]')
+        if (robots && document.head.querySelector('link[rel="canonical"]')) {
+            robots.content = index ? 'index, follow' : 'noindex, nofollow'
+        }
+    } else if (!preserveStaticProductMeta) {
         setPageMeta({
             title: to.meta.title || 'South West | Online Store',
             description: to.meta.description,
             path: to.path,
+            canonicalPath: to.name === 'product-details' || !to.meta.index ? null : to.path,
             index,
             type: to.name === 'product-details' ? 'product' : 'website',
         })

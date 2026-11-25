@@ -1,4 +1,5 @@
 <script setup>
+import { productPathFor } from '@/utils/productSeo.js'
 import AccountConfirmDialog from '@/components/account/AccountConfirmDialog.vue'
 import AccountPageHeader from '@/components/account/AccountPageHeader.vue'
 import { accountFeedback } from '@/utils/accountFeedback'
@@ -39,9 +40,7 @@ function isUnavailable(entry) {
 }
 
 function getProductUrl(item) {
-  if (!item?.slug || !item?.public_id) return null
-
-  return `/product/${encodeURIComponent(`${item.slug}-${item.public_id}`)}`
+  return productPathFor(item) || null
 }
 
 

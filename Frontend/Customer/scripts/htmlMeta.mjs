@@ -27,11 +27,19 @@ export function updateMeta(html, attribute, key, content) {
   return html.replace('</head>', () => `    ${tag}\n</head>`)
 }
 
+export function removeCanonical(html) {
+  return html.replace(
+    /<link\s+[^>]*\brel\s*=\s*(["'])([^"']*)\1[^>]*>/gi,
+    (tag, quote, rel) =>
+      rel.toLowerCase().split(/\s+/).includes('canonical')
+        ? ''
+        : tag
+  )
+}
+
 export function updateCanonical(html, canonicalUrl) {
-  const pattern = /<link\s+[^>]*rel=["']canonical["'][^>]*>/i
   const tag = `<link rel="canonical" href="${escapeHtml(canonicalUrl)}"/>`
 
-  return pattern.test(html)
-    ? html.replace(pattern, () => tag)
-    : html.replace('</head>', () => `    ${tag}\n</head>`)
+  return removeCanonical(html)
+    .replace('</head>', () => `    ${tag}\n</head>`)
 }

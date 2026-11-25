@@ -1,10 +1,6 @@
 ---
 deployment:
   tasks:
-    - /bin/bash -c 'source /home/southwes/nodevenv/southwest-backend/26/bin/activate && cd /home/southwes/southwest-repo/Frontend/Customer && npm ci --include=dev && VITE_API_URL=https://api.southwest.lk/api npm run build'
-    - /bin/bash -c 'source /home/southwes/nodevenv/southwest-backend/26/bin/activate && cd /home/southwes/southwest-repo/Frontend/Admin && npm ci --include=dev && VITE_API_URL=https://api.southwest.lk/api npm run build'
-    - export DEPLOYPATH=/home/southwes
-    - /bin/mkdir -p $DEPLOYPATH/public_html
-    - /bin/mkdir -p $DEPLOYPATH/public_html/admin
-    - /bin/cp -a /home/southwes/southwest-repo/Frontend/Customer/dist/. $DEPLOYPATH/public_html/
-    - /bin/cp -a /home/southwes/southwest-repo/Frontend/Admin/dist/. $DEPLOYPATH/public_html/admin/
+    # Git deployment is intentionally non-publishing pending verified LiteSpeed
+    # activation and rollback. Never overlay the customer or admin document root.
+    - /bin/bash -c 'echo "Customer activation is disabled. Use the reviewed customer release preparation and operator runbook." >&2; exit 1'

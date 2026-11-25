@@ -1,4 +1,5 @@
 <script setup>
+import { selectDefaultVariant } from '@/utils/productOffer.js'
 import {
   getResponsiveImageSrcSet,
   getResponsiveImageUrl,
@@ -13,7 +14,7 @@ import SimilarProducts from '@/components/products/SimilarProducts.vue'
 import { setPageMeta } from '@/composables/usePageMeta'
 import { trackAddToCart, trackProductView } from '@/services/analytics'
 import { breadcrumbSchema, productSchema, setStructuredData } from '@/utils/structuredData'
-import { isDefinitiveProductAbsence, isProductRouteIndexable } from '@/utils/productSeo'
+import { productMetadata, productPathFor, productPublicId, isDefinitiveProductAbsence, isProductRouteIndexable } from '@/utils/productSeo'
 import { readStaticProductData } from '@/utils/staticProductData'
 import { getWhatsAppLink } from '@/utils/whatsapp'
 
@@ -26,6 +27,25 @@ const wholesaleWhatsAppLink = computed(() => getWhatsAppLink(
 ))
 const loading = ref(true)
 const usingStaticProductData = ref(false)
+
+const initialProductName = computed(() => {
+  const publicId = productPublicId(
+    String(route.params.productSlug || '')
+  )
+
+  if (!publicId) return ''
+
+  const snapshot = readStaticProductData(publicId)
+
+  if (!snapshot) return ''
+
+  return String(
+    snapshot.item_name ||
+    snapshot.name ||
+    snapshot.product_name ||
+    ''
+  ).trim()
+})
 let latestProductLoadId = 0
 const error = ref('')
 const selectedImage = ref(0)
@@ -1402,18 +1422,7 @@ function getVariantsFromProduct(item) {
 
 
 function chooseDefaultVariant(item) {
-  const list = Array.isArray(item?.variants)
-    ? item.variants.filter(variant => variant.is_active !== false)
-    : []
-
-  const chosenVariant =
-    list.find(
-      variant =>
-        variant.is_default === true ||
-        variant.is_default === 1
-    ) ||
-    list.find(isVariantInStock) ||
-    list[0]
+  const chosenVariant = selectDefaultVariant(item?.variants)
 
   selectedVariantId.value = chosenVariant
     ? String(chosenVariant.id)
@@ -1476,10 +1485,13 @@ function onVariantChange() {
 }
 
 function markProductUnavailable() {
+  setStructuredData('product', null)
+  setStructuredData('breadcrumb', null)
   setPageMeta({
     title: 'Product not found | South West',
     description: 'This product could not be found or is no longer available.',
     path: route.path,
+    canonicalPath: null,
     index: false,
     type: 'product'
   })
@@ -1492,13 +1504,12 @@ function markProductUnavailable() {
 async function loadProduct() {
   const requestId = ++latestProductLoadId
   const productSlug = String(route.params.productSlug || '')
-  const publicIdMatch = productSlug.match(
-    /-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
-  )
-  const publicId = publicIdMatch?.[1]
+  const publicId = productPublicId(productSlug)
 
-  setStructuredData('product', null)
-  setStructuredData('breadcrumb', null)
+  if (!readStaticProductData(publicId)) {
+    setStructuredData('product', null)
+    setStructuredData('breadcrumb', null)
+  }
   loading.value = true
   usingStaticProductData.value = false
   error.value = ''
@@ -1542,6 +1553,14 @@ const found = publicId
       return
     }
     
+
+    const productPath = productPathFor(found)
+    if (!productPath) throw new Error('The product URL is temporarily unavailable.')
+    if (route.path !== productPath) {
+      await router.replace({ path: productPath, query: route.query, hash: route.hash })
+      // A changed slug starts a fresh load via the route watcher.
+      if (String(route.params.productSlug) !== productSlug) return
+    }
 
     // Load variants. Their colour is already included in this response.
     const variantsResponse = await api.get(
@@ -1588,17 +1607,10 @@ product.value = {
 }
 
 const seoName = product.value.item_name || product.value.name || product.value.product_name || 'Product'
-const seoDescription = String(product.value.description || `View ${seoName} at South West, Sri Lanka.`)
-  .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
-const productPath = `/product/${route.params.productSlug}`
 const productImage = getResponsiveImageUrl(product.value.image || product.value.image_url || product.value.images?.[0])
 setPageMeta({
-  title: `${seoName} | South West Sri Lanka`,
-  description: seoDescription,
-  path: productPath,
+  ...productMetadata(product.value),
   index: isProductRouteIndexable(route.query),
-  image: productImage || '/SWShareImage.png',
-  type: 'product'
 })
 
 // Select the default variant before generating Product structured data.
@@ -1660,6 +1672,13 @@ await Promise.all([
         }
         usingStaticProductData.value = true
         chooseDefaultVariant(staticProduct)
+        const fallbackPath = productPathFor(staticProduct)
+        if (fallbackPath && !document.head.querySelector('link[rel="canonical"]')) {
+          setPageMeta({
+            ...productMetadata(staticProduct),
+            index: isProductRouteIndexable(route.query),
+          })
+        }
         error.value = ''
         return
       }
@@ -1943,22 +1962,23 @@ onMounted(loadProduct)
 
 <template>
   <main class="product-page">
-    <div class="breadcrumbs">
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
       <RouterLink to="/">Home</RouterLink>
-      <span>/</span>
-      <span>Shop</span>
-      <span>/</span>
-      <span>{{ productName }}</span>
-    </div>
+      <span aria-hidden="true">/</span>
+      <RouterLink to="/shop">Shop</RouterLink>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">{{ productName }}</span>
+    </nav>
 
     <div v-if="loading" class="state-message">
+      <h1 v-if="initialProductName">{{ initialProductName }}</h1>
       Loading product details...
     </div>
 
     <div v-else-if="error" class="state-message error">
       <p>{{ error }}</p>
       <button type="button" @click="loadProduct">Try again</button>
-      <RouterLink to="/">Back to shop</RouterLink>
+      <RouterLink to="/shop">Back to shop</RouterLink>
     </div>
 
     <template v-else-if="product">

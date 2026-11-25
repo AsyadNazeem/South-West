@@ -112,7 +112,7 @@ test('generated product HTML embeds escaped public fallback data', async () => {
 
     assert.equal(result.status, 0, result.stderr)
     assert.equal(rerun.status, 0, rerun.stderr)
-    const html = await readFile(resolve(directory, 'dist/product/public-lamp-123e4567-e89b-12d3-a456-426614174000/index.html'), 'utf8')
+    const html = await readFile(resolve(directory, 'dist/product/public-lamp-123e4567-e89b-12d3-a456-426614174000.html'), 'utf8')
     assert.match(html, /id="southwest-product-data" type="application\/json"/)
     assert.doesNotMatch(html, /<\/script><script>alert\(1\)<\/script>/)
     assert.match(html, /\\u003c\/script\\u003e/)

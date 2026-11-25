@@ -36,6 +36,12 @@ test('product cards reuse primary gallery variants and preserve original-only sl
         const size = Number(url.pathname.match(/-(\d+)\.svg$/)[1])
         return route.fulfill({ contentType: 'image/svg+xml', body: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"/>` })
       }
+      if (url.pathname.endsWith('/store/homepage-sections')) {
+        const data = ['hero_banner', 'shopping_benefits', 'just_for_you'].map((section_key, sort_order) => ({
+          section_key, sort_order, is_active: true,
+        }))
+        return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: { data } })
+      }
       if (url.origin === origin) {
         return route.fulfill({ path: path.join(dist, url.pathname === '/' ? 'index.html' : url.pathname) })
       }

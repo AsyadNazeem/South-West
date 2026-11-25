@@ -25,6 +25,7 @@ defineProps({
         <p>{{ intro }}</p>
       </header>
 
+      <slot />
       <section v-if="faqItems" class="faq-list">
         <details v-for="(item, index) in faqItems" :key="item.q" class="faq-item">
           <summary>

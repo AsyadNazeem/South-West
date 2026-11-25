@@ -81,7 +81,7 @@ test('account routes at six widths and customer workflows', {
   const pages=[['','Welcome back'],['/orders?orderId=1','My orders'],['/warranty-claims','Warranty claims'],
     ['/warranty-claims/new','Submit warranty claim'],['/warranty-claims/1','Warranty claim details'],['/personal-information','My profile'],
     ['/addresses','Saved addresses'],['/change-password','Account security'],['/notifications','Notifications'],['/wishlist','Wishlist'],
-    ['/reviews','My reviews'],['/returns','Returns & cancellations']]
+    ['/reviews','My reviews'],['/returns','Warranty & Order Support']]
   for(const width of [320,375,430,768,1024,1440]){
     await page.setViewportSize({width,height:900})
     for(const [suffix,title] of pages){

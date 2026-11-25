@@ -1,4 +1,5 @@
 <script setup>
+import { productPathFor } from '@/utils/productSeo.js'
 import {
   getResponsiveImageSrcSet,
   getResponsiveImageUrl,
@@ -378,14 +379,13 @@ async function removeItem(item) {
 function openProduct(item) {
   const product = getProduct(item)
 
-  if (!product.slug || !product.public_id) {
+  const path = productPathFor(product)
+  if (!path) {
     error.value = 'Unable to open this product. Please refresh your cart.'
     return
   }
 
-  const productSlug = `${product.slug}-${product.public_id}`
-
-  router.push(`/product/${encodeURIComponent(productSlug)}`)
+  router.push(path)
 }
 
 function continueShopping() {
