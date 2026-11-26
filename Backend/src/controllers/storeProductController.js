@@ -974,7 +974,7 @@ async function getStoreProductVariants(req, res) {
                 id,
                 is_active: true,
             },
-            attributes: ['id', 'item_code', 'category_id', 'brand_id'],
+            attributes: ['id', 'item_code', 'category_id', 'brand_id', 'item_type_id'],
         });
 
         if (!item) {
@@ -1212,10 +1212,29 @@ color: colors[0] || null,
             })
         );
 
+        // Only names of ordered, configured Select dimensions are public.
+        // Variant values and commercial eligibility still come from the SKUs.
+        let preferredAttributes = [];
+        if (data.length > 1 && item.item_type_id) {
+            const assignments = await db.ItemTypeSpecification.findAll({
+                where: { item_type_id: item.item_type_id },
+                attributes: ['id'],
+                include: [{
+                    model: ItemSpecification, as: 'specification', required: true,
+                    attributes: ['name', 'options'],
+                    where: { is_active: true, data_type: 'select' },
+                }],
+                order: [['sort_order', 'ASC'], ['id', 'ASC']],
+            });
+            preferredAttributes = assignments
+                .filter(row => row.specification.options?.length)
+                .map(row => row.specification.name);
+        }
         return res.status(200).json({
             success: true,
             message: 'Store product variants retrieved successfully',
             data,
+            preferred_attributes: preferredAttributes,
         });
     } catch (error) {
         console.error('Get store product variants failed:', {

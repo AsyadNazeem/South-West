@@ -13,7 +13,7 @@ function response() {
     };
 }
 
-function loadController() {
+function loadController(withSecondVariant = false) {
     const variant = {
         id: 15,
         item_id: 9,
@@ -38,6 +38,7 @@ const item = {
     }],
 };
 
+    const variants = withSecondVariant ? [variant, { ...variant, id: 16, is_default: false }] : [variant];
     return proxyquire('../controllers/storeProductController', {
         '../models': {
 Item: {
@@ -53,7 +54,7 @@ Item: {
 },
             Brand: {}, Category: {}, Warranty: {},
             ItemVariant: {
-                async findAll() { return [variant]; },
+                async findAll() { return variants; },
                 async findByPk() { return { id: 15, colors: [] }; },
             },
 ItemPrice: {
@@ -78,6 +79,14 @@ ItemPrice: {
             ItemImage: {},
             ItemSpecificationValue: {},
             ItemSpecification: {},
+            ItemTypeSpecification: {
+                async findAll(query) {
+                    assert.equal(query.where.item_type_id, item.item_type_id);
+                    assert.deepEqual(query.include[0].where, { is_active: true, data_type: 'select' });
+                    return [{ specification: { name: 'Interface', options: [] } },
+                        { specification: { name: 'Connector Type', options: ['USB', '3.5MM'] } }];
+                }
+            },
             InventoryStock: {
                 async findAll() { return []; },
             },
@@ -103,7 +112,7 @@ ProductReview: {
         },
         '../utils/customerProductEligibility': {
             hasCustomerVisibleProduct: async () => true,
-            getEligibleCustomerVariantIds: async () => new Set(['15']),
+            getEligibleCustomerVariantIds: async () => new Set(variants.map(v => String(v.id))),
         },
 '../services/discountCampaignService': {
     getActiveCampaigns: async () => [],
@@ -141,4 +150,13 @@ test('direct customer variant endpoint exposes eligible never-stocked products a
     assert.equal(res.body.data[0].id, 15);
     assert.equal(res.body.data[0].available_quantity, 0);
     assert.equal(res.body.data[0].in_stock, false);
+});
+
+
+test('public variant response retains SKU rows and adds only ordered Select names with saved options', async () => {
+    const res = response();
+    await loadController(true).getStoreProductVariants({ params: { id: '9' } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.body.data.map(v => v.id), [15, 16]);
+    assert.deepEqual(res.body.preferred_attributes, ['Connector Type']);
 });

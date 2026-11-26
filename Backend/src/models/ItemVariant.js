@@ -1,6 +1,7 @@
 
 'use strict';
 
+const { validateVariantAssignments } = require('../services/specificationOptions');
 const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
@@ -96,6 +97,7 @@ ItemVariant.hasMany(models.ItemPaymentPrice, {
             sequelize,
             modelName: 'ItemVariant',
             tableName: 'item_variants',
+            hooks: { beforeSave: validateVariantAssignments },
             timestamps: true,
             createdAt: 'created_at',
             updatedAt: 'updated_at'

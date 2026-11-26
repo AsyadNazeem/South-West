@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/api/axios'
 
@@ -11,13 +11,16 @@ const errorMessage = ref('')
 
 const isEditMode = ref(false)
 const specificationId = ref(null)
+const original = ref(null)
+const optionsRequired = computed(() =>
+  original.value?.data_type !== 'select' || original.value.options.length > 0
+)
 
 const form = ref({
   name: '',
   code: '',
   data_type: 'text',
   unit: '',
-  options: [],
   optionsText: '',
   description: '',
   is_required: false,
@@ -46,13 +49,17 @@ const loadSpecification = async () => {
       return
     }
 
+    if (!Array.isArray(specification.options)) {
+      errorMessage.value = 'Stored predefined values could not be read. Review the definition before saving.'
+      return
+    }
+    original.value = specification
     form.value = {
       name: specification.name || '',
       code: specification.code || '',
       data_type: specification.data_type || 'text',
       unit: specification.unit || '',
-      options: Array.isArray(specification.options) ? specification.options : [],
-      optionsText: Array.isArray(specification.options) ? specification.options.join('\n') : '',
+      optionsText: specification.options.join('\n'),
       description: specification.description || '',
       is_required: Boolean(specification.is_required),
       is_active: Boolean(specification.is_active)
@@ -91,26 +98,44 @@ const submitForm = async () => {
       return
     }
 
-    const options = form.value.data_type === 'select'
-      ? [...new Set(form.value.optionsText.split(/\r?\n/).map(option => option.trim()).filter(Boolean))]
-      : []
+    const previous = original.value
+    if (isEditMode.value && !previous) return
 
-    if (form.value.data_type === 'select' && options.length === 0) {
-      errorMessage.value = 'Enter at least one predefined option for Select data type.'
-      return
-    }
-
+    const type = form.value.data_type
+    const typeChanged = previous && previous.data_type !== type
+    const replaceOptions = !previous || typeChanged || (
+      type === 'select' && form.value.optionsText !== previous.options.join('\n')
+    )
     const payload = {
       name: form.value.name.trim(),
-      data_type: form.value.data_type,
+      data_type: type,
       unit: form.value.unit.trim() || null,
-      options,
       description: form.value.description.trim() || null,
       is_required: form.value.is_required,
       is_active: form.value.is_active
     }
+    if (previous) {
+      for (const key of Object.keys(payload)) {
+        if (payload[key] === previous[key]) delete payload[key]
+      }
+    }
+    if (replaceOptions) {
+      const options = type === 'select'
+        ? [...new Set(form.value.optionsText.split(/\r?\n/).map(option => option.trim()).filter(Boolean))]
+        : []
+      if (type === 'select' && !options.length) {
+        errorMessage.value = 'Enter at least one predefined option for Select data type.'
+        return
+      }
+      payload.options = options
+      if (previous) payload.expected_options = previous.options
+    }
 
     if (isEditMode.value) {
+      if (!Object.keys(payload).length) {
+        goBack()
+        return
+      }
       await api.put(
           `/item-specifications/${specificationId.value}`,
           payload
@@ -321,7 +346,7 @@ onMounted(async () => {
           <!-- Predefined options for Select -->
           <div v-if="form.data_type === 'select'" class="form-group full-width">
             <label for="specification_options">
-              Predefined Options <span>*</span>
+              Predefined Options <span v-if="optionsRequired">*</span>
             </label>
             <textarea
               id="specification_options"
@@ -330,7 +355,7 @@ onMounted(async () => {
               maxlength="10000"
               placeholder="Enter one option per line, e.g.\n8GB\n16GB\n32GB"
               :disabled="loading"
-              required
+              :required="optionsRequired"
             ></textarea>
             <small>Enter one option per line. These values appear in a dropdown when creating or editing variants.</small>
           </div>
@@ -451,7 +476,7 @@ onMounted(async () => {
         <button
             type="submit"
             class="btn-primary"
-            :disabled="loading"
+            :disabled="loading || (isEditMode && !original)"
         >
           {{
             loading

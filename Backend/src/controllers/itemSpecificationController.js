@@ -3,6 +3,8 @@ const { ItemSpecification, ItemType, sequelize } = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
 const { Op, QueryTypes } = require('sequelize');
 
+const { guardDefinitionChange, SpecificationConflict } = require('../services/specificationOptions');
+
 const VALID_DATA_TYPES = [
     'text',
     'number',
@@ -46,7 +48,7 @@ const specificationValues = specification => ({
     code: specification.code,
     data_type: specification.data_type,
     unit: specification.unit ?? null,
-    options: Array.isArray(specification.options) ? specification.options : [],
+    options: specification.options,
     description: specification.description ?? null,
     is_required: specification.is_required,
     is_active: specification.is_active
@@ -60,7 +62,7 @@ const validateBody = (body, creating = false) => {
     }
 
     const unknownFields = Object.keys(body).filter(
-        field => !ALLOWED_FIELDS.includes(field)
+        field => !ALLOWED_FIELDS.includes(field) && (creating || field !== 'expected_options')
     );
 
     if (unknownFields.length) {
@@ -128,6 +130,15 @@ if (!creating && body.code !== undefined) {
         ) {
             errors.options = 'Options must be an array of up to 100 non-empty strings, each at most 100 characters';
         }
+    }
+
+    if (creating && body.data_type === 'select' && !body.options?.length) {
+        errors.options = 'A Select specification needs at least one predefined value';
+    }
+    if (!creating && body.expected_options !== undefined &&
+        (!Array.isArray(body.expected_options) || !body.expected_options.every(value => typeof value === 'string') ||
+         (body.options === undefined && body.data_type === undefined))) {
+        errors.expected_options = 'Supply the original option list with an intentional replacement';
     }
 
     for (const field of ['is_required', 'is_active']) {
@@ -395,7 +406,7 @@ const updateItemSpecification = async (req, res) => {
             changes.options = [...new Set(changes.options.map(option => option.trim()))];
         }
 
-        transaction = await sequelize.transaction();
+        transaction = await sequelize.transaction({ isolationLevel: 'READ COMMITTED' });
 
         const specification = await ItemSpecification.findByPk(id, {
             transaction,
@@ -444,6 +455,7 @@ const updateItemSpecification = async (req, res) => {
             }
         }
 
+        await guardDefinitionChange(specification, changes, req.body.expected_options, transaction);
         const oldValues = specificationValues(specification);
 
         await specification.update(changes, { transaction });
@@ -451,7 +463,7 @@ const updateItemSpecification = async (req, res) => {
         const newValues = specificationValues(specification);
 
         const changed = Object.keys(oldValues).some(
-            key => oldValues[key] !== newValues[key]
+            key => JSON.stringify(oldValues[key]) !== JSON.stringify(newValues[key])
         );
 
         if (changed) {
@@ -490,6 +502,8 @@ const updateItemSpecification = async (req, res) => {
                 message: 'A specification with this name or code already exists'
             });
         }
+
+        if (error instanceof SpecificationConflict) return res.status(409).json({ message: error.message });
 
         console.error('Update item specification error:', error);
 

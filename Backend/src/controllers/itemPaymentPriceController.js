@@ -79,7 +79,8 @@ const saveItemPaymentPrices = async (req, res) => {
             });
         }
 
-        const item = await Item.findByPk(Number(item_id), { transaction });
+        // Serialize method inserts with Edit All, including nullable item-level scopes.
+        const item = await Item.findByPk(Number(item_id), { transaction, lock: transaction.LOCK.UPDATE });
 
         if (!item) {
             await transaction.rollback();

@@ -536,7 +536,11 @@ const emit = defineEmits([
   overflow-y: auto;
   overflow-x: hidden;
 
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-item {

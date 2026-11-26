@@ -214,9 +214,10 @@ const cartItems = computed(() => {
   return Array.isArray(items) ? items : []
 })
 
+const summaryItems = computed(() => quote.value?.items?.length ? quote.value.items : cartItems.value)
+
 function getCheckoutAnalyticsItems() {
-  const source = quote.value?.items?.length ? quote.value.items : cartItems.value
-  return source.map(line => {
+  return summaryItems.value.map(line => {
     const product = line.item || line.Item || line.product || line.Product || line
     return analyticsItem(product, line.quantity ?? line.qty ?? 1)
   }).filter(item => item.item_id && item.quantity > 0)
@@ -470,9 +471,7 @@ if (!cartReady.value) return
 
   quoteLoading.value = true
 
-  const payload = {
-    payment_method: paymentMethod.value?.value || 'cash',
-  }
+  const payload = {}
 
   if (isGuest.value) {
     Object.assign(payload, {
@@ -490,6 +489,7 @@ if (!cartReady.value) return
     }
   }
 
+  payload.payment_method = paymentMethod.value?.value || 'cash'
   if (appliedPromoCode.value) {
     payload.promo_code = appliedPromoCode.value
   }
@@ -1542,50 +1542,10 @@ onMounted(loadCheckout)
         <aside class="panel summary">
           <h2>Order summary</h2>
 
-<ul
-  v-if="directPurchase && (quote?.items?.length || cartItems.length)"
-  class="summary-items"
->
-  <li class="summary-item">
-    <div class="summary-item-info">
-      <strong>
-        {{
-          quote?.items?.[0]?.item_name ||
-          lineName(cartItems[0]) ||
-          'Buy Now item'
-        }}
-      </strong>
-
-      <span class="muted">
-        Qty {{
-          quote?.items?.[0]?.quantity ??
-          lineQuantity(cartItems[0]) ??
-          '—'
-        }}
-      </span>
-    </div>
-
-    <span
-      v-if="
-        quote?.items?.[0]?.line_total != null ||
-        lineTotal(cartItems[0]) !== null
-      "
-      class="summary-item-total"
-    >
-      {{
-        formatPrice(
-          quote?.items?.[0]?.line_total ??
-          lineTotal(cartItems[0])
-        )
-      }}
-    </span>
-  </li>
-</ul>
-
-          <ul v-else-if="cartItems.length" class="summary-items">
+          <ul v-if="summaryItems.length" class="summary-items">
             <li
-              v-for="(line, index) in cartItems"
-              :key="line.id ?? index"
+              v-for="line in summaryItems"
+              :key="line.variant_id ?? line.id ?? line.item_id"
               class="summary-item"
             >
               <div class="summary-item-info">

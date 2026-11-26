@@ -1,5 +1,6 @@
 'use strict';
 
+const { readOptions } = require('../services/specificationOptions');
 const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
@@ -61,7 +62,10 @@ module.exports = (sequelize, DataTypes) => {
             options: {
                 type: DataTypes.JSON,
                 allowNull: false,
-                defaultValue: []
+                defaultValue: [],
+                get() {
+                    return readOptions(this.getDataValue('options'));
+                }
             },
 
             description: {

@@ -1,4 +1,5 @@
 <script setup>
+import { buildVariantChoices, choiceColors, chooseOption, isColorKey, normalizeAttributes, variantColors } from '@/utils/variantSelection.js'
 import { selectDefaultVariant } from '@/utils/productOffer.js'
 import {
   getResponsiveImageSrcSet,
@@ -55,9 +56,7 @@ const ZOOM_PANE_RATIO = 1.5 // pane width / height (landscape)
 const zoomPoint = ref({ x: 0.5, y: 0.5 })
 const mainImageRef = ref(null)
 const selectedVariantId = ref('')
-const selectedLength = ref('')
 const selectedColor = ref('')
-const selectedVariantGroupKey = ref('')
 const quantity = ref(1)
 const addingToCart = ref(false)
 const buyNowLoading = ref(false)
@@ -527,122 +526,6 @@ function formatReviewDate(value) {
 
 
 
-function getVariantLength(variant) {
-  const attributes = variant?.attributes || {}
-
-  const key = Object.keys(attributes).find(
-    key => /length/i.test(key)
-  )
-
-  const value = key ? attributes[key] : null
-
-  if (value == null || String(value).trim() === '') return ''
-
-  const length = String(value).trim()
-  return length.toLowerCase() === 'default' ? '' : length
-}
-
-function getVariantColour(variant) {
-  const value =
-    variant?.color?.color_name ||
-    variant?.color?.name ||
-    variant?.attributes?.color ||
-    ''
-
-  const colour = String(value).trim()
-  return colour.toLowerCase() === 'default' ? '' : colour
-}
-
-function getVariantColourHex(variant) {
-  const hex =
-    variant?.color?.hex_code ||
-    variant?.color?.hex ||
-    ''
-
-  if (!hex) return ''
-
-  const normalized = String(hex).startsWith('#')
-    ? String(hex)
-    : `#${hex}`
-
-  return /^#[0-9a-f]{3,8}$/i.test(normalized) ? normalized : ''
-}
-
-function isVariantInStock(variant) {
-  return (
-    variant.in_stock !== false &&
-    Number(variant.available_quantity) > 0
-  )
-}
-
-// Each active variant is a selectable product option.
-// Display the actual name and attributes saved in the database.
-function getColorEntries(variant) {
-  const rawColors = Array.isArray(variant?.colors)
-    ? variant.colors
-    : []
-
-  const entries = rawColors
-    .map(color => ({
-      name: String(
-        typeof color === 'string'
-          ? color
-          : color?.color_name || color?.name || ''
-      ).trim(),
-      hex: typeof color === 'object'
-        ? color.hex_code || color.hex || ''
-        : ''
-    }))
-    .filter(entry =>
-      entry.name &&
-      entry.name.toLowerCase() !== 'default'
-    )
-
-  const colorAttribute = Object.entries(variant?.attributes || {})
-    .find(([key]) => /colou?r/i.test(key))
-
-  // A comma-separated Color attribute represents one combined colour.
-  if (
-    colorAttribute &&
-    typeof colorAttribute[1] === 'string' &&
-    colorAttribute[1].includes(',')
-  ) {
-    const names = colorAttribute[1]
-      .split(',')
-      .map(name => name.trim())
-      .filter(Boolean)
-
-    if (names.length > 1) {
-      return [{
-        name: names.join(' + '),
-        hex: ''
-      }]
-    }
-  }
-
-  if (entries.length) return entries
-
-  const name = typeof variant?.color === 'string'
-    ? variant.color
-    : variant?.color?.color_name ||
-      variant?.color?.name ||
-      colorAttribute?.[1] ||
-      ''
-
-  return String(name)
-    .split(',')
-    .map(value => value.trim())
-    .filter(value =>
-      value && value.toLowerCase() !== 'default'
-    )
-    .map(value => ({
-      name: value,
-      hex: typeof variant?.color === 'object'
-        ? variant.color.hex_code || variant.color.hex || ''
-        : ''
-    }))
-}
-
 function getColorHex(name, suppliedHex = '') {
   if (suppliedHex) {
     const hex = String(suppliedHex).startsWith('#')
@@ -672,260 +555,25 @@ function getColorHex(name, suppliedHex = '') {
   return colors[String(name || '').trim().toLowerCase()] || '#e5e7eb'
 }
 
-const colorOptions = computed(() => {
-  const unique = new Map()
-
-  for (const variant of variants.value) {
-    for (const color of getColorEntries(variant)) {
-      const key = color.name.toLowerCase()
-      if (!unique.has(key)) {
-        unique.set(key, {
-          name: color.name,
-          hex: getColorHex(color.name, color.hex)
-        })
-      }
-    }
-  }
-
-  return [...unique.values()]
-})
-
-const variantOptions = computed(() =>
-  variants.value.map(variant => {
-    const attributes =
-      variant.attributes &&
-      typeof variant.attributes === 'object' &&
-      !Array.isArray(variant.attributes)
-        ? Object.entries(variant.attributes).filter(
-            ([key, value]) =>
-              String(key).trim() &&
-              !/colou?r/i.test(key) &&
-              value != null &&
-              String(value).trim() &&
-              String(value).trim().toLowerCase() !== 'default'
-          )
-        : []
-
-    const colors = getColorEntries(variant).map(color => color.name)
-
-    return {
-      id: String(variant.id),
-      name: variant.variant_name || 'Unnamed variant',
-      attributes,
-      colors,
-      sku: variant.variant_sku || '',
-      inStock: isVariantInStock(variant)
-    }
-  })
-)
-
-const variantsForSelectedColor = computed(() => {
-  if (!colorOptions.value.length) return variantOptions.value
-
-  return variantOptions.value.filter(option =>
-    option.colors.some(
-      color => color.toLowerCase() === selectedColor.value.toLowerCase()
-    )
-  )
-})
-
-// Group real SKUs by their non-colour attributes so the customer
-// chooses the specification/length first and the colour second.
-
-const hasMultipleLengths = computed(() => {
-  const lengths = new Set(
-    variants.value
-      .map(getVariantLength)
-      .filter(Boolean)
-      .map(length => length.toLowerCase())
-  )
-
-  return lengths.size > 1
-})
-
-const hasMultipleConfigurations = computed(() => {
-  if (hasMultipleLengths.value) return true
-
-  const signatures = new Set(
-    variants.value.map(variant => {
-      const attributes =
-        variant.attributes &&
-        typeof variant.attributes === 'object' &&
-        !Array.isArray(variant.attributes)
-          ? Object.entries(variant.attributes)
-              .filter(([key, value]) =>
-                String(key).trim() &&
-                !/colou?r/i.test(key) &&
-                value != null &&
-                String(value).trim() &&
-                String(value).trim().toLowerCase() !== 'default'
-              )
-              .sort(([a], [b]) => a.localeCompare(b))
-          : []
-
-      return JSON.stringify({
-        name: String(variant.variant_name || '').trim().toLowerCase(),
-        attributes
-      })
-    })
-  )
-
-  return signatures.size > 1
-})
-
-// Group variants by length only. If there is zero or one distinct length,
-// all colour variants belong to one group and no length cards are displayed.
-const variantChoices = computed(() => {
-  const options = variantOptions.value
-  if (!options.length) return []
-
-  // Compare attribute values consistently, ignoring colour and descriptive
-  // metadata that should not create separate customer selections.
-  const ignoredKeys = new Set([
-    'color',
-    'colors',
-    'model',
-    'condition',
-    'compatibility',
-    'sku',
-    'variant sku',
-    'variant name'
-  ])
-
-  const normalise = value =>
-    String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
-
-  const getAttributes = option => {
-    const variant = variants.value.find(
-      item => String(item.id) === String(option.id)
-    )
-
-    const attributes = variant?.attributes ?? option.attributes ?? {}
-
-    if (Array.isArray(attributes)) {
-      return Object.fromEntries(
-        attributes
-          .filter(entry => entry && entry.name)
-          .map(entry => [entry.name, entry.value])
-      )
-    }
-
-    return attributes && typeof attributes === 'object'
-      ? attributes
-      : {}
-  }
-
-  const attributeEntries = options.map(option => {
-    const attributes = getAttributes(option)
-
-    return {
-      option,
-      attributes: Object.entries(attributes).filter(([key, value]) =>
-        !ignoredKeys.has(normalise(key)) &&
-        value !== null &&
-        value !== undefined &&
-        String(value).trim() !== ''
-      )
-    }
-  })
-
-  // Only attributes that genuinely vary between variants become selectors.
-  const allKeys = [
-    ...new Set(
-      attributeEntries.flatMap(entry =>
-        entry.attributes.map(([key]) => key)
-      )
-    )
-  ]
-
-  const varyingKeys = allKeys.filter(key => {
-    const values = new Set(
-      attributeEntries.map(entry => {
-        const pair = entry.attributes.find(
-          ([attributeName]) => normalise(attributeName) === normalise(key)
-        )
-        return normalise(pair?.[1])
-      })
-    )
-
-    return values.size > 1
-  })
-
-  // If no meaningful attribute differs, use variant names only when those
-  // names actually differ. Otherwise the variants are colour choices only.
-  const useVariantName =
-    varyingKeys.length === 0 &&
-    new Set(options.map(option => normalise(option.name))).size > 1
-
-  const groups = new Map()
-
-  for (const entry of attributeEntries) {
-    const { option, attributes } = entry
-
-    const selectedAttributes = varyingKeys.map(key => {
-      const pair = attributes.find(
-        ([attributeName]) => normalise(attributeName) === normalise(key)
-      )
-
-      return [key, pair?.[1] ?? '']
-    })
-
-    const key = varyingKeys.length
-      ? JSON.stringify(selectedAttributes.map(([name, value]) => [
-          normalise(name),
-          normalise(value)
-        ]))
-      : useVariantName
-        ? `name:${normalise(option.name)}`
-        : 'all-colours'
-
-    if (!groups.has(key)) {
-      const specs = selectedAttributes.map(([attributeName, value]) => ({
-        label: formatAttributeLabel(attributeName),
-        value: formatMeasure(attributeName, value)
-      }))
-
-      let name = 'Available colours'
-
-      if (specs.length) {
-        name = specs.map(spec => spec.value).filter(Boolean).join(' · ') || option.name
-      } else if (useVariantName) {
-        name = option.name
-      }
-
-      groups.set(key, { key, name, specs, options: [] })
-    }
-
-    groups.get(key).options.push(option)
-  }
-
-  return [...groups.values()].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { numeric: true })
-  )
-})
-
-// Cards show only the name (e.g. "DDR4 · 2666 MHz"), without the spec label lines.
-const displayChoices = computed(() =>
-  variantChoices.value.map(choice => ({ ...choice, specs: [] }))
-)
-
+const picker = computed(() => buildVariantChoices(variants.value, product.value?.preferred_attributes))
+const selectedVariantChoice = computed(() => picker.value.choices.find(choice =>
+  choice.options.some(option => option.id === selectedVariantId.value)
+))
+const colorsForSelectedVariant = computed(() => choiceColors(selectedVariantChoice.value))
 const variantSelectorLabel = computed(() => {
-  const labels = variantChoices.value[0]?.specs.map(spec => spec.label) || []
-
-  if (labels.length === 1) return `Choose ${labels[0].toLowerCase()}`
-
-  return labels.length > 1 ? 'Choose configuration' : 'Choose variant'
+  const labels = picker.value.labels
+  return labels.length ? labels.join(' · ') : 'Choose variant'
 })
 
 const selectedVariantSpecs = computed(() => {
-  const attributes = selectedVariant.value?.attributes
+  const attributes = normalizeAttributes(selectedVariant.value?.attributes)
 
   if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) return []
 
   return Object.entries(attributes)
     .filter(([key, value]) =>
       String(key).trim() &&
-      !/colou?r/i.test(key) &&
+      !isColorKey(key) &&
       value != null &&
       String(value).trim() &&
       String(value).trim().toLowerCase() !== 'default'
@@ -937,91 +585,19 @@ const selectedVariantSpecs = computed(() => {
 })
 
 
-const selectedVariantChoice = computed(() =>
-  variantChoices.value.find(
-    choice => choice.key === selectedVariantGroupKey.value
-  ) ||
-  variantChoices.value.find(choice =>
-    choice.options.some(option =>
-      String(option.id) === String(selectedVariantId.value)
-    )
-  ) ||
-  variantChoices.value[0] ||
-  null
-)
-
-const colorsForSelectedVariant = computed(() => {
-  const choice = selectedVariantChoice.value
-  if (!choice) return colorOptions.value.map(color => ({
-    ...color,
-    available: false
-  }))
-
-  return colorOptions.value.map(color => {
-    const matching = choice.options.filter(option =>
-      option.colors.some(
-        name => name.toLowerCase() === color.name.toLowerCase()
-      )
-    )
-
-    return {
-      ...color,
-      available: matching.some(option => option.inStock),
-      exists: matching.length > 0
-    }
-  })
-})
-
 function selectVariantChoice(key) {
-  const choice = variantChoices.value.find(group => group.key === key)
-  if (!choice) return
-
-  selectedVariantGroupKey.value = choice.key
-
-  const matchingColor = choice.options.find(option =>
-    option.colors.some(
-      color => color.toLowerCase() === selectedColor.value.toLowerCase()
-    ) && option.inStock
-  )
-
-  const chosen =
-    matchingColor ||
-    choice.options.find(option => option.inStock) ||
-    choice.options[0]
-
-  if (chosen) {
-    selectedVariantId.value = chosen.id
-    const chosenColor = chosen.colors.find(
-      color => color.toLowerCase() === selectedColor.value.toLowerCase()
-    )
-    if (!chosenColor && chosen.colors.length) {
-      selectedColor.value = chosen.colors[0]
-    }
-  }
-
-  quantity.value = 1
-  cartMessage.value = ''
-  cartError.value = ''
+  const choice = picker.value.choices.find(group => group.key === key)
+  const option = chooseOption(choice, selectedColor.value)
+  if (!option) return
+  selectedVariantId.value = option.id
+  const matching = option.colors.find(color => color.name.toLowerCase() === selectedColor.value.toLowerCase())
+  selectedColor.value = (matching || option.colors[0]).name
 }
 
 function selectAvailableColor(color) {
-  const choice = selectedVariantChoice.value
-  if (!choice) return
-
-  const matching = choice.options.filter(option =>
-    option.colors.some(
-      name => name.toLowerCase() === color.name.toLowerCase()
-    )
-  )
-
-  const chosen = matching.find(option => option.inStock)
-  if (!chosen) return
-
+  if (!color.available) return
   selectedColor.value = color.name
-  selectedVariantId.value = chosen.id
-  quantity.value = 1
-  cartMessage.value = ''
-  cartError.value = ''
+  selectedVariantId.value = color.id
 }
 
 function getColorSwatchStyle(color) {
@@ -1057,7 +633,7 @@ const selectedColour = computed(() => {
       if (names.length) return names.join(' and ')
     }
 
-    return getVariantColour(selectedVariant.value)
+    return variantColors(selectedVariant.value).map(color => color.name).join(' and ')
   }
 
   return String(product.value?.color || '').trim()
@@ -1077,10 +653,9 @@ const displayedSku = computed(() =>
 
 const paymentPrices = computed(() => {
   const data =
-    selectedVariant.value?.payment_prices ||
-    selectedVariant.value?.paymentPrices ||
-    product.value?.payment_prices ||
-    {}
+    (selectedVariant.value
+      ? selectedVariant.value.payment_prices || selectedVariant.value.paymentPrices
+      : product.value?.payment_prices) || {}
 
   const getPrice = (...keys) => {
     for (const key of keys) {
@@ -1410,73 +985,11 @@ function getProductList(payload) {
   return null
 }
 
-function getVariantsFromProduct(item) {
-  return Array.isArray(item?.variants)
-    ? item.variants.filter(variant => variant.is_active !== false)
-    : []
-}
-
-// --------------------------------------------------
-// Variant selection
-// --------------------------------------------------
-
-
 function chooseDefaultVariant(item) {
-  const chosenVariant = selectDefaultVariant(item?.variants)
-
-  selectedVariantId.value = chosenVariant
-    ? String(chosenVariant.id)
-    : ''
-
-  const chosenOption = chosenVariant
-    ? variantOptions.value.find(option => option.id === String(chosenVariant.id))
-    : null
-
-  if (chosenOption) {
-    const choice = variantChoices.value.find(group =>
-      group.options.some(option => option.id === chosenOption.id)
-    )
-    selectedVariantGroupKey.value = choice?.key || ''
-  } else {
-    selectedVariantGroupKey.value = ''
-  }
-
-  const firstColor = chosenVariant
-    ? getColorEntries(chosenVariant)[0]?.name || ''
-    : ''
-
-  selectedColor.value = firstColor
+  const variant = selectDefaultVariant(item?.variants)
+  selectedVariantId.value = variant ? String(variant.id) : ''
+  selectedColor.value = variantColors(variant)[0]?.name || ''
 }
-
-function selectColor(colorName) {
-  selectedColor.value = colorName
-
-  const matchingVariants = variants.value.filter(variant =>
-    getColorEntries(variant).some(
-      color => color.name.toLowerCase() === colorName.toLowerCase()
-    )
-  )
-
-  const chosen =
-    matchingVariants.find(isVariantInStock) ||
-    matchingVariants[0]
-
-  selectedVariantId.value = chosen ? String(chosen.id) : ''
-  quantity.value = 1
-  cartMessage.value = ''
-  cartError.value = ''
-}
-
-function selectVariant(variantId) {
-  const chosenVariant = variants.value.find(
-    variant => String(variant.id) === String(variantId)
-  )
-
-  if (chosenVariant) {
-    selectedVariantId.value = String(chosenVariant.id)
-  }
-}
-
 
 function onVariantChange() {
   quantity.value = 1
@@ -1519,8 +1032,6 @@ async function loadProduct() {
   selectedImage.value = 0
   selectedVariantId.value = ''
   selectedColor.value = ''
-  selectedVariantGroupKey.value = ''
-  selectedLength.value = ''
   quantity.value = 1
 
   try {
@@ -1578,33 +1089,13 @@ const found = publicId
     // IMPORTANT:
     // Do not request the colour endpoint again here.
     // Doing so can overwrite a valid colour with null.
-    const variantsWithColors = variantsPayload.map(variant => {
-      let attributes = variant.attributes
-
-      if (typeof attributes === 'string') {
-        try {
-          attributes = JSON.parse(attributes)
-        } catch {
-          attributes = {}
-        }
-      }
-
-      return {
-        ...variant,
-        attributes:
-          attributes && typeof attributes === 'object' && !Array.isArray(attributes)
-            ? attributes
-            : {},
-        color: variant.color || null
-      }
-    })
-
-    
-
-product.value = {
-  ...found,
-  variants: variantsWithColors
-}
+    product.value = {
+      ...found,
+      preferred_attributes: variantsResponse.data?.preferred_attributes || [],
+      variants: variantsPayload.map(variant => ({
+        ...variant, attributes: normalizeAttributes(variant.attributes)
+      }))
+    }
 
 const seoName = product.value.item_name || product.value.name || product.value.product_name || 'Product'
 const productImage = getResponsiveImageUrl(product.value.image || product.value.image_url || product.value.images?.[0])
@@ -1780,11 +1271,7 @@ async function addToCart() {
     trackAddToCart(product.value, quantity.value, price.value)
 
     const variantDescription = selectedVariant.value
-      ? ` (${getVariantLength(selectedVariant.value)}${
-          getVariantColour(selectedVariant.value)
-            ? `, ${getVariantColour(selectedVariant.value)}`
-            : ''
-        })`
+      ? ` (${selectedVariant.value.variant_name || displayedSku.value})`
       : ''
 
     cartMessage.value =
@@ -2157,13 +1644,13 @@ onMounted(loadProduct)
 
 
 <VariantSelector
-  v-if="variantChoices.length"
+  v-if="variants.length > 1 && (picker.choices.length > 1 || colorsForSelectedVariant.length > 1)"
   :label="variantSelectorLabel"
-  :choices="displayChoices"
-  :show-choices="hasMultipleConfigurations && variantChoices.some(choice => choice.specs.length > 0)"
+  :choices="picker.choices"
+  :show-choices="picker.choices.length > 1"
   :selected-key="selectedVariantChoice?.key || ''"
   :selected-name="selectedVariantChoice?.name || ''"
-  :colors="colorOptions.length > 1 ? colorsForSelectedVariant : []"
+  :colors="colorsForSelectedVariant.length > 1 ? colorsForSelectedVariant : []"
   :selected-color="selectedColor"
   :swatch-style="getColorSwatchStyle"
   @select-choice="selectVariantChoice"
@@ -2172,6 +1659,10 @@ onMounted(loadProduct)
 
 <div class="payment-prices">
   <div class="payment-grid">
+    <div v-if="selectedVariant && price > 0 && !paymentPrices.some(option => option.id === 'cash' && option.price === price)" class="payment-card">
+      <span class="payment-label">SELLING PRICE</span>
+      <strong class="payment-amount">{{ formatPrice(price) }}</strong>
+    </div>
     <div
       v-for="option in paymentPrices"
       :key="option.id"

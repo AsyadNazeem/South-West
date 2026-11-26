@@ -1,310 +1,179 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '@/api/axios'
+import { hasPermission } from '@/auth/authorization'
 
 const route = useRoute()
-const router = useRouter()
+const data = ref(null)
+const groups = ref([])
+const busy = ref(false)
+const error = ref('')
+const failedVariant = ref(undefined)
+const success = ref('')
+const methods = { cash: 'COD', card: 'Card', koko: 'Koko', mintpay: 'Mintpay' }
+const endpoint = computed(() => '/item-prices/item/' + route.params.itemId + '/management')
 
-const itemId = Number(route.params.itemId)
-const loading = ref(true)
-const saving = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
-const item = ref(null)
-const rows = ref([])
+function draft(group, kind, type, saved = {}, currency = 'LKR') {
+  const row = {
+    kind, type, variant_id: group.id, id: saved.id ?? null,
+    price: saved.price ?? '', currency: saved.currency ?? currency, is_active: saved.is_active ?? true
+  }
+  if (kind === 'schedule') {
+    row.effective_from = saved.effective_from ?? null
+    row.effective_to = saved.effective_to ?? null
+  }
+  return { ...row, original: JSON.stringify(row) }
+}
 
-const methods = [
-  { key: 'cash', label: 'COD' },
-  { key: 'card', label: 'Card' },
-  { key: 'koko', label: 'KOKO' },
-  { key: 'mintpay', label: 'Mintpay' }
-]
-
-const itemName = computed(() => item.value?.item_name || 'Item')
-
-const validPrice = value =>
-  value !== '' &&
-  value !== null &&
-  value !== undefined &&
-  /^\d{1,13}(?:\.\d{1,2})?$/.test(String(value)) &&
-  Number.isFinite(Number(value)) &&
-  Number(value) >= 0
-
-async function loadPaymentPrices(row) {
-  if (row.price_type !== 'selling' || !row.variant_id) return
-
-  const response = await api.get('/item-payment-prices', {
-    params: {
-      item_id: itemId,
-      variant_id: row.variant_id
+function loadState(snapshot) {
+  data.value = snapshot
+  const variants = [...snapshot.variants]
+  if ([...snapshot.prices, ...snapshot.payments].some(row => row.variant_id === null))
+    variants.push({ id: null, variant_name: 'Item-level prices', is_active: true })
+  groups.value = variants.map(group => {
+    const own = row => String(row.variant_id) === String(group.id)
+    const schedules = snapshot.prices.filter(own).map(p => draft(group, 'schedule', p.price_type.toLowerCase(), p))
+    const saved = snapshot.payments.filter(own)
+    const payments = saved.map(p => draft(group, 'payment', p.payment_method, p))
+    for (const type of Object.keys(methods)) {
+      if (!saved.some(p => p.payment_method === type))
+        payments.push(draft(group, 'payment', type, {}, schedules.find(r => r.type === 'selling')?.currency))
     }
+    return { ...group, schedules, payments, source: '' }
   })
-
-  for (const payment of response.data.data || []) {
-    if (Object.prototype.hasOwnProperty.call(row.payment_prices, payment.payment_method)) {
-      row.payment_prices[payment.payment_method] = String(payment.price)
-      row.payment_active[payment.payment_method] = Boolean(payment.is_active)
-    }
-  }
 }
 
-async function loadPrices() {
-  loading.value = true
-  errorMessage.value = ''
-
+watch(endpoint, async path => {
+  busy.value = true
+  data.value = null
+  groups.value = []
+  success.value = error.value = ''
   try {
-    if (!Number.isInteger(itemId) || itemId <= 0) {
-      throw new Error('Invalid item ID.')
-    }
+    const response = await api.get(path)
+    if (path === endpoint.value) loadState(response.data.data)
+  } catch (e) {
+    if (path === endpoint.value) error.value = e.response?.data?.message || 'Unable to retrieve prices.'
+  } finally { if (path === endpoint.value) busy.value = false }
+}, { immediate: true })
 
-    const response = await api.get('/item-prices')
-    const allPrices = response.data.data || []
+const missing = group => ['selling', 'cost'].filter(type => !group.schedules.some(row => row.type === type))
+function expired(row) {
+  const end = JSON.parse(row.original).effective_to
+  return Boolean(row.id && end && Date.parse(end) < Date.now())
+}
+const copySources = computed(() => {
+  const now = Date.now()
+  return (data.value?.prices ?? []).filter(p => p.price_type.toLowerCase() === 'selling' && p.is_active && Number(p.price) > 0 &&
+    (!p.effective_from || Date.parse(p.effective_from) <= now) && (!p.effective_to || Date.parse(p.effective_to) >= now) &&
+    data.value.variants.some(v => v.id === p.variant_id && v.is_active))
+})
 
-    const itemPrices = allPrices.filter(
-      price => Number(price.item_id ?? price.item?.id) === itemId
-    )
-
-    if (!itemPrices.length) {
-      throw new Error('No existing prices were found for this item.')
-    }
-
-    item.value = itemPrices[0].item || {
-      item_name: 'Item',
-      item_code: ''
-    }
-
-    rows.value = itemPrices.map(price => ({
-      id: price.id,
-      variant_id: price.variant_id ?? price.variant?.id ?? null,
-      variant_name: price.variant?.variant_name || 'Variant',
-      variant_sku: price.variant?.variant_sku || '-',
-      price_type: price.price_type || 'selling',
-      price: String(price.price ?? ''),
-      currency: price.currency || 'LKR',
-      effective_from: price.effective_from
-        ? String(price.effective_from).slice(0, 10)
-        : '',
-      effective_to: price.effective_to
-        ? String(price.effective_to).slice(0, 10)
-        : '',
-      is_active: Boolean(price.is_active),
-      payment_prices: {
-        cash: '',
-        card: '',
-        koko: '',
-        mintpay: ''
-      },
-      payment_active: {
-        cash: true,
-        card: true,
-        koko: true,
-        mintpay: true
-      }
-    }))
-
-    for (const row of rows.value) {
-      await loadPaymentPrices(row)
-    }
-  } catch (error) {
-    console.error('Failed to load item prices:', error)
-    errorMessage.value =
-      error.response?.data?.message ||
-      error.message ||
-      'Failed to load item prices.'
-  } finally {
-    loading.value = false
+function copy(group) {
+  const source = copySources.value.find(p => p.id === group.source)
+  if (!source || source.variant_id === group.id) return
+  let selling = group.schedules.find(row => row.type === 'selling')
+  if (selling?.id) return
+  if (!selling) { selling = draft(group, 'schedule', 'selling'); group.schedules.push(selling) }
+  selling.price = source.price
+  selling.currency = source.currency
+  for (const row of group.payments.filter(row => !row.id)) {
+    const p = data.value.payments.find(p => p.variant_id === source.variant_id && p.payment_method === row.type &&
+      p.currency === source.currency && p.is_active)
+    row.price = p?.price ?? ''
+    row.currency = source.currency
   }
 }
 
-async function saveAll() {
-  errorMessage.value = ''
-  successMessage.value = ''
+const changes = computed(() => groups.value.flatMap(group => [...group.schedules, ...group.payments])
+  .flatMap(({ original, ...row }) => {
+    if (!row.id && row.price === '') return []
+    return JSON.stringify(row) === original ? [] : [row]
+  }))
 
-  if (!rows.value.length) {
-    errorMessage.value = 'There are no prices to update.'
-    return
-  }
+function setTime(row, key, value) {
+  row[key] = value ? new Date(value + 'Z').toISOString() : null
+}
 
-  for (const row of rows.value) {
-    if (!validPrice(row.price)) {
-      errorMessage.value = `Enter a valid price for ${row.variant_sku}.`
-      return
-    }
-
-    if (
-      row.effective_from &&
-      row.effective_to &&
-      row.effective_to < row.effective_from
-    ) {
-      errorMessage.value = `Effective To cannot be before Effective From for ${row.variant_sku}.`
-      return
-    }
-
-    if (row.price_type === 'selling') {
-      const values = Object.values(row.payment_prices)
-      const hasAnyPaymentPrice = values.some(value => value !== '')
-
-      if (hasAnyPaymentPrice && !values.every(validPrice)) {
-        errorMessage.value =
-          `Complete all four checkout prices for ${row.variant_sku}, or leave them all blank.`
-        return
-      }
-    }
-  }
-
-  if (!confirm(`Save ${rows.value.length} existing price records for ${itemName.value}?`)) {
-    return
-  }
-
-  saving.value = true
-
+async function save() {
+  if (busy.value || !changes.value.length) return
+  const path = endpoint.value
+  busy.value = true
+  success.value = error.value = ''
+  failedVariant.value = undefined
   try {
-    for (const row of rows.value) {
-      // Update the existing record only. Never create a new price here.
-      await api.put(`/item-prices/${row.id}`, {
-        price: Number(row.price),
-        currency: row.currency.trim().toUpperCase(),
-        price_type: row.price_type,
-        effective_from: row.effective_from || null,
-        effective_to: row.effective_to || null,
-        is_active: row.is_active
-      })
-
-      if (
-        row.price_type === 'selling' &&
-        Object.values(row.payment_prices).some(value => value !== '')
-      ) {
-        await api.post('/item-payment-prices/bulk', {
-          item_id: itemId,
-          variant_id: row.variant_id,
-          currency: row.currency.trim().toUpperCase(),
-          prices: methods.map(method => ({
-            payment_method: method.key,
-            price: Number(row.payment_prices[method.key]),
-            is_active: row.payment_active[method.key]
-          }))
-        })
-      }
-    }
-
-    successMessage.value = 'All item prices updated successfully.'
-    await new Promise(resolve => setTimeout(resolve, 600))
-    await router.push('/admin/products/item-prices')
-  } catch (error) {
-    console.error('Failed to save item prices:', error)
-    errorMessage.value =
-      error.response?.data?.message ||
-      'A save failed. Reload the page to verify which records were updated.'
-    await loadPrices()
-  } finally {
-    saving.value = false
-  }
+    const response = await api.put(path, { revision: data.value.revision, changes: changes.value })
+    if (path !== endpoint.value) return
+    loadState(response.data.data)
+    success.value = 'Prices saved.'
+  } catch (e) {
+    if (path !== endpoint.value) return
+    failedVariant.value = e.response?.data?.variant_id
+    error.value = e.response?.data?.message || 'Unable to save prices.'
+  } finally { if (path === endpoint.value) busy.value = false }
 }
-
-onMounted(loadPrices)
 </script>
 
 <template>
-  <div class="edit-prices-page">
+  <main class="edit-prices-page">
     <header class="page-header">
-      <div>
-        <h1>Edit All Prices</h1>
-        <p>{{ itemName }} — update each variant independently.</p>
-      </div>
-      <button type="button" class="secondary-button" :disabled="saving" @click="router.push('/admin/products/item-prices')">
-        Cancel
-      </button>
+      <div><h1>Edit All Item Prices</h1><p v-if="data">{{ data.item.item_code }} · {{ data.item.item_name }}</p></div>
+      <RouterLink class="secondary-button" :to="{ name: 'product-price' }">Back to item prices</RouterLink>
     </header>
-
-    <p v-if="errorMessage" class="message error">{{ errorMessage }}</p>
-    <p v-if="successMessage" class="message success">{{ successMessage }}</p>
-    <p v-if="loading" class="message">Loading existing prices...</p>
-
-    <form v-else @submit.prevent="saveAll">
-      <div v-for="row in rows" :key="row.id" class="price-card">
-        <div class="variant-heading">
-          <div>
-            <h2>{{ row.variant_name }}</h2>
-            <p>{{ row.variant_sku }} · Price record #{{ row.id }}</p>
+    <p v-if="error" role="alert" class="message error">{{ error }}</p>
+    <p v-if="success" role="status" class="message success">{{ success }}</p>
+    <p v-if="busy && !data">Loading prices…</p>
+    <form v-if="data" @submit.prevent="save">
+      <p v-if="!groups.length">This item has no variants or item-level prices.</p>
+      <section v-for="group in groups" :key="group.id ?? 'item'" class="price-card">
+        <div class="variant-heading"><div>
+          <h2>{{ group.variant_name }}</h2>
+          <p>{{ group.variant_sku }} <span v-if="group.is_default"> · Default variant</span><span v-if="!group.is_active"> · Inactive variant</span></p>
+        </div></div>
+        <p v-if="error && failedVariant === group.id" class="error">{{ error }}</p>
+        <fieldset :disabled="busy || !group.is_active">
+          <div v-for="schedule in group.schedules" :key="schedule.id ?? schedule.type" class="checkout-section">
+            <h3>{{ schedule.type }} price <small v-if="expired(schedule)"> · Expired</small><small v-else-if="!schedule.id"> · New</small></h3>
+            <fieldset class="fields" :disabled="Boolean(expired(schedule))">
+              <label>Amount<input v-model="schedule.price" type="text" inputmode="decimal" :required="Boolean(schedule.id)" pattern="[0-9]{1,13}([.][0-9]{1,2})?"></label>
+              <label>Currency<input v-model="schedule.currency" required pattern="[A-Za-z]{3}" maxlength="3"></label>
+              <label v-for="(label, key) in {effective_from:'Valid from (UTC)', effective_to:'Valid until (UTC)'}" :key="key">{{ label }}
+                <input type="datetime-local" step="1" :value="schedule[key]?.slice(0,19)" @input="setTime(schedule,key,$event.target.value)">
+              </label>
+              <label>Status<select v-model="schedule.is_active"><option :value="true">Active</option><option :value="false">Inactive</option></select></label>
+            </fieldset>
           </div>
-          <label class="status-field">
-            <input v-model="row.is_active" type="checkbox" :disabled="saving">
-            Active
-          </label>
-        </div>
-
-        <div class="fields">
-          <label>
-            Price Type
-            <select v-model="row.price_type" :disabled="saving">
-              <option value="selling">Selling</option>
-              <option value="retail">Retail</option>
-              <option value="wholesale">Wholesale</option>
-              <option value="cost">Cost</option>
-              <option value="special">Special</option>
-            </select>
-          </label>
-
-          <label>
-            Price
-            <input v-model="row.price" type="number" min="0" step="0.01" required :disabled="saving">
-          </label>
-
-          <label>
-            Currency
-            <select v-model="row.currency" :disabled="saving">
-              <option value="LKR">LKR</option>
-              <option value="USD">USD</option>
-              <option value="AED">AED</option>
-              <option value="EUR">EUR</option>
-              <option value="GBP">GBP</option>
-            </select>
-          </label>
-
-          <label>
-            Effective From
-            <input v-model="row.effective_from" type="date" :disabled="saving">
-          </label>
-
-          <label>
-            Effective To
-            <input v-model="row.effective_to" type="date" :disabled="saving">
-          </label>
-        </div>
-
-        <div v-if="row.price_type === 'selling'" class="checkout-section">
-          <h3>Checkout Payment Prices</h3>
-          <div class="fields">
-            <label v-for="method in methods" :key="method.key">
-              {{ method.label }}
-              <input
-                v-model="row.payment_prices[method.key]"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Leave all blank to keep unchanged"
-                :disabled="saving"
-              >
-            </label>
+          <div v-if="group.id && missing(group).length" class="missing">
+            <p>Missing {{ missing(group).join(' and ') }} price{{ missing(group).length > 1 ? 's' : '' }}</p>
+            <button v-if="group.is_active && hasPermission('products.create')" type="button" class="secondary-button"
+              @click="group.schedules.push(...missing(group).map(t => draft(group,'schedule',t)))">{{ missing(group).length === 2 ? 'Add Prices' : 'Add Missing Price' }}</button>
           </div>
-          <p class="hint">Checkout prices are specific to this variant. Leave all four blank to keep them unchanged.</p>
-        </div>
-      </div>
-
-      <footer class="form-actions">
-        <button type="button" class="secondary-button" :disabled="saving" @click="router.push('/admin/products/item-prices')">
-          Cancel
-        </button>
-        <button type="submit" class="primary-button" :disabled="saving || !rows.length">
-          {{ saving ? 'Saving...' : `Save All (${rows.length})` }}
-        </button>
-      </footer>
+          <div v-if="group.id && group.is_active && hasPermission('products.create') && !group.schedules.some(schedule => schedule.id && schedule.type === 'selling') && copySources.some(payment => payment.variant_id !== group.id)" class="fields">
+            <label>Copy prices from<select v-model="group.source" @change="copy(group)">
+              <option disabled value="">Choose a variant</option>
+              <option v-for="source in copySources.filter(source => source.variant_id !== group.id)" :key="source.id" :value="source.id">
+                {{ data.variants.find(variant => variant.id === source.variant_id).variant_sku }} · {{ source.currency }} {{ source.price }}
+              </option>
+            </select></label>
+          </div>
+          <div v-if="group.schedules.some(schedule => schedule.type === 'selling') || group.payments.some(payment => payment.id)" class="checkout-section">
+            <h3>Checkout-method prices</h3>
+            <div v-for="payment in group.payments" :key="payment.id ?? payment.type" class="fields payment">
+              <label>{{ methods[payment.type] }}<input v-model="payment.price" inputmode="decimal" placeholder="Missing price" pattern="[0-9]{1,13}([.][0-9]{1,2})?" :required="Boolean(payment.id)"></label>
+              <label>Currency<input v-model="payment.currency" required pattern="[A-Za-z]{3}" maxlength="3"></label>
+              <label>Status<select v-model="payment.is_active"><option :value="true">Active</option><option :value="false">Inactive</option></select></label>
+            </div>
+          </div>
+        </fieldset>
+      </section>
+      <footer class="form-actions"><button class="primary-button" :disabled="busy || !changes.length">Save All Prices</button></footer>
     </form>
-  </div>
+  </main>
 </template>
-
 <style scoped>
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.payment, .missing { margin: 12px 0; }
+h3::first-letter { text-transform: uppercase; }
 .edit-prices-page { padding: 24px; color: var(--color-text-primary); }
 .page-header, .variant-heading, .form-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .page-header { margin-bottom: 24px; }

@@ -1,5 +1,6 @@
 'use strict';
 
+const { validateItemAssignment } = require('../services/specificationOptions');
 const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
@@ -55,6 +56,7 @@ module.exports = (sequelize, DataTypes) => {
             sequelize,
             modelName: 'ItemSpecificationValue',
             tableName: 'item_specification_values',
+            hooks: { beforeSave: validateItemAssignment },
             timestamps: true,
             createdAt: 'created_at',
             updatedAt: 'updated_at'

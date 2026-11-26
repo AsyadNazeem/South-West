@@ -1,6 +1,7 @@
 
 'use strict';
 
+const { SpecificationConflict } = require('../services/specificationOptions');
 const { Op } = require('sequelize');
 const {
     sequelize,
@@ -426,6 +427,8 @@ const variant = await ItemVariant.create({
             });
         }
 
+        if (error instanceof SpecificationConflict) return res.status(409).json({ message: error.message });
+
         console.error('Create item variant error:', error);
 
         return res.status(500).json({
@@ -742,6 +745,8 @@ const bulkCreateItemVariants = async (req, res) => {
             });
         }
 
+        if (error instanceof SpecificationConflict) return res.status(409).json({ message: error.message });
+
         console.error('Bulk create item variants error:', error);
 
         return res.status(500).json({
@@ -912,6 +917,8 @@ if (variantNameChanged || !variant.variant_sku) {
                 message: 'This variant SKU already exists'
             });
         }
+
+        if (error instanceof SpecificationConflict) return res.status(409).json({ message: error.message });
 
         console.error('Update item variant error:', error);
 

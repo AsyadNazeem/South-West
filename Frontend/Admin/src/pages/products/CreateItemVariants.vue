@@ -108,6 +108,7 @@ function normalizeSpecificationOptions(value) {
   if (typeof value === 'string' && value.trim()) {
     try {
       const parsed = JSON.parse(value)
+      if (parsed === null) return []
       if (Array.isArray(parsed)) return parsed.map(option => String(option).trim()).filter(Boolean)
     } catch {
       // Older/manual records may contain newline-separated options.
@@ -976,6 +977,12 @@ onMounted(async () => {
                     :disabled="saving || specificationsLoading"
                   >
                     <option value="">Select...</option>
+                    <option
+                      v-if="variant.attributes[spec.name] && !spec.options.includes(variant.attributes[spec.name])"
+                      :value="variant.attributes[spec.name]"
+                    >
+                      {{ variant.attributes[spec.name] }} (existing value)
+                    </option>
                     <option
                       v-for="option in spec.options"
                       :key="option"

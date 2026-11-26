@@ -2,8 +2,8 @@
 import { computed } from 'vue'
 
 /*
- * choices: [{ key, name, specs: [{ label, value }], options: [{ inStock }] }]
- * colors:  [{ name, hex, available }]
+ * choices: [{ key, name, options: [{ inStock }] }]
+ * colors:  [{ id, name, hex, available }]
  */
 const props = defineProps({
   label: { type: String, default: 'Choose variant' },
@@ -20,9 +20,6 @@ const emit = defineEmits(['select-choice', 'select-color'])
 
 const isChoiceAvailable = choice =>
   choice.options.some(option => option.inStock)
-
-const choiceCaption = choice =>
-  choice.specs.map(spec => spec.label).join(' · ')
 
 const isColorSelected = color =>
   props.selectedColor.toLowerCase() === color.name.toLowerCase()
@@ -96,12 +93,12 @@ const hasChoices = computed(() => props.showChoices && props.choices.length > 0)
           }"
           :disabled="!color.available"
           :aria-pressed="isColorSelected(color)"
-          :aria-label="color.name + (!color.available ? ', unavailable for this option' : '')"
-          :title="color.name + (!color.available ? ' - unavailable for this option' : '')"
+          :aria-label="(color.name || 'No colour') + (!color.available ? ', unavailable for this option' : '')"
+          :title="(color.name || 'No colour') + (!color.available ? ' - unavailable for this option' : '')"
           @click="emit('select-color', color)"
         >
           <span class="vs-swatch-circle" :style="swatchStyle(color)"></span>
-          <span class="vs-swatch-name">{{ color.name }}</span>
+          <span class="vs-swatch-name">{{ color.name || 'No colour' }}</span>
         </button>
 
       </div>

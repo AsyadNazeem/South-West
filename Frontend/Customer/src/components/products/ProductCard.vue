@@ -739,10 +739,10 @@ onBeforeUnmount(() => {
   z-index: 2;
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 0 4px;
+  padding: 0 3px;
   border-radius: var(--radius-pill);
-  background: rgb(0 0 0 / 38%);
+  background: rgb(0 0 0 / 45%);
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
 
@@ -751,37 +751,51 @@ onBeforeUnmount(() => {
 }
 
 .image-indicator {
-  display: grid;
-  place-items: center;
-  flex: 0 0 12px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
   height: 16px;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
   transition: flex-basis var(--transition-fast);
 }
 
+/* Invisible, larger tap area: the dot stays small */
+.image-indicator::before {
+  position: absolute;
+  inset: -10px 0;
+  content: '';
+}
+
 .image-indicator::after {
-  width: 5px;
-  height: 5px;
+  display: block;
+  flex: none;
+  width: 6px;
+  height: 6px;
   border-radius: var(--radius-pill);
-  background: rgb(255 255 255 / 70%);
+  background: rgb(255 255 255 / 85%);
   content: '';
   transition: width var(--transition-fast), height var(--transition-fast), background var(--transition-fast);
 }
 
 .image-indicator.faded::after {
-  width: 3px;
-  height: 3px;
+  width: 4px;
+  height: 4px;
 }
 
 .image-indicator.active {
-  flex-basis: 18px;
+  flex-basis: 22px;
 }
 
 .image-indicator.active::after {
-  width: 12px;
+  width: 14px;
   background: #fff;
 }
 
@@ -790,10 +804,11 @@ onBeforeUnmount(() => {
   outline-offset: -2px;
 }
 
-/* Touch screens: a slightly bigger tap area */
+/* Touch screens: wider and taller tap area, same small dots */
 @media (pointer: coarse) {
-  .image-indicator { flex-basis: 16px; height: 22px; }
-  .image-indicator.active { flex-basis: 22px; }
+  .image-indicator { flex-basis: 20px; height: 20px; }
+  .image-indicator.active { flex-basis: 26px; }
+  .image-indicator::before { inset: -12px 0; }
 }
 
 /* ---------- Uploaded campaign frame overlays ---------- */

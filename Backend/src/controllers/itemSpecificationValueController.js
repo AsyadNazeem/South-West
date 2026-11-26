@@ -1,5 +1,6 @@
 'use strict';
 
+const { SpecificationConflict } = require('../services/specificationOptions');
 const {
     sequelize,
     ItemSpecificationValue,
@@ -196,6 +197,7 @@ const loadAndValidatePair = async (
 };
 
 const handleControllerError = (res, message, error) => {
+    if (error instanceof SpecificationConflict) return res.status(409).json({ message: error.message });
     console.error(`${message}:`, error);
 
     if (

@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { findPaymentPrice } = require('../services/checkoutPaymentPrice');
 const {
     sendOrderConfirmationEmail,
     sendAdminNewOrderEmail
@@ -20,6 +21,7 @@ const {
     Item,
     ItemVariant,
     ItemPrice,
+    ItemPaymentPrice,
     ItemImage,
     InventoryStock,
     InventoryLocation,
@@ -252,7 +254,7 @@ async function resolveVariant(itemId, variantId, transaction) {
     return { variant };
 }
 
-async function validateCartItems(items, transaction) {
+async function validateCartItems(items, transaction, paymentMethod = null) {
     items = parseStoredCartItems(items);
 
     if (
@@ -388,7 +390,21 @@ async function validateCartItems(items, transaction) {
             );
         }
 
-        const unitPrice = Number(price.price);
+        let unitPrice = Number(price.price);
+        if (paymentMethod) {
+            const methodPrice = await findPaymentPrice(ItemPaymentPrice, item.id, variant.id, paymentMethod, transaction);
+            // Cash checkout historically accepts the current selling price.
+            // Prepaid methods require an explicitly configured price for this SKU.
+            if (methodPrice || paymentMethod !== 'cash') {
+                unitPrice = Number(methodPrice?.price);
+                if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+                    throw createCheckoutError(
+                        `No valid ${paymentMethod} price is configured for ${item.item_name} (${variant.variant_name}).`,
+                        409
+                    );
+                }
+            }
+        }
 
         let bestDiscount = null;
 
@@ -415,6 +431,7 @@ async function validateCartItems(items, transaction) {
             variant_id: variant.id,
             quantity: Number(entry.quantity),
             unit_price: unitPrice,
+            ...(paymentMethod ? { line_total: money((unitPrice - (bestDiscount?.discount_amount || 0)) * entry.quantity) } : {}),
             available_quantity: available,
             item_name: item.item_name,
             images: item.images ?? [],
@@ -982,7 +999,8 @@ async function quoteGuestCheckout(req, res) {
 
             const items = await validateCartItems(
                 session.cart_items,
-                transaction
+                transaction,
+                paymentMethod
             );
 
             let subtotal = 0;
@@ -1532,7 +1550,8 @@ async function checkoutGuest(req, res) {
 
         const validatedItems = await validateCartItems(
             sessionItems,
-            transaction
+            transaction,
+            paymentMethod
         );
 
         let subtotal = 0;

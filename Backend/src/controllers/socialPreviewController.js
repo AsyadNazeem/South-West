@@ -118,7 +118,7 @@ async function getProductSocialPreview(req, res) {
         const description = plainText(product.description) ||
             `Discover ${product.item_name} at South West.`;
 
-        const canonicalSlug = slug;
+        const canonicalSlug = `${product.slug}-${product.public_id}`;
         const canonicalUrl = new URL(
             `/product/${encodeURIComponent(canonicalSlug)}`,
             `${SITE_ORIGIN}/`

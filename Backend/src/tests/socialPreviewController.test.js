@@ -81,12 +81,13 @@ test('generates product-specific Open Graph and Twitter metadata', async () => {
 
     const { getProductSocialPreview } = loadController(state);
     const req = {
-        params: { slug: `kingston-fury-${UUID}` },
+        params: { slug: `previous-name-${UUID}` },
     };
     const res = responseMock();
 
     await getProductSocialPreview(req, res);
 
+    assert.doesNotMatch(res.body, /previous-name/);
     assert.equal(res.statusCode, 200);
     assert.equal(res.contentType, 'html');
     assert.match(res.body, /property="og:title"/);

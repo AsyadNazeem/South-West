@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { findPaymentPrice } = require('../services/checkoutPaymentPrice');
 const { Op } = require('sequelize');
 const db = require('../models');
 const { recordAuditLog } = require('../services/auditLogService');
@@ -430,38 +431,12 @@ async function getPaymentMethodPrice(
 ) {
     const { ItemPaymentPrice } = require('../models');
 
-    const commonWhere = {
-        item_id: itemId,
-        payment_method: paymentMethod,
-        currency: CURRENCY,
-        is_active: true
-    };
-
-    // Prefer a price configured for this exact variant.
     if (variantId != null) {
-        const variantPrice = await ItemPaymentPrice.findOne({
-            where: {
-                ...commonWhere,
-                variant_id: variantId
-            },
-            order: [['id', 'DESC']],
-            transaction
-        });
-
-        if (variantPrice) {
-            return variantPrice;
-        }
+        const price = await findPaymentPrice(ItemPaymentPrice, itemId, variantId, paymentMethod, transaction);
+        if (price) return price;
     }
 
-    // If no variant price exists, try the item-level price.
-    const itemPrice = await ItemPaymentPrice.findOne({
-        where: {
-            ...commonWhere,
-            variant_id: null
-        },
-        order: [['id', 'DESC']],
-        transaction
-    });
+    const itemPrice = await findPaymentPrice(ItemPaymentPrice, itemId, null, paymentMethod, transaction);
 
     if (itemPrice) {
         return itemPrice;
@@ -851,6 +826,7 @@ totalWeightKg += weightKg * itemQuantity;
 items.push({
     item_id: item.id,
     variant_id: variant.id,
+    variant_name: variant.variant_name,
     item_name: item.item_name,
     quantity: itemQuantity,
     unit_price: unitPrice,
