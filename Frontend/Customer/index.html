@@ -2,6 +2,66 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8"/>
+    <script>
+        // Resolve the current storefront theme before Vue renders.
+        (() => {
+            const root = document.documentElement
+            const controller = new AbortController()
+
+            root.setAttribute('data-theme-pending', '')
+
+            // Fail open if the application bundle cannot initialize.
+            window.__websiteThemeRevealTimer = setTimeout(() => {
+                root.removeAttribute('data-theme-pending')
+            }, 5000)
+
+            const timeout = setTimeout(() => {
+                controller.abort()
+            }, 3000)
+
+            window.__websiteThemePromise = Promise.resolve()
+                .then(() => {
+                    const apiUrl = '%VITE_API_URL%'.replace(/\/$/, '')
+                    return fetch(apiUrl + '/store/website-theme/active', {
+                        cache: 'no-store',
+                        credentials: 'omit',
+                        signal: controller.signal
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Theme request failed')
+                    }
+
+                    return response.json()
+                })
+                .then(payload => {
+                    if (!payload || !Object.prototype.hasOwnProperty.call(payload, 'data')) {
+                        throw new Error('Invalid theme response')
+                    }
+
+                    const theme = payload.data
+
+                    if (theme !== null && (
+                        typeof theme !== 'object' ||
+                        Array.isArray(theme) ||
+                        typeof theme.slug !== 'string'
+                    )) {
+                        throw new Error('Invalid theme configuration')
+                    }
+
+                    return { ok: true, theme }
+                })
+                .catch(() => ({ ok: false, theme: null }))
+                .finally(() => clearTimeout(timeout))
+        })()
+    </script>
+    <style>
+        html[data-theme-pending] #app {
+            visibility: hidden;
+        }
+    </style>
+
     <link rel="icon" type="image/png" href="/Favicon.png"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <meta name="description" content="Shop products by category and brand at South West, Sri Lanka."/>

@@ -309,7 +309,7 @@ const routes = [
             {
                 path: 'products/item-prices/edit-all/:itemId',
                 name: 'price-edit-all',
-                component: () => import('@/pages/products/EditItemPrices.vue'),
+                component: CreatePrice,
                 meta: { permission: 'products.update' }
             },
             {

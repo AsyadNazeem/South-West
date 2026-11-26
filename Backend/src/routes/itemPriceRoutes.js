@@ -20,6 +20,7 @@ const management = require('../controllers/variantPriceManagement');
 
 router.get('/item/:id/management', authenticate, requirePermission('products.view'), management.read);
 router.put('/item/:id/management', authenticate, requirePermission('products.update'), management.save);
+router.patch('/item/:id/status', authenticate, requirePermission('products.update'), management.setStatus);
 
 router.get(
     '/',

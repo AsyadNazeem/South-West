@@ -32,10 +32,10 @@ const faqItems = [
         answer: 'Any applicable delivery charge should be displayed in the order summary during checkout. The charge can depend on the delivery destination.',
     },
     {
-        question: 'How do I request a return or refund?',
-        answer: 'Keep your order details and information about the issue. Review the Returns & Refunds page and contact the store through its confirmed support channel before sending an item back.',
+        question: 'How do I request warranty support?',
+        answer: 'For an eligible technical fault, keep your invoice and video proof of the issue. Review our Return & Warranty Policy and submit a warranty claim through your account where applicable. Standard returns and refunds are not offered.',
         link_url: '/returns',
-        link_text: 'Read Returns & Refunds',
+        link_text: 'Read Return & Warranty Policy',
     },
 ];
 

@@ -9,9 +9,18 @@ import {
   getResponsiveImageUrl,
 } from '@/utils/mediaUrl'
 
-const SeasonalDecorations = defineAsyncComponent(() => import('@/components/SeasonalDecorations.vue'))
-const FloralHeader = defineAsyncComponent(() => import('@/components/FloralHeader.vue'))
-const NewYearFireworks = defineAsyncComponent(() => import('@/components/NewYearFireworks.vue'))
+const SeasonalDecorations = defineAsyncComponent(() =>
+  window.__websiteThemeComponents?.seasonal ||
+  import('@/components/SeasonalDecorations.vue')
+)
+const FloralHeader = defineAsyncComponent(() =>
+  window.__websiteThemeComponents?.floral ||
+  import('@/components/FloralHeader.vue')
+)
+const NewYearFireworks = defineAsyncComponent(() =>
+  window.__websiteThemeComponents?.fireworks ||
+  import('@/components/NewYearFireworks.vue')
+)
 const { floralArtwork, themeSlug } = useWebsiteTheme()
 
 

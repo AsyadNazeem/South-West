@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from "vue"
 import api from "@/api/axios"
+import { hasPermission } from '@/auth/authorization'
 import AppPagination from '@/components/common/AppPagination.vue'
 import { createRequestSequence } from '@/composables/useServerPagination.js'
 const paginationRequestSequence = createRequestSequence()
@@ -105,25 +106,248 @@ const changePageSize = async (value) => { pageSize.value = value; page.value = 1
 
 watch([search, typeFilter, statusFilter], () => { page.value = 1; loadPrices() })
 
-// Delete price
-const deletePrice = async (id) => {
-  if (!confirm("Are you sure you want to delete this price?")) {
-    return
-  }
+// Product and variant price status management
+const statusBusy = ref(false)
+const statusMessage = ref('')
+const statusSnapshots = ref({})
+let statusSnapshotRequest = 0
 
-  try {
-    await api.delete(`/item-prices/${id}`)
+const canUpdatePrices = computed(
+  () => hasPermission('products.update')
+)
 
-    await loadPrices()
-  } catch (error) {
-    console.error("Delete price error:", error)
+const getVariantId = price =>
+  price.variant_id ?? price.variant?.id ?? null
 
-    alert(
-        error.response?.data?.message ||
-        "Failed to delete product price."
+const isFirstVariantRow = (group, price, index) => {
+  const id = getVariantId(price)
+
+  return id !== null &&
+    group.prices.findIndex(row =>
+      String(getVariantId(row)) === String(id)
+    ) === index
+}
+
+const loadStatusSnapshots = async () => {
+  const request = ++statusSnapshotRequest
+  statusSnapshots.value = {}
+
+  if (!canUpdatePrices.value) return
+
+  const ids = [...new Set(
+    prices.value
+      .map(row => row.item_id ?? row.item?.id)
+      .filter(id => id != null)
+      .map(String)
+  )]
+
+  for (let index = 0; index < ids.length; index += 5) {
+    if (request !== statusSnapshotRequest) return
+
+    await Promise.all(
+      ids.slice(index, index + 5).map(async id => {
+        try {
+          const response = await api.get(
+            `/item-prices/item/${id}/management`
+          )
+
+          if (request !== statusSnapshotRequest) return
+
+          const state = response.data.data
+
+          if (!state?.revision) {
+            throw new Error('Invalid pricing snapshot.')
+          }
+
+          statusSnapshots.value[id] = state
+        } catch (error) {
+          if (request !== statusSnapshotRequest) return
+          statusSnapshots.value[id] = { failed: true }
+          console.error('Pricing status loading error:', error)
+        }
+      })
     )
   }
 }
+
+const getScopeStatus = (group, variantId = null) => {
+  const state = statusSnapshots.value[String(group.itemId)]
+
+  if (!state) return 'loading'
+  if (state.failed) return 'unavailable'
+
+  const rows = [
+    ...state.prices,
+    ...state.payments
+  ].filter(row =>
+    variantId === null ||
+    String(row.variant_id) === String(variantId)
+  )
+
+  if (rows.some(row => row.is_active)) {
+    return 'deactivate'
+  }
+
+  const variants = new Map(
+    state.variants.map(row => [String(row.id), row])
+  )
+
+  const eligible = rows.some(row => {
+    const owner = row.variant_id == null
+      ? null
+      : variants.get(String(row.variant_id))
+
+    const validOwner = row.variant_id == null ||
+      Boolean(owner?.is_active)
+
+    const expired = row.effective_to &&
+      new Date(row.effective_to).getTime() < Date.now()
+
+    return validOwner && !expired
+  })
+
+  return eligible ? 'activate' : 'unavailable'
+}
+
+const statusButtonLabel = (group, variantId = null) => {
+  const action = getScopeStatus(group, variantId)
+
+  if (action === 'loading') return 'Loading...'
+  if (action === 'unavailable') return 'Unavailable'
+
+  const label = action === 'activate'
+    ? 'Activate'
+    : 'Deactivate'
+
+  return variantId === null ? `${label} All` : label
+}
+
+const statusButtonDisabled = (group, variantId = null) =>
+  statusBusy.value ||
+  loading.value ||
+  !['activate', 'deactivate'].includes(
+    getScopeStatus(group, variantId)
+  )
+
+const setPriceStatus = async (
+  group,
+  variantId,
+  action
+) => {
+  if (
+    statusBusy.value ||
+    !canUpdatePrices.value ||
+    !group.itemId ||
+    !['activate', 'deactivate'].includes(action)
+  ) return
+
+  const scope = variantId === null
+    ? 'product'
+    : 'variant'
+
+  const isActive = action === 'activate'
+
+  statusBusy.value = true
+  statusMessage.value = ''
+  errorMessage.value = ''
+
+  try {
+    const base = `/item-prices/item/${group.itemId}`
+
+    const response = await api.get(
+      `${base}/management`
+    )
+
+    const state = response.data.data
+
+    if (!state?.revision) {
+      throw new Error('Unable to load pricing revision.')
+    }
+
+    statusSnapshots.value[String(group.itemId)] = state
+
+    if (getScopeStatus(group, variantId) !== action) {
+      throw new Error(
+        'Price statuses changed. Review the updated button and retry.'
+      )
+    }
+
+    const variant = scope === 'variant'
+      ? state.variants.find(row =>
+          String(row.id) === String(variantId)
+        )
+      : null
+
+    if (
+      scope === 'variant' &&
+      (!variant || (isActive && !variant.is_active))
+    ) {
+      throw new Error(
+        'This variant is unavailable or read-only.'
+      )
+    }
+
+    const target = scope === 'product'
+      ? group.itemName
+      : `${group.itemName} (${variant.variant_sku})`
+
+    const warning = isActive
+      ? 'This enables eligible inactive prices, including previously inactive prices. Conflicting schedules will be rejected.'
+      : 'This disables all active selling, cost and checkout prices in the selected scope. It may prevent customers from purchasing the affected products or variants.'
+
+    const confirmed = window.confirm(
+      `${isActive ? 'Activate' : 'Deactivate'} prices for:\n` +
+      `${target}\n\n${warning}\n\n` +
+      'All eligible records are included, regardless of current filters or pagination. ' +
+      (isActive
+        ? 'Expired schedules and inactive variants are excluded. '
+        : 'Inactive variants and expired price schedules are included. ') +
+      'No price records will be deleted.\n\nContinue?'
+    )
+
+    if (!confirmed) return
+
+    const result = await api.patch(
+      `${base}/status`,
+      {
+        scope,
+        ...(scope === 'variant'
+          ? { variant_id: variantId }
+          : {}),
+        is_active: isActive,
+        revision: state.revision
+      }
+    )
+
+    const summary = result.data.data
+    statusSnapshots.value[String(group.itemId)] = summary
+
+    page.value = 1
+    await loadPrices()
+
+    statusMessage.value =
+      `${summary.changed} price record(s) ` +
+      `${isActive ? 'activated' : 'deactivated'}.` +
+      (summary.skipped
+        ? ` ${summary.skipped} read-only record(s) skipped.`
+        : '')
+
+  } catch (error) {
+    console.error('Price status update error:', error)
+
+    errorMessage.value =
+      error.response?.data?.message ||
+      error.message ||
+      'Failed to update price statuses.'
+  } finally {
+    statusBusy.value = false
+  }
+}
+
+watch(
+  [prices, canUpdatePrices],
+  loadStatusSnapshots
+)
 
 // Format price
 const formatPrice = (price) => {
@@ -179,6 +403,14 @@ onMounted(loadPrices)
       {{ errorMessage }}
     </div>
 
+
+    <div
+      v-if="statusMessage"
+      class="price-status-message"
+      role="status"
+    >
+      {{ statusMessage }}
+    </div>
 
     <!-- Filters -->
     <div class="filter-card">
@@ -274,6 +506,7 @@ onMounted(loadPrices)
           <thead>
 
           <tr>
+            <th scope="col">#</th>
 
 <th>
               Product
@@ -311,37 +544,51 @@ onMounted(loadPrices)
           <tbody>
           <template v-for="group in groupedPrices" :key="group.key">
             <tr class="item-group-row">
-              <td colspan="7">
-                <div class="group-heading-row">
-<button
-                  type="button"
-                  class="group-toggle"
-                  :aria-expanded="isGroupExpanded(group.key)"
-                  @click="toggleGroup(group.key)"
-                >
-                  <span
-                    class="group-chevron"
-                    :class="{ expanded: isGroupExpanded(group.key) }"
-                  >&#9656;</span>
+              <td colspan="8">
+<div class="group-heading-row">
+  <button
+    type="button"
+    class="group-toggle"
+    :aria-expanded="isGroupExpanded(group.key)"
+    @click="toggleGroup(group.key)"
+  >
+    <span
+      class="group-chevron"
+      :class="{ expanded: isGroupExpanded(group.key) }"
+    >&#9656;</span>
 
-                  <span class="group-item-details">
-                    <strong>{{ group.itemName }}</strong>
-                    <span class="group-item-code">Code: {{ group.itemCode }}</span>
-                  </span>
+    <span class="group-item-details">
+      <strong>{{ group.itemName }}</strong>
+      <span class="group-item-code">Code: {{ group.itemCode }}</span>
+    </span>
 
-                  <span class="group-count">
-                    {{ group.prices.length }}
-                    {{ group.prices.length === 1 ? 'price' : 'prices' }}
-                  </span>
-                </button>
-                <router-link
-                  v-if="group.itemId"
-                  class="action-button edit group-edit-all"
-                  :to="`/admin/products/item-prices/edit-all/${group.itemId}`"
-                >
-                  Edit All
-                </router-link>
-                </div>
+    <span class="group-count">
+      {{ group.prices.length }}
+      {{ group.prices.length === 1 ? 'price' : 'prices' }}
+    </span>
+  </button>
+
+  <div v-if="group.itemId" class="group-actions">
+    <router-link
+      class="action-button edit"
+      :to="`/admin/products/item-prices/edit-all/${group.itemId}`"
+    >
+      Edit All
+    </router-link>
+
+    <button
+      v-if="canUpdatePrices"
+      type="button"
+      class="price-status-button"
+      :class="getScopeStatus(group)"
+      :disabled="statusButtonDisabled(group)"
+      :aria-label="statusButtonLabel(group) + ' prices for ' + group.itemName"
+      @click="setPriceStatus(group, null, getScopeStatus(group))"
+    >
+      {{ statusButtonLabel(group) }}
+    </button>
+  </div>
+</div>
               </td>
             </tr>
 
@@ -397,11 +644,15 @@ onMounted(loadPrices)
                     </router-link>
 
                     <button
+                      v-if="canUpdatePrices && group.itemId && isFirstVariantRow(group, price, index)"
                       type="button"
-                      class="action-button delete"
-                      @click="deletePrice(price.id)"
+                      class="price-status-button"
+                      :class="getScopeStatus(group, getVariantId(price))"
+                      :disabled="statusButtonDisabled(group, getVariantId(price))"
+                      :aria-label="statusButtonLabel(group, getVariantId(price)) + ' prices for ' + (price.variant?.variant_sku || getVariantId(price))"
+                      @click="setPriceStatus(group, getVariantId(price), getScopeStatus(group, getVariantId(price)))"
                     >
-                      Delete
+                      {{ statusButtonLabel(group, getVariantId(price)) }}
                     </button>
                   </div>
                 </td>
@@ -424,14 +675,51 @@ onMounted(loadPrices)
 
 
 <style scoped>
+
+/* Group header: name on the left, count + actions on the right, one line */
 .group-heading-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: nowrap;
+  gap: 12px;
 }
-.group-edit-all {
+
+.group-heading-row .group-toggle {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.group-actions {
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
-  margin-right: 12px;
+  gap: 8px;
+  padding-right: var(--spacing-lg);
+}
+
+/* Same height for every action button in the header and rows */
+.group-actions .action-button,
+.group-actions .price-status-button,
+.action-buttons .action-button,
+.action-buttons .price-status-button {
+  min-height: 32px;
+}
+
+.action-buttons {
+  flex-wrap: nowrap;
+}
+
+/* Small screens: let the actions drop below the name */
+@media (max-width: 700px) {
+  .group-heading-row {
+    flex-wrap: wrap;
+  }
+
+  .group-actions {
+    width: 100%;
+    padding: 0 var(--spacing-lg) 12px;
+  }
 }
 
 
@@ -954,6 +1242,75 @@ tbody tr:last-child td {
     align-items: flex-start;
     flex-direction: column;
   }
+}
+
+
+.price-status-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.price-status-button.activate {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.price-status-button.activate:hover:not(:disabled) {
+  background: #bbf7d0;
+}
+
+.price-status-button.deactivate {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.price-status-button.deactivate:hover:not(:disabled) {
+  background: #fecaca;
+}
+
+.price-status-button.loading,
+.price-status-button.unavailable {
+  background: var(--color-hover-bg);
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+}
+
+.price-status-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.price-status-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.price-status-message {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-hover-bg);
+  color: var(--color-text-primary);
+}
+
+.group-heading-row,
+.action-buttons {
+  flex-wrap: wrap;
 }
 
 </style>

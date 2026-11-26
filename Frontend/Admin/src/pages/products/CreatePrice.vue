@@ -3,7 +3,6 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.css'
-import { hasPermission } from '@/auth/authorization'
 import api from '@/api/axios'
 
 const router = useRouter()
@@ -47,6 +46,11 @@ const removePriceRow = (index) => {
   }
 }
 const pricingMode = ref('same')
+
+const isBulkEditMode = ref(false)
+const bulkItemId = ref(null)
+const bulkItemName = ref('')
+const bulkRows = ref([])
 
 const isEditMode = ref(false)
 const priceId = ref(null)
@@ -367,6 +371,182 @@ async function savePaymentPrices(variantId, prices = paymentPrices.value) {
 
 
 
+const loadBulkItemPrices = async () => {
+  try {
+    loading.value = true
+    errorMessage.value = ''
+
+    bulkItemId.value = Number(route.params.itemId)
+    if (!Number.isInteger(bulkItemId.value) || bulkItemId.value <= 0) {
+      throw new Error('Invalid item ID.')
+    }
+
+    selectedItem.value = items.value.find(
+      item => Number(item.id) === bulkItemId.value
+    ) || null
+
+    if (!selectedItem.value) throw new Error('Item not found.')
+
+    bulkItemName.value =
+      selectedItem.value.item_name ||
+      selectedItem.value.item_code ||
+      `Item ${bulkItemId.value}`
+
+    const [pricesResponse, variantsResponse] = await Promise.all([
+      api.get('/item-prices'),
+      api.get(`/items/${bulkItemId.value}/variants`)
+    ])
+
+    const allPrices = pricesResponse.data?.data || []
+    const allVariants = variantsResponse.data?.data || []
+
+// Include inactive variants too, so existing price records
+// can still display their currently assigned variant.
+variants.value = allVariants
+
+    const existingPrices = allPrices.filter(
+      price => Number(price.item_id) === bulkItemId.value
+    )
+
+    if (!existingPrices.length) {
+      throw new Error('No existing prices were found for this item.')
+    }
+
+    bulkRows.value = await Promise.all(existingPrices.map(async price => {
+      const variantId = Number(price.variant_id ?? price.variant?.id)
+      const variant = allVariants.find(
+        entry => Number(entry.id) === variantId
+      )
+
+      const row = {
+        id: price.id,
+        variant_id: variantId,
+        variant_label:
+          variant?.variant_name ||
+          variant?.name ||
+          price.variant?.variant_name ||
+          price.variant?.name ||
+          `Variant #${variantId}`,
+        price_type: price.price_type || '',
+        price: price.price ?? '',
+        currency: price.currency || 'LKR',
+        effective_from: price.effective_from
+          ? String(price.effective_from).substring(0, 10) : '',
+        effective_to: price.effective_to
+          ? String(price.effective_to).substring(0, 10) : '',
+        is_active: Boolean(price.is_active),
+        payment_prices: { cash: '', card: '', koko: '', mintpay: '' }
+      }
+
+      if (row.price_type === 'selling' && variantId > 0) {
+        const response = await api.get('/item-payment-prices', {
+          params: { item_id: bulkItemId.value, variant_id: variantId }
+        })
+
+        for (const payment of response.data?.data || []) {
+          if (Object.prototype.hasOwnProperty.call(
+            row.payment_prices, payment.payment_method
+          )) {
+            row.payment_prices[payment.payment_method] = payment.price ?? ''
+          }
+        }
+      }
+
+      return row
+    }))
+  } catch (error) {
+    console.error('Failed to load item prices for bulk editing:', error)
+    errorMessage.value =
+      error.response?.data?.message || error.message ||
+      'Failed to load item prices.'
+  } finally {
+    loading.value = false
+  }
+}
+
+const saveBulkItemPrices = async () => {
+  if (loading.value) return
+
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  const validPrice = value =>
+    value !== '' && value !== null && value !== undefined &&
+    /^\d{1,13}(?:\.\d{1,2})?$/.test(String(value)) &&
+    Number.isFinite(Number(value)) && Number(value) >= 0
+
+  if (!bulkRows.value.length) {
+    errorMessage.value = 'There are no prices to update.'
+    return
+  }
+
+  // Validate every row before sending any updates.
+  for (let i = 0; i < bulkRows.value.length; i++) {
+    const row = bulkRows.value[i]
+
+    if (!row.id || !row.variant_id || !row.price_type || !validPrice(row.price)) {
+      errorMessage.value = `Please check the price, type and variant in row ${i + 1}.`
+      return
+    }
+
+    if (row.effective_from && row.effective_to &&
+        row.effective_to < row.effective_from) {
+      errorMessage.value = `Row ${i + 1}: Effective To cannot be before Effective From.`
+      return
+    }
+
+    if (row.price_type === 'selling') {
+      for (const method of paymentMethodFields) {
+        if (!validPrice(row.payment_prices[method.key])) {
+          errorMessage.value =
+            `Row ${i + 1}: enter a valid ${method.label} checkout price.`
+          return
+        }
+      }
+    }
+  }
+
+  loading.value = true
+
+  try {
+    for (const row of bulkRows.value) {
+      await api.put(`/item-prices/${row.id}`, {
+        item_id: bulkItemId.value,
+        variant_id: Number(row.variant_id),
+        price_type: row.price_type,
+        price: Number(row.price),
+        currency: row.currency || 'LKR',
+        effective_from: row.effective_from || null,
+        effective_to: row.effective_to || null,
+        is_active: Boolean(row.is_active)
+      })
+
+      if (row.price_type === 'selling') {
+        await api.post('/item-payment-prices/bulk', {
+          item_id: bulkItemId.value,
+          variant_id: Number(row.variant_id),
+          currency: row.currency || 'LKR',
+          prices: paymentMethodFields.map(method => ({
+            payment_method: method.key,
+            price: Number(row.payment_prices[method.key])
+          }))
+        })
+      }
+    }
+
+    successMessage.value = `Updated ${bulkRows.value.length} existing price record(s).`
+    await new Promise(resolve => setTimeout(resolve, 700))
+    await router.push('/admin/products/item-prices')
+  } catch (error) {
+    console.error('Failed to save all item prices:', error)
+    errorMessage.value =
+      error.response?.data?.message || error.message ||
+      'Failed to save all item prices. Some earlier rows may already have been saved.'
+  } finally {
+    loading.value = false
+  }
+}
+
 const submitForm = async () => {
   if (loading.value) return
 
@@ -581,10 +761,13 @@ const goBack = () => {
 onMounted(async () => {
   await loadItems()
 
+  isBulkEditMode.value = Boolean(route.params.itemId)
   priceId.value = route.params.id || null
-  isEditMode.value = Boolean(priceId.value)
+  isEditMode.value = Boolean(priceId.value) && !isBulkEditMode.value
 
-  if (isEditMode.value) {
+  if (isBulkEditMode.value) {
+    await loadBulkItemPrices()
+  } else if (isEditMode.value) {
     await loadItemPrice()
   }
 })
@@ -598,9 +781,21 @@ onMounted(async () => {
     <div class="form-header">
       <div>
         <h1>
-          {{ isEditMode ? 'Edit Item Price' : 'Create Item Price' }}
+          {{
+            isBulkEditMode
+              ? 'Edit All Item Prices'
+              : (isEditMode ? 'Edit Item Price' : 'Create Item Price')
+          }}
         </h1>
-        <p>{{ isEditMode ? 'Update the pricing details for this item.' : 'Add a price for an item.' }}
+
+        <p>
+          {{
+            isBulkEditMode
+              ? `Update prices for ${bulkItemName}.`
+              : (isEditMode
+                  ? 'Update the pricing details for this item.'
+                  : 'Add a price for an item.')
+          }}
         </p>
       </div>
 
@@ -631,7 +826,241 @@ onMounted(async () => {
     </div>
 
 
+<form
+  v-if="isBulkEditMode"
+  class="item-price-form"
+  @submit.prevent="saveBulkItemPrices"
+>
+  <!-- Item details -->
+  <section class="form-section">
+    <div class="section-header">
+      <h2>Item Details</h2>
+      <p>All price records below belong to this item.</p>
+    </div>
+
+    <div class="form-grid single">
+      <div class="form-group">
+        <label>Selected Item</label>
+        <input
+          :value="itemLabel(selectedItem)"
+          type="text"
+          readonly
+        />
+      </div>
+    </div>
+  </section>
+
+  <!-- Existing price records -->
+  <section
+    v-for="(row, index) in bulkRows"
+    :key="row.id"
+    class="form-section"
+  >
+    <div class="section-header">
+      <h2>{{ row.variant_label }}</h2>
+      <p>
+        Price record #{{ row.id }} · Variant {{ index + 1 }}
+      </p>
+    </div>
+
+    <!-- Variant and pricing -->
+    <div class="form-grid">
+      <div class="form-group">
+        <label :for="`bulk-variant-${row.id}`">
+          Price Applies To <span>*</span>
+        </label>
+
+        <select
+          :id="`bulk-variant-${row.id}`"
+          v-model="row.variant_id"
+          required
+          :disabled="loading || variantsLoading"
+        >
+          <option value="">Select a variant</option>
+          <option
+            v-for="variant in variants"
+            :key="variant.id"
+            :value="Number(variant.id)"
+          >
+            {{ variant.variant_sku }} - {{ variant.variant_name }}
+            {{ variant.is_default ? '(Default)' : '' }}
+          </option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label :for="`bulk-type-${row.id}`">
+          Price Type <span>*</span>
+        </label>
+
+        <select
+          :id="`bulk-type-${row.id}`"
+          v-model="row.price_type"
+          required
+          :disabled="loading"
+        >
+          <option value="" disabled>Select price type</option>
+          <option value="cost">Cost Price</option>
+          <option value="selling">Selling Price</option>
+          <option value="wholesale">Wholesale Price</option>
+          <option value="retail">Retail Price</option>
+          <option value="special">Special Price</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label :for="`bulk-currency-${row.id}`">
+          Currency <span>*</span>
+        </label>
+
+        <select
+          :id="`bulk-currency-${row.id}`"
+          v-model="row.currency"
+          required
+          :disabled="loading"
+        >
+          <option value="LKR">LKR</option>
+          <option value="USD">USD</option>
+          <option value="AED">AED</option>
+          <option value="EUR">EUR</option>
+          <option value="GBP">GBP</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label :for="`bulk-price-${row.id}`">
+          Price <span>*</span>
+        </label>
+
+        <div class="money-input">
+          <span class="money-tag">{{ row.currency }}</span>
+          <input
+            :id="`bulk-price-${row.id}`"
+            v-model="row.price"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="0.00"
+            required
+            :disabled="loading"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Checkout prices -->
+    <div
+      v-if="row.price_type === 'selling'"
+      class="checkout-block spaced"
+    >
+      <h4>Checkout Method Prices</h4>
+      <p class="checkout-help">
+        Set the price charged for each payment method.
+      </p>
+
+      <div class="checkout-grid">
+        <div
+          v-for="method in paymentMethodFields"
+          :key="method.key"
+          class="form-group"
+        >
+          <label :for="`bulk-${method.key}-${row.id}`">
+            {{ method.label }}
+          </label>
+
+          <div class="money-input">
+            <span class="money-tag">{{ row.currency }}</span>
+            <input
+              :id="`bulk-${method.key}-${row.id}`"
+              v-model="row.payment_prices[method.key]"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              required
+              :disabled="loading"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Validity -->
+    <div class="bulk-subsection">
+      <div class="section-header">
+        <h2>Validity</h2>
+        <p>Set the period during which this price applies.</p>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label :for="`bulk-from-${row.id}`">Effective From</label>
+          <input
+            :id="`bulk-from-${row.id}`"
+            v-model="row.effective_from"
+            type="date"
+            :disabled="loading"
+          />
+        </div>
+
+        <div class="form-group">
+          <label :for="`bulk-to-${row.id}`">Effective To</label>
+          <input
+            :id="`bulk-to-${row.id}`"
+            v-model="row.effective_to"
+            type="date"
+            :min="row.effective_from || undefined"
+            :disabled="loading"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="bulk-subsection">
+      <div class="section-header">
+        <h2>Settings</h2>
+        <p>Choose whether this price record is active.</p>
+      </div>
+
+      <div class="checkbox-group">
+        <label>
+          <input
+            v-model="row.is_active"
+            type="checkbox"
+            :disabled="loading"
+          />
+          <span>Active</span>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <!-- Actions -->
+  <div class="form-actions">
+    <button
+      type="button"
+      class="btn-secondary"
+      :disabled="loading"
+      @click="goBack"
+    >
+      Cancel
+    </button>
+
+    <button
+      type="submit"
+      class="btn-primary"
+      :disabled="loading || !bulkRows.length"
+    >
+      {{ loading ? 'Saving...' : 'Save All Prices' }}
+    </button>
+  </div>
+</form>
+
+
+    <!-- Existing create and single-edit form -->
     <form
+      v-else
       class="item-price-form"
       @submit.prevent="submitForm"
     >
@@ -677,10 +1106,6 @@ onMounted(async () => {
                 No items available.
               </template>
             </Multiselect>
-            <RouterLink v-if="selectedItem && !isEditMode && hasPermission('products.update')"
-              :to="{ name: 'price-edit-all', params: { itemId: selectedItem.id } }">
-              Manage variant prices
-            </RouterLink>
 
           </div>
 

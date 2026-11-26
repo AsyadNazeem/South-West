@@ -150,3 +150,202 @@ exports.save = async (req, res) => {
         return res.json({ data });
     } catch (error) { return respondError(error, res); }
 };
+
+
+// Change existing price statuses without creating or deleting records.
+exports.setStatus = async (req, res) => {
+    try {
+        const {
+            scope,
+            variant_id,
+            is_active,
+            revision
+        } = req.body || {};
+
+        if (!['product', 'variant'].includes(scope)) {
+            fail(400, 'Select a valid price scope.');
+        }
+
+        if (typeof is_active !== 'boolean') {
+            fail(400, 'Select a valid active status.');
+        }
+
+        if (scope === 'variant' && !validId(variant_id)) {
+            fail(400, 'Invalid variant ID.');
+        }
+
+        if (scope === 'product' && variant_id != null) {
+            fail(400, 'Product scope must not specify a variant.');
+        }
+
+        const data = await sequelize.transaction(async tx => {
+            const state = await snapshot(req.params.id, tx, true);
+
+            if (revision !== state.revision) {
+                fail(409, 'Pricing changed. Reload and retry.');
+            }
+
+            const variants = new Map(
+                state.variants.map(row => [String(row.id), row])
+            );
+
+            if (scope === 'variant') {
+                const variant = variants.get(String(variant_id));
+
+                if (!variant) {
+                    fail(400, 'Variant does not belong to this item.');
+                }
+
+                if (is_active && !variant.is_active) {
+                    fail(409, 'Inactive variant is read-only.');
+                }
+            }
+
+            const matchesScope = row =>
+                scope === 'product' ||
+                String(row.variant_id) === String(variant_id);
+
+            const now = Date.now();
+            const touchedSchedules = [];
+            const seen = new Set();
+
+            let changed = 0;
+            let skipped = 0;
+
+            for (const [kind, rows] of [
+                ['schedule', state.prices],
+                ['payment', state.payments]
+            ]) {
+                for (const row of rows) {
+                    if (!matchesScope(row)) continue;
+
+                    const owner = row.variant_id === null
+                        ? null
+                        : variants.get(String(row.variant_id));
+
+                    const readOnlyVariant =
+                        row.variant_id !== null &&
+                        (!owner || !owner.is_active);
+
+                    const expired =
+                        kind === 'schedule' &&
+                        row.effective_to &&
+                        row.effective_to.getTime() < now;
+
+                    if (is_active && (readOnlyVariant || expired)) {
+                        skipped++;
+                        continue;
+                    }
+
+                    if (Boolean(row.is_active) === is_active) {
+                        continue;
+                    }
+
+                    // Deactivation changes status only.
+                    // Existing amounts and dates remain untouched.
+                    if (!is_active) {
+                        const previous = row.toJSON();
+
+                        await row.update(
+                            { is_active: false },
+                            { transaction: tx }
+                        );
+
+                        await recordAuditLog({
+                            userId: req.user.id,
+                            action: kind === 'payment'
+                                ? 'ITEM_PAYMENT_PRICES_SAVED'
+                                : 'ITEM_PRICE_UPDATED',
+                            module: kind === 'payment'
+                                ? 'products'
+                                : 'inventory',
+                            entityType: kind === 'payment'
+                                ? 'item_payment_price'
+                                : 'item_price',
+                            entityId: row.id,
+                            oldValues: previous,
+                            newValues: row.toJSON(),
+                            description: 'Admin price deactivation',
+                            ipAddress: req.ip,
+                            userAgent: req.get('user-agent'),
+                            requestId: req.id,
+                            transaction: tx
+                        });
+
+                        changed++;
+                        continue;
+                    }
+
+                    const change = {
+                        kind,
+                        id: row.id,
+                        variant_id: row.variant_id,
+                        type: kind === 'payment'
+                            ? row.payment_method
+                            : row.price_type,
+                        price: row.price,
+                        currency: row.currency,
+                        is_active
+                    };
+
+                    if (kind === 'schedule') {
+                        change.effective_from =
+                            row.effective_from?.toISOString() ?? null;
+
+                        change.effective_to =
+                            row.effective_to?.toISOString() ?? null;
+                    }
+
+                    await apply(
+                        state,
+                        change,
+                        req,
+                        tx,
+                        seen,
+                        touchedSchedules
+                    );
+
+                    changed++;
+                }
+            }
+
+            // Reject overlapping schedules before committing.
+            for (const row of touchedSchedules) {
+                const conflict = state.prices.some(other =>
+                    other !== row &&
+                    other.is_active &&
+                    String(other.variant_id) ===
+                        String(row.variant_id) &&
+                    other.price_type.toLowerCase() ===
+                        row.price_type.toLowerCase() &&
+                    overlaps(row, other)
+                );
+
+                if (conflict) {
+                    fail(
+                        409,
+                        'Active price schedules overlap.',
+                        row.variant_id
+                    );
+                }
+            }
+
+            return {
+                ...(await snapshot(req.params.id, tx, true)),
+                changed,
+                skipped
+            };
+        });
+
+        return res.json({
+            message: data.changed
+                ? `${data.changed} price record(s) ${
+                    is_active ? 'activated' : 'deactivated'
+                }.`
+                : 'No eligible price statuses needed changing.',
+            data
+        });
+    } catch (error) {
+        return respondError(error, res);
+    }
+};

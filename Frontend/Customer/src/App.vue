@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 import SiteHeader from './layouts/AppHeader.vue'
@@ -14,7 +14,7 @@ import RouteProgress from './components/RouteProgress.vue'
 
 import { useWebsiteTheme } from './composables/useWebsiteTheme'
 
-const { loadActiveTheme, themeSlug, floralArtwork, effects } = useWebsiteTheme()
+const { themeSlug, floralArtwork, effects } = useWebsiteTheme()
 const balloonColors = ['red', 'burgundy', 'pink', 'rose-gold', 'champagne']
 const balloons = computed(() => {
   if (themeSlug.value !== 'valentines-day') return []
@@ -41,9 +41,7 @@ const isStandaloneAuthPage = () => [
   'customer-reset-password',
 ].includes(route.name)
 
-onMounted(() => {
-  loadActiveTheme()
-})
+
 </script>
 
 <template>

@@ -203,6 +203,173 @@ test('authenticated variant price management on disposable MySQL', { skip: !sock
     assert.equal(singleState.prices.length,2);
     assert.equal(singleState.payments.length,0);
     await save([schedule(single.id,'cost',12)],400);
+
+    // PRICE STATUS REGRESSION TESTS
+    const statusPath = '/api/item-prices/item/'+item.id+'/status';
+
+    state = await request(endpoint);
+
+    const changeStatus = (
+        scope, is_active, variant_id = null,
+        expected = 200, revision = state.revision
+    ) => request(statusPath, 'PATCH', {
+        scope,
+        is_active,
+        ...(scope === 'variant' && { variant_id }),
+        revision
+    }, expected);
+
+    const priceValues = snapshot => ({
+        prices: snapshot.prices.map(p => ({
+            id:p.id,
+            variant_id:p.variant_id,
+            price_type:p.price_type,
+            price:p.price,
+            currency:p.currency,
+            effective_from:p.effective_from,
+            effective_to:p.effective_to
+        })),
+        payments: snapshot.payments.map(p => ({
+            id:p.id,
+            variant_id:p.variant_id,
+            payment_method:p.payment_method,
+            price:p.price,
+            currency:p.currency
+        }))
+    });
+
+    const originalValues = priceValues(state);
+    const originalVariants = state.variants;
+    const originalStock = await db.InventoryStock.findAll({
+        where:{item_id:item.id},
+        order:[['id','ASC']],
+        raw:true
+    });
+
+    const originalOtherRevision = singleState.revision;
+
+    // Authentication and permission protection.
+    const savedToken = token;
+    token = undefined;
+    await changeStatus('variant', false, usb.id, 401);
+    token = savedToken;
+
+    await role.removePermission(permissions[1]);
+    await changeStatus('variant', false, usb.id, 403);
+    await role.addPermissions(permissions);
+
+    // Invalid requests must not modify pricing.
+    await changeStatus('variant', false, single.id, 400);
+    await changeStatus('invalid', false, null, 400);
+    await changeStatus('variant', 'false', usb.id, 400);
+    await changeStatus('variant', false, usb.id, 409, 'stale');
+
+    assert.equal(
+        (await request(endpoint)).revision,
+        state.revision
+    );
+
+    // Variant-wise deactivation.
+    let result = await changeStatus('variant', false, usb.id);
+    assert.equal(result.changed, 6);
+    state = await request(endpoint);
+
+    assert.ok(
+        [...state.prices,...state.payments]
+            .filter(p=>p.variant_id===usb.id)
+            .every(p=>!p.is_active)
+    );
+
+    assert.ok(
+        [...state.prices,...state.payments]
+            .filter(p=>p.variant_id===analog.id)
+            .every(p=>p.is_active)
+    );
+
+    assert.deepEqual(priceValues(state), originalValues);
+
+    assert.deepEqual(
+        (await request(publicPath)).map(v=>v.variant_sku),
+        [analog.variant_sku]
+    );
+
+    console.log('PASS: Variant deactivation and storefront isolation');
+
+    // Repeating deactivation must not change records.
+    result = await changeStatus('variant', false, usb.id);
+    assert.equal(result.changed, 0);
+
+    state = await request(endpoint);
+
+    // Variant-wise activation.
+    result = await changeStatus('variant', true, usb.id);
+    assert.equal(result.changed, 6);
+    state = await request(endpoint);
+
+    assert.deepEqual(priceValues(state), originalValues);
+
+    assert.deepEqual(
+        (await request(publicPath)).map(v=>[
+            v.variant_sku,
+            v.selling_price,
+            v.available_quantity,
+            v.payment_prices.card
+        ]),
+        [
+            [analog.variant_sku,4000,5,4100],
+            [usb.variant_sku,4000,5,4125]
+        ]
+    );
+
+    console.log('PASS: Variant activation and checkout price restoration');
+
+    // Product-wise deactivation.
+    result = await changeStatus('product', false);
+    assert.equal(result.changed, 12);
+    state = await request(endpoint);
+
+    assert.ok(
+        [...state.prices,...state.payments]
+            .every(p=>!p.is_active)
+    );
+
+    assert.deepEqual(priceValues(state), originalValues);
+
+    console.log('PASS: Product-wide deactivation');
+
+    // Product-wise activation.
+    result = await changeStatus('product', true);
+    assert.equal(result.changed, 12);
+    state = await request(endpoint);
+
+    assert.ok(
+        [...state.prices,...state.payments]
+            .every(p=>p.is_active)
+    );
+
+    assert.deepEqual(priceValues(state), originalValues);
+    assert.deepEqual(state.variants, originalVariants);
+
+    assert.deepEqual(
+        await db.InventoryStock.findAll({
+            where:{item_id:item.id},
+            order:[['id','ASC']],
+            raw:true
+        }),
+        originalStock
+    );
+
+    assert.equal(
+        (await request(singlePath)).revision,
+        originalOtherRevision
+    );
+
+    assert.ok(await db.AuditLog.count({
+        where:{description:'Admin price deactivation'}
+    }) >= 18);
+
+    console.log('PASS: Product activation, audit and data preservation');
+
     const third = await variant(item.id,'Inactive','FIX-INACTIVE',{is_active:false});
     await price(null,'retail',99);
     const expired = await price(analog.id,'special',90,{effective_to:new Date('2020-02-01T00:00:00Z')});
@@ -227,4 +394,74 @@ test('authenticated variant price management on disposable MySQL', { skip: !sock
     }));
     const replies = await Promise.all(competing);
     assert.deepEqual(replies.map(r=>r.status).sort(),[200,409]);
+
+    // PRICE STATUS EDGE CASES
+    const inactiveVariantPrice = await price(
+        third.id, 'selling', 100
+    );
+
+    state = await request(endpoint);
+
+    // Expired schedules and inactive variants can be deactivated.
+    result = await changeStatus('product', false);
+    state = await request(endpoint);
+
+    assert.ok(
+        [...state.prices,...state.payments]
+            .every(p=>!p.is_active)
+    );
+
+    assert.equal((await expired.reload()).is_active,false);
+    assert.equal((await inactiveVariantPrice.reload()).is_active,false);
+
+    console.log('PASS: Expired and inactive variant price deactivation');
+
+    // Conflicting historical schedules must not be activated together.
+    const disabledRevision = state.revision;
+
+    await changeStatus('product', true, null, 409);
+
+    state = await request(endpoint);
+
+    assert.equal(state.revision, disabledRevision);
+
+    assert.ok(
+        [...state.prices,...state.payments]
+            .every(p=>!p.is_active)
+    );
+
+    console.log('PASS: Conflicting activation rejected atomically');
+
+    // Inactive variants cannot be reactivated through pricing.
+    await changeStatus('variant', true, third.id, 409);
+
+    assert.equal(
+        (await request(endpoint)).revision,
+        disabledRevision
+    );
+
+    console.log('PASS: Inactive variant activation protection');
+
+    // A non-conflicting variant remains independently recoverable.
+    result = await changeStatus('variant', true, usb.id);
+    assert.equal(result.changed,6);
+
+    state = await request(endpoint);
+
+    assert.ok(
+        [...state.prices,...state.payments]
+            .filter(p=>p.variant_id===usb.id)
+            .every(p=>p.is_active)
+    );
+
+    assert.equal((await expired.reload()).is_active,false);
+    assert.equal((await inactiveVariantPrice.reload()).is_active,false);
+
+    assert.deepEqual(
+        (await request(publicPath)).map(v=>v.variant_sku),
+        [usb.variant_sku]
+    );
+
+    console.log('PASS: Independent variant recovery');
+
 });

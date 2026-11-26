@@ -80,6 +80,11 @@ test('information pages work before JavaScript, on refresh and through footer na
       if (route.request().method() === 'OPTIONS') return route.fulfill({
         status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' },
       })
+      if (url.pathname.endsWith('/store/website-theme/active') &&
+          route.request().method() === 'GET') return route.fulfill({
+        headers: { 'access-control-allow-origin': '*' },
+        json: { data: null },
+      })
       if (url.pathname.endsWith('/store/faqs')) return route.fulfill({
         headers: { 'access-control-allow-origin': '*' },
         json: { data: [{ question: 'Fixture question?', answer: 'Fixture answer.' }] },

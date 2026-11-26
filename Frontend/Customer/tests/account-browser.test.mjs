@@ -36,6 +36,7 @@ test('account routes at six widths and customer workflows', {
       if(method==='OPTIONS')return route.fulfill({status:204,headers})
       if(method!=='GET')writes.push(method+' '+api)
       let data={data:[]}
+      if(api==='/store/website-theme/active' && method==='GET')data={data:null}
       if(api==='/customer-auth/me')data={customer}
       if(api==='/customer-orders')data={data:[order]}
       if(api==='/customer-orders/1')data={data:order}

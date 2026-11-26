@@ -87,8 +87,26 @@ async function loadActiveTheme(force = false) {
 
   loadingPromise = (async () => {
     try {
-      const response = await api.get('/store/website-theme/active')
-      const theme = response?.data?.data ?? null
+      let theme
+
+      if (!force && typeof window !== 'undefined' && window.__websiteThemePromise) {
+        const pending = window.__websiteThemePromise
+        delete window.__websiteThemePromise
+
+        const result = await pending
+
+        if (!result.ok) {
+          throw new Error('Initial website theme request failed')
+        }
+
+        theme = result.theme
+      } else {
+        const response = await api.get('/store/website-theme/active', {
+          timeout: 3000
+        })
+
+        theme = response?.data?.data ?? null
+      }
 
       applyTheme(theme)
       initialized = true
