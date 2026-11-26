@@ -179,6 +179,16 @@ function guestCheckoutController(images) {
         Item: { async findByPk() { return item; } },
         ItemVariant: { async findOne() { return { id: 10, variant_name: 'Default' }; } },
         ItemPrice: { async findOne() { return { price: 125 }; } },
+        ItemPaymentPrice: {
+            async findOne({ where }) {
+                assert.equal(where.item_id, 1);
+                assert.equal(where.variant_id, 10);
+                assert.equal(where.payment_method, 'cash');
+                assert.equal(where.currency, 'LKR');
+                assert.equal(where.is_active, true);
+                return null;
+            },
+        },
         InventoryStock: { async findAll() { return [{ quantity_on_hand: 20, quantity_reserved: 0 }]; } },
         InventoryLocation: {},
         DeliveryDistrict: { async findOne() { return { id: 1, district_name: 'Central' }; } },
@@ -329,6 +339,7 @@ test('guest session, cart retrieval, add, update, and quote responses include im
         area_id: 2,
         payment_method: 'cash',
     }), quoteResponse);
+    assert.equal(quoteResponse.statusCode, 200, JSON.stringify(quoteResponse.body));
     assert.equal(quoteResponse.body.data.items[0].images.length, 2);
     assert.deepEqual(quoteResponse.body.data.items[0].images[0].responsive_images.map(value => value.width), [320, 640]);
     assert.equal(quoteResponse.body.data.currency, 'LKR');

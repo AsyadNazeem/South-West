@@ -43,3 +43,7 @@ Backend/private/warranty/
 
 # Temporary Backend files
 Backend/tmp/
+
+# Generated Python cache files
+__pycache__/
+*.py[cod]
