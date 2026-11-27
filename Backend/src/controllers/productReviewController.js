@@ -113,6 +113,15 @@ const buildReviewWhere = (req, includeRating = true) => {
         where[Op.or] = [
             { review_title: { [Op.like]: `%${search}%` } },
             { review_text: { [Op.like]: `%${search}%` } },
+            {
+                guest_name: { [Op.like]: `%${search}%` },
+                display_name: true
+            },
+            {
+                guest_number: {
+                    [Op.like]: `%${search.replace(/^Guest\s*#\s*/i, '')}%`
+                }
+            },
             { '$item.item_name$': { [Op.like]: `%${search}%` } },
             { '$customer.first_name$': { [Op.like]: `%${search}%` } },
             { '$customer.last_name$': { [Op.like]: `%${search}%` } }

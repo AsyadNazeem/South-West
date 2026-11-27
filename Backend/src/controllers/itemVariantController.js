@@ -219,11 +219,6 @@ const getItemVariants = async (req, res) => {
             };
         });
 
-        console.log(
-    'Variants with payment prices:',
-    JSON.stringify(variantsWithPrices, null, 2)
-);
-
         return res.status(200).json({
             message: 'Item variants retrieved successfully',
             data: variantsWithPrices

@@ -4,14 +4,7 @@ const express = require('express');
 
 const router = express.Router();
 
-const {
-    getCustomerWishlist,
-    getWishlistItem,
-    removeFromWishlist,
-    removeItemFromCustomerWishlist,
-    clearCustomerWishlist,
-    createWishlist
-} = require('../controllers/wishlistController');
+const { getCustomerWishlist } = require('../controllers/wishlistController');
 const customerAuth = require('../middleware/customerAuthMiddleware');
 
 

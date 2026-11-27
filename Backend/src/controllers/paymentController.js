@@ -117,11 +117,6 @@ const updatePaymentStatus = async (req, res) => {
             processed_by: payment.processed_by
         };
 
-        const oldOrderValues = {
-            payment_status: order.payment_status,
-            status: order.status
-        };
-
         payment.payment_status = 'paid';
         payment.payment_date = new Date();
         payment.processed_by = actorId;

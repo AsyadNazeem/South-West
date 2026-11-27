@@ -6,8 +6,6 @@ const router = express.Router();
 const {
     getOAuthAccounts,
     getOAuthAccountById,
-    createOAuthAccount,
-    updateOAuthAccount,
     deleteOAuthAccount
 } = require('../controllers/oauthAccountController');
 

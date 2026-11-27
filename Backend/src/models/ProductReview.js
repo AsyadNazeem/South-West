@@ -44,6 +44,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.BIGINT.UNSIGNED,
                 allowNull: true
             },
+            guest_name: {
+                type: DataTypes.STRING(100),
+                allowNull: true,
+            },
             guest_number: {
                 type: DataTypes.STRING(6),
                 allowNull: true,

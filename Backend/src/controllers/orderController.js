@@ -1,5 +1,4 @@
 const { Op, Sequelize } = require('sequelize');
-const { recordAuditLog } = require('../services/auditLogService');
 const { buildOrderPhoneSearch } = require('../utils/orderPhoneSearch');
 
 const {
@@ -17,64 +16,8 @@ const {
     OrderPromotion,
     ProductReview,
     Item,
-    ItemPrice,
     ItemVariant
 } = require('../models');
-
-const getCurrentSellingPrice = async (
-    itemId,
-    transaction
-) => {
-    const now = new Date();
-
-    const price = await ItemPrice.findOne({
-        where: {
-            item_id: itemId,
-            price_type: 'selling',
-            currency: 'LKR',
-            is_active: true,
-            [Op.and]: [
-                {
-                    [Op.or]: [
-                        {effective_from: null},
-                        {effective_from: {[Op.lte]: now}}
-                    ]
-                },
-                {
-                    [Op.or]: [
-                        {effective_to: null},
-                        {effective_to: {[Op.gte]: now}}
-                    ]
-                }
-            ]
-        },
-        order: [
-            ['effective_from', 'DESC'],
-            ['id', 'DESC']
-        ],
-        transaction
-    });
-
-    if (!price) {
-        const error = new Error(
-            `No active selling price configured for item ${itemId}`
-        );
-        error.statusCode = 400;
-        throw error;
-    }
-
-    const amount = Number(price.price);
-
-    if (!Number.isFinite(amount) || amount < 0) {
-        const error = new Error(
-            `Invalid selling price configured for item ${itemId}`
-        );
-        error.statusCode = 500;
-        throw error;
-    }
-
-    return amount;
-};
 
 const getOrderIncludes = ({ includeAddressLocations = false } = {}) => [
     {

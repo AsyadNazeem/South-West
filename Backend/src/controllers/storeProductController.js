@@ -6,7 +6,6 @@ const { Op, QueryTypes } = require('sequelize');
 const db = require('../models');
 
 const {
-    DEFAULT_LIMIT,
     createSeed,
     parseLimit,
     validateSeed,

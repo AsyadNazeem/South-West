@@ -383,3 +383,263 @@ test('my reviews joins photos by review ID and returns public images or an empty
         assert.equal(metadata.format, 'webp');
     }
 });
+
+
+// Guest reviewer name regression tests
+
+test('named guest review stores and returns the supplied name', async () => {
+    const h = createHarness({
+        body: {
+            guest_name: '  John Smith  ',
+            display_name: 'true',
+        },
+    });
+
+    await h.controller.createCustomerReview(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 201);
+    assert.equal(h.calls.create.length, 1);
+
+    const saved = h.calls.create[0];
+
+    assert.equal(saved.guest_name, 'John Smith');
+    assert.equal(saved.display_name, true);
+    assert.equal(saved.customer_id, null);
+    assert.match(saved.guest_number, /^\d{6}$/);
+    assert.equal(saved.status, 'pending');
+    assert.equal(saved.is_verified_purchase, false);
+    assert.equal(h.res.body.data.reviewer_name, 'John Smith');
+});
+
+test('unchecked guest name is discarded', async () => {
+    const h = createHarness({
+        body: {
+            guest_name: 'John Smith',
+            display_name: 'false',
+        },
+    });
+
+    await h.controller.createCustomerReview(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 201);
+    assert.equal(h.calls.create[0].guest_name, null);
+    assert.equal(h.calls.create[0].display_name, false);
+    assert.match(
+        h.res.body.data.reviewer_name,
+        /^Guest #\d{6}$/
+    );
+});
+
+test('empty guest name falls back to guest number', async () => {
+    const h = createHarness({
+        body: {
+            guest_name: '',
+            display_name: true,
+        },
+    });
+
+    await h.controller.createCustomerReview(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 201);
+    assert.equal(h.calls.create[0].guest_name, null);
+    assert.equal(h.calls.create[0].display_name, false);
+    assert.match(
+        h.res.body.data.reviewer_name,
+        /^Guest #\d{6}$/
+    );
+});
+
+test('whitespace-only guest name falls back to guest number', async () => {
+    const h = createHarness({
+        body: {
+            guest_name: '   ',
+            display_name: true,
+        },
+    });
+
+    await h.controller.createCustomerReview(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 201);
+    assert.equal(h.calls.create[0].guest_name, null);
+    assert.equal(h.calls.create[0].display_name, false);
+    assert.match(
+        h.res.body.data.reviewer_name,
+        /^Guest #\d{6}$/
+    );
+});
+
+test('guest name of exactly 100 characters is accepted', async () => {
+    const name = 'A'.repeat(100);
+
+    const h = createHarness({
+        body: {
+            guest_name: name,
+            display_name: true,
+        },
+    });
+
+    await h.controller.createCustomerReview(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 201);
+    assert.equal(h.calls.create[0].guest_name, name);
+});
+
+test('guest name exceeding 100 characters is rejected', async () => {
+    const h = createHarness({
+        body: {
+            guest_name: 'A'.repeat(101),
+            display_name: true,
+        },
+    });
+
+    await h.controller.createCustomerReview(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 400);
+    assert.equal(h.calls.create.length, 0);
+});
+
+test('invalid guest name data types are rejected', async () => {
+    for (const name of [123, {}, ['John'], true]) {
+        const h = createHarness({
+            body: {
+                guest_name: name,
+                display_name: true,
+            },
+        });
+
+        await h.controller.createCustomerReview(h.req, h.res);
+
+        assert.equal(h.res.statusCode, 400);
+        assert.equal(h.calls.create.length, 0);
+    }
+});
+
+test('guest name without explicit display consent is discarded', async () => {
+    const h = createHarness({
+        body: {
+            guest_name: 'John Smith',
+        },
+    });
+
+    await h.controller.createCustomerReview(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 201);
+    assert.equal(h.calls.create[0].guest_name, null);
+    assert.equal(h.calls.create[0].display_name, false);
+});
+
+test('registered customer cannot override account name with guest name', async () => {
+    const h = createHarness({
+        customer: { id: 25 },
+        body: {
+            guest_name: 'Different Name',
+            guest_number: '123456',
+            display_name: 'true',
+        },
+    });
+
+    await h.controller.createCustomerReview(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 201);
+
+    const saved = h.calls.create[0];
+
+    assert.equal(saved.customer_id, 25);
+    assert.equal(saved.guest_name, null);
+    assert.equal(saved.guest_number, null);
+    assert.equal(saved.display_name, true);
+});
+
+test('registered customer can explicitly disable full name display', async () => {
+    const h = createHarness({
+        customer: { id: 25 },
+        body: {
+            display_name: 'false',
+        },
+    });
+
+    await h.controller.createCustomerReview(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 201);
+    assert.equal(h.calls.create[0].display_name, false);
+});
+
+test('public named guest review exposes only the resolved reviewer name', async () => {
+    const h = createHarness({
+        publicReviews: [{
+            id: 20,
+            customer_id: null,
+            guest_number: '482731',
+            guest_name: 'John Smith',
+            display_name: true,
+            rating: 5,
+        }],
+    });
+
+    await h.controller.getProductReviews(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 200);
+    assert.ok(
+        h.calls.publicReviewQuery.attributes.includes('guest_name')
+    );
+
+    const review = h.res.body.data.reviews[0];
+
+    assert.equal(review.reviewer_name, 'John Smith');
+
+    for (const field of [
+        'guest_name',
+        'guest_number',
+        'customer_id',
+        'display_name',
+        'customer',
+    ]) {
+        assert.equal(field in review, false);
+    }
+});
+
+test('public guest name stays hidden when display preference is false', async () => {
+    const h = createHarness({
+        publicReviews: [{
+            id: 21,
+            customer_id: null,
+            guest_number: '482731',
+            guest_name: 'Hidden Name',
+            display_name: false,
+            rating: 5,
+        }],
+    });
+
+    await h.controller.getProductReviews(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 200);
+
+    const review = h.res.body.data.reviews[0];
+
+    assert.equal(review.reviewer_name, 'Guest #482731');
+    assert.equal('guest_name' in review, false);
+    assert.ok(
+        !JSON.stringify(review).includes('Hidden Name')
+    );
+});
+
+test('historical guest review retains its original guest number', async () => {
+    const h = createHarness({
+        publicReviews: [{
+            id: 22,
+            customer_id: null,
+            guest_number: '654321',
+            guest_name: null,
+            display_name: false,
+            rating: 4,
+        }],
+    });
+
+    await h.controller.getProductReviews(h.req, h.res);
+
+    assert.equal(h.res.statusCode, 200);
+    assert.equal(
+        h.res.body.data.reviews[0].reviewer_name,
+        'Guest #654321'
+    );
+});

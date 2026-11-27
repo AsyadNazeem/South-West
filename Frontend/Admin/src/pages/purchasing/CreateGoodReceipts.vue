@@ -67,10 +67,6 @@ const pageTitle = computed(() =>
   isEdit.value ? 'Goods Receipt' : 'Create Goods Receipt'
 )
 
-const selectedItem = computed(() =>
-  items.value.find(item => String(item.id) === String(line.value.item_id))
-)
-
 const selectedVariants = computed(() =>
   variants.value.filter(variant => variant.is_active !== false)
 )

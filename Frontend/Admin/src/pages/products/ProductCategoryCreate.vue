@@ -161,13 +161,9 @@ const loadCategory = async () => {
     loadingCategory.value = true;
     errorMessage.value = '';
 
-    console.log('Loading category ID:', route.params.id);
-
     const response = await api.get(
       `/categories/${route.params.id}`
     );
-
-    console.log('Category API response:', response.data);
 
     const category = response.data.data;
 
@@ -203,9 +199,6 @@ const loadCategory = async () => {
     } else {
       parentCategorySearch.value = '';
     }
-
-    console.log('Form after loading:', form.value);
-
   } catch (error) {
     console.error('Load category error:', error);
 

@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import paymentApi from '@/api/paymentApi'
 import AppPagination from '@/components/common/AppPagination.vue'
-import { hasPermission } from '@/auth/authorization.js'
 import { createRequestSequence } from '@/composables/useServerPagination.js'
 const paginationRequestSequence = createRequestSequence()
 
@@ -27,7 +26,6 @@ const methodFilter = ref('')
 const page = ref(1); const pageSize = ref(25); const pagination = ref({ total: 0, totalPages: 1 })
 let searchDebounceTimer
 
-const deletingId = ref(null)
 
 // ==========================================
 // Permissions

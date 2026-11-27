@@ -28,6 +28,10 @@ function maskName(value) {
 
 function publicReviewerName(review) {
     if (!review.customer_id) {
+        if (review.display_name && review.guest_name) {
+            return review.guest_name;
+        }
+
         return `Guest #${review.guest_number}`;
     }
 
@@ -73,6 +77,7 @@ exports.getProductReviews = async (req, res) => {
                 'id',
                 'customer_id',
                 'guest_number',
+                'guest_name',
                 'display_name',
                 'rating',
                 'review_title',
@@ -101,6 +106,7 @@ exports.getProductReviews = async (req, res) => {
 
             delete values.customer_id;
             delete values.guest_number;
+            delete values.guest_name;
             delete values.display_name;
             delete values.customer;
 
@@ -186,6 +192,35 @@ exports.createCustomerReview = async (req, res) => {
             });
         }
 
+        const requestedDisplayName =
+            req.body?.display_name === true ||
+            req.body?.display_name === 'true';
+
+        let guestName = null;
+
+        if (!customerId && requestedDisplayName) {
+            const suppliedName = req.body?.guest_name;
+
+            if (
+                suppliedName != null &&
+                typeof suppliedName !== 'string'
+            ) {
+                return res.status(400).json({
+                    message: 'Please enter a valid name.',
+                });
+            }
+
+            const normalizedName = (suppliedName || '').trim();
+
+            if (normalizedName.length > 100) {
+                return res.status(400).json({
+                    message: 'Your name must not exceed 100 characters.',
+                });
+            }
+
+            guestName = normalizedName || null;
+        }
+
         const item = await Item.findByPk(item_id);
 
         if (!item) {
@@ -248,13 +283,14 @@ exports.createCustomerReview = async (req, res) => {
         }
 
         const displayName = customerId
-            ? req.body?.display_name === true || req.body?.display_name === 'true'
-            : false;
+            ? requestedDisplayName
+            : Boolean(guestName);
 
         const reviewData = {
             item_id,
             customer_id: customerId,
             guest_number: guestNumber,
+            guest_name: guestName,
             display_name: displayName,
             order_id: purchasedOrderItem?.order_id ?? null,
             rating: Number(rating),
@@ -351,7 +387,7 @@ exports.createCustomerReview = async (req, res) => {
                 created_at: review.created_at,
                 reviewer_name: customerId
                     ? undefined
-                    : `Guest #${guestNumber}`,
+                    : (guestName || `Guest #${guestNumber}`),
             },
         });
     } catch (error) {

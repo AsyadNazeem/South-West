@@ -14,16 +14,16 @@ const safeFilename=value=>String(value||'upload.xlsx').split(/[\\/]/).pop().repl
 async function auditImport(req,entry,action,summary={}){try{await recordAuditLog({userId:req.user?.id??req.user?.userId??null,action,module:'items',entityType:'bulk_product_import',entityId:entry?.id||null,description:'Product workbook import '+String(summary.result||'operation').toLowerCase(),newValues:{import_type:'products',filename:entry?.filename||null,...summary},ipAddress:req.ip||null,userAgent:req.get?.('user-agent')||null,requestId:req.id||null});}catch(error){console.error('Unable to write product import audit event:',error.message);}}
 function rowCounts(results,parsed){
   const byRow=new Map((parsed.products||[]).map(product=>[product.rowNumber,product]));
-  const counts={total_rows:(parsed.products||[]).length+(parsed.counts?.variants||0),successful_rows:0,failed_rows:0,skipped_rows:0,records_created:0,records_updated:0,variants_created:0,records_failed:0};
-  for(const result of results||[]){const product=byRow.get(result.rowNumber);const variants=product?.variants?.length||0;const rows=1+variants;if(result.status==='Imported'){counts.successful_rows+=rows;counts.records_created++;counts.variants_created+=variants;}else{counts.failed_rows+=rows;counts.records_failed++;}}
+  const counts={total_rows:(parsed.products||[]).length+(parsed.counts?.variants||0)+(parsed.counts?.specifications||0),successful_rows:0,failed_rows:0,skipped_rows:0,records_created:0,records_updated:0,variants_created:0,records_failed:0};
+  for(const result of results||[]){const product=byRow.get(result.rowNumber);const variants=product?.variants?.length||0;const rows=1+variants+(product?.specificationRowCount||0);if(result.status==='Imported'){counts.successful_rows+=rows;counts.records_created++;counts.variants_created+=variants;}else{counts.failed_rows+=rows;counts.records_failed++;}}
   counts.skipped_rows=Math.max(0,counts.total_rows-counts.successful_rows-counts.failed_rows);
   return counts;
 }
 function validationRowCounts(parsed){
-  const total=(parsed.products||[]).length+(parsed.counts?.variants||0);
+  const total=(parsed.products||[]).length+(parsed.counts?.variants||0)+(parsed.counts?.specifications||0);
   const invalid=new Set((parsed.products||[]).filter(product=>product.errors?.length).map(product=>product.rowNumber));
   let failed=0;
-  for(const product of parsed.products||[])if(invalid.has(product.rowNumber))failed+=1+(product.variants||[]).length;
+  for(const product of parsed.products||[])if(invalid.has(product.rowNumber))failed+=1+(product.variants||[]).length+(product.specificationRowCount||0);
   failed+=parsed.problems?.length||0;
   return {total_rows:total,successful_rows:0,failed_rows:Math.min(total,failed),skipped_rows:Math.max(0,total-failed),records_created:0,records_updated:0,variants_created:0,records_failed:invalid.size};
 }

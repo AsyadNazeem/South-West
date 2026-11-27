@@ -71,7 +71,15 @@ const statuses = [
 ]
 
 const customerName = (review) => {
-  if (!review.customer) return "Guest"
+  if (!review.customer) {
+    if (review.display_name && review.guest_name) {
+      return review.guest_name
+    }
+
+    return review.guest_number
+      ? `Guest #${review.guest_number}`
+      : "Guest"
+  }
 
   const name = `${review.customer.first_name || ""} ${
     review.customer.last_name || ""

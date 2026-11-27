@@ -287,7 +287,6 @@ const loadCategory = async () => {
     }
 
     const response = await api.get(`/categories/${id}`)
-    console.log('Category API response:', response.data)
 
     category.value = response.data.data
 

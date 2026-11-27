@@ -30,15 +30,11 @@ const {
     Order,
     OrderItem,
     OrderAddress,
-    Delivery,
     Payment,
     Invoice,
     InventoryStockMovement,
     GuestCheckoutIdempotency,
-    Promotion,
-    PromotionItem,
-    PromotionCategory,
-    PromotionBrand
+    Promotion
 } = require('../models');
 
 

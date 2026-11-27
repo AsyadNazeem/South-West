@@ -135,44 +135,6 @@ async function fetchVariants(product) {
   }
 }
 
-function decodeHtmlEntities(value) {
-  return String(value || '')
-    .replace(/&nbsp;|&#160;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&reg;/gi, '®')
-    .replace(/&trade;/gi, '™')
-    .replace(/&times;/gi, '×')
-    .replace(/&#(\d+);/g, (_, code) => {
-      const point = Number(code)
-      return point <= 0x10ffff ? String.fromCodePoint(point) : ''
-    })
-    .replace(/&#x([\da-f]+);/gi, (_, code) => {
-      const point = Number.parseInt(code, 16)
-      return point <= 0x10ffff ? String.fromCodePoint(point) : ''
-    })
-}
-
-function getPlainDescription(value) {
-  return decodeHtmlEntities(
-    String(value || '')
-      .replace(/<\s*br\s*\/?\s*>/gi, '\n')
-      .replace(/<\/\s*(?:li|p|div|tr|h[1-6])\s*>/gi, '\n')
-      .replace(/<[^>]*>/g, ' ')
-  )
-    .replace(/[ \t]+/g, ' ')
-    .replace(/ *\n */g, '\n')
-    .replace(/\n{2,}/g, '\n')
-    .trim()
-}
-
-function cleanProductDescription(value) {
-  return getPlainDescription(value).slice(0, 5000)
-}
-
 function getActualProductImage(product) {
   const primaryImage = Array.isArray(product.images)
     ? product.images.find(image => image?.is_primary) || product.images[0]

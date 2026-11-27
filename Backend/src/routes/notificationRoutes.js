@@ -12,10 +12,7 @@ const {
     getNotificationById,
     createNotification,
     updateNotification,
-    deleteNotification,
-    getMyNotifications,
-    getMyNotificationById,
-    markMyNotificationRead
+    deleteNotification
 } = require('../controllers/notificationController');
 const adminNotifications = require('../controllers/adminNotificationController');
 

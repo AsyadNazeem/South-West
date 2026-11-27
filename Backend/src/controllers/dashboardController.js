@@ -9,6 +9,8 @@ const {
 
 const { Op, Sequelize } = require('sequelize');
 
+const { getDashboardSales } = require('../services/reportService');
+
 const getDashboard = async (req, res) => {
     try {
         // These dashboard reads are independent; running them together avoids
@@ -17,20 +19,14 @@ const getDashboard = async (req, res) => {
             totalCustomers,
             totalProducts,
             totalOrders,
-            salesResult,
+            totalSales,
             recentOrders,
             lowStock,
         ] = await Promise.all([
             Customer.count(),
             Item.count(),
             Order.count(),
-            Order.sum('total_amount', {
-                where: {
-                    status: {
-                        [Op.notIn]: ['cancelled', 'returned']
-                    }
-                }
-            }),
+            getDashboardSales(),
             Order.findAll({
                 limit: 5,
                 order: [['order_date', 'DESC']],
@@ -67,8 +63,6 @@ const getDashboard = async (req, res) => {
                 ]
             }),
         ]);
-
-        const totalSales = Number(salesResult || 0);
 
         // -----------------------------
         // Recent Orders

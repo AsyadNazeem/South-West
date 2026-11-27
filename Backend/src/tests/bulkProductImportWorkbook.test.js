@@ -9,6 +9,7 @@ const categories=[{id:1,name:'Accessories'}],brands=[{id:2,name:'UGREEN'}],itemT
 const model=(findAll=async()=>[],create=async values=>({id:1,...values}))=>({findAll,findOne:async()=>null,create,findByPk:async()=>null,findOrCreate:async()=>[{id:1}]});
 const transaction=()=>{const tx={LOCK:{UPDATE:'UPDATE'},finished:false,async commit(){this.finished='commit'},async rollback(){this.finished='rollback'}};calls.transactions.push(tx);return tx;};
 const db={
+  ItemTypeSpecification:model(),ItemSpecification:{},
   sequelize:{transaction:async()=>transaction()},
   Item:model(async()=>[],async values=>{calls.items.push(values);return {id:88,...values}}),Category:model(async()=>categories),Brand:model(async()=>brands),ItemType:model(async()=>itemTypes),Unit:model(async()=>units),Warranty:model(async()=>warranties),
   ItemVariant:model(async()=>[],async values=>{calls.variants.push(values);return {id:100+calls.variants.length,...values}}),
@@ -30,9 +31,9 @@ function baseWorkbook(){const wb=new ExcelJS.Workbook();wb.addWorksheet('Product
 function addProduct(wb,name='UGREEN Cable',type='Cable',weight=1,markAsNew='No'){wb.getWorksheet('Products').addRow([name,'Accessories','UGREEN',type,'Each','1 Year','New',weight,'Braided cable','Active',markAsNew]);}
 function addVariant(wb,product='UGREEN Cable',name='1m Type-C',stock=0,location='',quickbooksItemCode='',reorderQuantity=0){wb.getWorksheet('Variants').addRow([product,name,250,350,350,355,360,360,stock,reorderQuantity,location,'Yes',quickbooksItemCode]);}
 
-test('template contains only product and variant import sections',async()=>{
+test('template contains product, variant and specification import sections',async()=>{
   const bytes=await service.template({categories,brands,itemTypes,units,warranties,locations});const wb=new ExcelJS.Workbook();await wb.xlsx.load(bytes);
-  assert.deepEqual(wb.worksheets.map(sheet=>sheet.name),['Products','Variants','_Validation','Instructions','Reference Lists']);
+  assert.deepEqual(wb.worksheets.map(sheet=>sheet.name),['Products','Variants','Specifications','_Validation','Instructions','Reference Lists']);
   assert.deepEqual(wb.getWorksheet('Products').getRow(1).values.slice(1),service.PRODUCT_HEADERS);
   assert.deepEqual(wb.getWorksheet('Variants').getRow(1).values.slice(1),service.VARIANT_HEADERS);
   assert.ok(wb.getWorksheet('Products').getCell('B2').dataValidation);

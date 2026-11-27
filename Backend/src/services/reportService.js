@@ -1,9 +1,21 @@
 'use strict';
 
-const { QueryTypes } = require('sequelize');
+const { Op, QueryTypes, literal } = require('sequelize');
 const { Order } = require('../models');
 
 const REPORT_TIMEZONE = 'Asia/Colombo';
+
+// Checkout stores product prices before order discounts, with delivery and tax separate.
+const PRODUCT_SALES_SQL = 'subtotal - discount_amount';
+
+async function getDashboardSales() {
+    const result = await Order.findOne({
+        attributes: [[literal(`SUM(${PRODUCT_SALES_SQL})`), 'totalSales']],
+        where: { status: { [Op.notIn]: ['cancelled', 'returned'] } },
+        raw: true
+    });
+    return money(result?.totalSales);
+}
 
 function parseDateRange(query = {}) {
     const { startDate, endDate } = query;
@@ -54,22 +66,17 @@ function money(value) {
 }
 
 function buildTotals(rows) {
-    return rows.reduce((totals, row) => {
-        totals.orderCount += Number(row.orderCount || 0);
-        totals.subtotal += Number(row.subtotal || 0);
-        totals.discountAmount += Number(row.discountAmount || 0);
-        totals.taxAmount += Number(row.taxAmount || 0);
-        totals.shippingAmount += Number(row.shippingAmount || 0);
-        totals.totalSales += Number(row.totalSales || 0);
-        return totals;
-    }, {
-        orderCount: 0,
-        subtotal: 0,
-        discountAmount: 0,
-        taxAmount: 0,
-        shippingAmount: 0,
-        totalSales: 0
-    });
+    const totals = { orderCount: 0 };
+    const amounts = ['subtotal', 'discountAmount', 'taxAmount', 'shippingAmount', 'totalSales'];
+    for (const key of amounts) totals[key] = 0;
+
+    for (const row of rows) {
+        totals.orderCount += row.orderCount ?? 1;
+        for (const key of amounts) totals[key] += Math.round(row[key] * 100);
+    }
+
+    for (const key of amounts) totals[key] /= 100;
+    return totals;
 }
 
 async function getGroupedOnlineSales(query = {}, grouping = 'day') {
@@ -87,7 +94,7 @@ async function getGroupedOnlineSales(query = {}, grouping = 'day') {
             COALESCE(SUM(discount_amount), 0) AS discountAmount,
             COALESCE(SUM(tax_amount), 0) AS taxAmount,
             COALESCE(SUM(shipping_amount), 0) AS shippingAmount,
-            COALESCE(SUM(total_amount), 0) AS totalSales
+            COALESCE(SUM(${PRODUCT_SALES_SQL}), 0) AS totalSales
         FROM orders
         WHERE order_type = 'online'
           AND status NOT IN ('cancelled', 'returned')
@@ -115,18 +122,6 @@ async function getGroupedOnlineSales(query = {}, grouping = 'day') {
         totalSales: money(row.totalSales)
     }));
 
-    const totals = buildTotals(rows);
-
-    for (const key of [
-        'subtotal',
-        'discountAmount',
-        'taxAmount',
-        'shippingAmount',
-        'totalSales'
-    ]) {
-        totals[key] = money(totals[key]);
-    }
-
     return {
         report: grouping === 'month'
             ? 'monthly-online-sales'
@@ -137,7 +132,7 @@ async function getGroupedOnlineSales(query = {}, grouping = 'day') {
             startDate: range.startDate,
             endDate: range.endDate
         },
-        totals,
+        totals: buildTotals(rows),
         rows
     };
 }
@@ -149,11 +144,11 @@ async function getOnlineSalesSummary(query = {}) {
         where: {
             order_type: 'online',
             status: {
-                [require('sequelize').Op.notIn]: ['cancelled', 'returned']
+                [Op.notIn]: ['cancelled', 'returned']
             },
             order_date: {
-                [require('sequelize').Op.gte]: range.start,
-                [require('sequelize').Op.lt]: range.endExclusive
+                [Op.gte]: range.start,
+                [Op.lt]: range.endExclusive
             }
         },
         attributes: [
@@ -166,53 +161,26 @@ async function getOnlineSalesSummary(query = {}) {
             'discount_amount',
             'tax_amount',
             'shipping_amount',
-            'total_amount'
+            'total_amount',
+            [literal(PRODUCT_SALES_SQL), 'totalSales']
         ],
         order: [['order_date', 'ASC'], ['id', 'ASC']],
         raw: true
     });
 
-    const totals = {
-        orderCount: orders.length,
-        subtotal: 0,
-        discountAmount: 0,
-        taxAmount: 0,
-        shippingAmount: 0,
-        totalSales: 0
-    };
-
-    const rows = orders.map(order => {
-        const row = {
-            orderId: String(order.id),
-            orderNumber: order.order_number,
-            orderDate: order.order_date,
-            status: order.status,
-            paymentStatus: order.payment_status,
-            subtotal: money(order.subtotal),
-            discountAmount: money(order.discount_amount),
-            taxAmount: money(order.tax_amount),
-            shippingAmount: money(order.shipping_amount),
-            totalAmount: money(order.total_amount)
-        };
-
-        totals.subtotal += row.subtotal;
-        totals.discountAmount += row.discountAmount;
-        totals.taxAmount += row.taxAmount;
-        totals.shippingAmount += row.shippingAmount;
-        totals.totalSales += row.totalAmount;
-
-        return row;
-    });
-
-    for (const key of [
-        'subtotal',
-        'discountAmount',
-        'taxAmount',
-        'shippingAmount',
-        'totalSales'
-    ]) {
-        totals[key] = money(totals[key]);
-    }
+    const rows = orders.map(order => ({
+        orderId: String(order.id),
+        orderNumber: order.order_number,
+        orderDate: order.order_date,
+        status: order.status,
+        paymentStatus: order.payment_status,
+        subtotal: money(order.subtotal),
+        discountAmount: money(order.discount_amount),
+        taxAmount: money(order.tax_amount),
+        shippingAmount: money(order.shipping_amount),
+        totalAmount: money(order.total_amount),
+        totalSales: money(order.totalSales)
+    }));
 
     return {
         report: 'online-sales-summary',
@@ -222,7 +190,7 @@ async function getOnlineSalesSummary(query = {}) {
             startDate: range.startDate,
             endDate: range.endDate
         },
-        totals,
+        totals: buildTotals(rows),
         rows
     };
 }
@@ -236,6 +204,7 @@ async function getMonthlyOnlineSales(query = {}) {
 }
 
 module.exports = {
+    getDashboardSales,
     getOnlineSalesSummary,
     getDailyOnlineSales,
     getMonthlyOnlineSales

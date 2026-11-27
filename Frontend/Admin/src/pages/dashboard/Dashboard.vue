@@ -43,7 +43,7 @@ const formatCompact = value => {
 }
 
 const statCards = computed(() => [
-  { title: 'Total sales', value: formatCurrency(stats.value.totalSales), note: 'All time', icon: CircleDollarSign, tone: 'green' },
+  { title: 'Total sales' + ' (' + 'Excluding Delivery Chargers' + ')', value: formatCurrency(stats.value.totalSales), note: 'All time', icon: CircleDollarSign, tone: 'green' },
   { title: 'Orders', value: formatNumber(stats.value.totalOrders), note: 'All time', icon: ShoppingBag, tone: 'blue' },
   { title: 'Customers', value: formatNumber(stats.value.totalCustomers), note: 'Registered accounts', icon: Users, tone: 'violet' },
   { title: 'Products', value: formatNumber(stats.value.totalProducts), note: 'In the catalogue', icon: Package, tone: 'amber' },

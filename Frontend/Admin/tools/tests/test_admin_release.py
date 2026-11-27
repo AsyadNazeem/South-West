@@ -55,7 +55,7 @@ class AdminReleaseTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.root.chmod(0o700)
 
-        self.dist = self.root / "Admin/dist"
+        self.dist = self.root / "build/Admin/dist"
         self.live = self.root / "admin"
 
         self.dist.mkdir(parents=True)

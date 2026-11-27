@@ -120,12 +120,6 @@ function changePageSize(event) {
 const toggleStatus = async (item) => {
   const makeActive = !item.is_active
 
-  console.log("Changing item status:", {
-    id: item.id,
-    currentStatus: item.is_active,
-    newStatus: makeActive
-  })
-
   try {
     await api.put(`/items/${item.id}`, {
       is_active: makeActive

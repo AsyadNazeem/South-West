@@ -8,21 +8,6 @@ const AUDIT_MODULE = 'ORDER_ITEM';
 const getActorId = (req) =>
     req.user?.id ?? req.user?.user_id ?? null;
 
-const getOrderItemSnapshot = (orderItem) => {
-    if (!orderItem) return null;
-
-    return {
-        id: orderItem.id,
-        order_id: orderItem.order_id,
-        item_id: orderItem.item_id,
-        quantity: orderItem.quantity,
-        unit_price: orderItem.unit_price,
-        discount_amount: orderItem.discount_amount,
-        tax_amount: orderItem.tax_amount,
-        line_total: orderItem.line_total
-    };
-};
-
 const auditOrderItem = async (
     req,
     {

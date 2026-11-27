@@ -77,7 +77,8 @@ const approvedReviewCount = ref(0)
 const reviewRating = ref(5)
 const reviewTitle = ref('')
 const reviewText = ref('')
-const displayReviewName = ref(false)
+const displayReviewName = ref(true)
+const guestReviewName = ref('')
 const submittingReview = ref(false)
 const reviewMessage = ref('')
 const reviewSubmitError = ref('')
@@ -425,7 +426,6 @@ async function toggleWishlist() {
 }
 
 async function submitProductReview() {
-  console.log('[REVIEW] Submit function triggered')
   reviewMessage.value = ''
   reviewSubmitError.value = ''
 
@@ -458,28 +458,21 @@ async function submitProductReview() {
     payload.append('review_title', reviewTitle.value.trim())
     payload.append('review_text', reviewText.value.trim())
 
-    if (customerToken) {
-      payload.append('display_name', String(displayReviewName.value))
+    payload.append('display_name', String(displayReviewName.value))
+
+    if (!customerToken && displayReviewName.value) {
+      payload.append('guest_name', guestReviewName.value.trim())
     }
 
     reviewImages.value.forEach(image => {
       payload.append('images', image.file)
     })
 
-    console.log('[REVIEW] Sending request', {
-      productId: product.value?.id,
-      imageCount: reviewImages.value.length,
-      payloadEntries: [...payload.entries()].map(([key, value]) => ({
-        key,
-        value: value instanceof File ? value.name : value
-      }))
+    const response = await api.post('/customer-reviews', payload, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
     })
-
-const response = await api.post('/customer-reviews', payload, {
-  headers: {
-    'Content-Type': 'multipart/form-data'
-  }
-})
 
     reviewMessage.value =
       response.data?.message ||
@@ -488,20 +481,11 @@ const response = await api.post('/customer-reviews', payload, {
     reviewSubmitted.value = true
     reviewTitle.value = ''
     reviewText.value = ''
-    displayReviewName.value = false
+    displayReviewName.value = true
+    guestReviewName.value = ''
     clearReviewImages()
   } catch (err) {
     console.error('[REVIEW] Submission failed:', err)
-    console.error('[REVIEW] Error details:', {
-      message: err.message,
-      code: err.code,
-      url: err.config?.url,
-      baseURL: err.config?.baseURL,
-      method: err.config?.method,
-      status: err.response?.status,
-      response: err.response?.data
-    })
-
     reviewSubmitError.value =
       err.response?.data?.message ||
       'Unable to submit your review. Please try again.'
@@ -2104,20 +2088,50 @@ onMounted(loadProduct)
     <p v-if="reviewSubmitError" class="review-alert error">{{ reviewSubmitError }}</p>
 
     <form v-if="!reviewSubmitted" @submit.prevent="submitProductReview">
-      <p v-if="isGuestReviewer" class="muted guest-review-notice">
-        Your review will be displayed using an automatically generated guest number.
-      </p>
-
-      <div v-else class="form-field review-name-preference">
+      <div class="form-field review-name-preference">
         <label class="checkbox-label">
           <input
             v-model="displayReviewName"
             type="checkbox"
           />
-          Display my full name with this review
+          {{ isGuestReviewer
+            ? 'Display my name with this review'
+            : 'Display my full name with this review' }}
         </label>
-        <small class="muted">
+
+        <small v-if="!isGuestReviewer" class="muted">
           If unchecked, your first and last name will be partially hidden.
+        </small>
+
+        <small
+          v-else-if="!displayReviewName"
+          class="muted guest-review-notice"
+        >
+          Your review will be displayed using an automatically generated guest number.
+        </small>
+      </div>
+
+      <div
+        v-if="isGuestReviewer && displayReviewName"
+        class="form-field"
+      >
+        <label for="guest-review-name" class="field-label">
+          Your name (optional)
+        </label>
+
+        <input
+          id="guest-review-name"
+          v-model="guestReviewName"
+          type="text"
+          maxlength="100"
+          autocomplete="name"
+          placeholder="Enter your name"
+          aria-describedby="guest-review-name-help"
+        />
+
+        <small id="guest-review-name-help" class="muted">
+          Your name will be displayed publicly with your review.
+          Leave blank to use an automatically generated guest number.
         </small>
       </div>
 

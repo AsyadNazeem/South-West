@@ -39,7 +39,7 @@ async function retryFailed(){busy.value=true;stage.value='importing';message.val
       <li>Add Variants</li>
       <li :class="{ current: ['validating', 'preview'].includes(stage) }">Upload and review</li>
       <li :class="{ current: ['importing', 'complete'].includes(stage) }">Confirm and finish</li>
-      <li>Add specifications in admin</li>
+      <li>Review results</li>
     </ol>
 
 
@@ -57,7 +57,7 @@ async function retryFailed(){busy.value=true;stage.value='importing';message.val
         <h2>Download the Excel template</h2>
 
         <p>
-          It includes separate sheets for Products and Variants. Reference Lists shows current categories,
+          It includes editable Products, Variants and Specifications sheets. Reference Lists shows current categories,
           brands, item types, units, warranties, conditions, and stock locations.
         </p>
 
@@ -86,7 +86,7 @@ async function retryFailed(){busy.value=true;stage.value='importing';message.val
           <li>Enter a non-negative Reorder Quantity for each variant. It accepts zero and up to three decimal places. Enter Stock Quantity separately for opening stock.</li>
           <li>Choose an active Stock Location when Stock Quantity or Reorder Quantity is greater than zero. The preview shows the location and reorder quantity for each variant.</li>
           <li>Mark one variant as the default, or leave all as No to use the first variant.</li>
-          <li>After the import, open <strong>Products &gt; Variants</strong>, edit each variant, and add its configured specifications there.</li>
+          <li>On <strong>Specifications</strong>, choose a product. Leave Variant Name blank for a shared fact, or select a version. Choose an assigned specification, then enter its value. For dates, use YYYY-MM-DD.</li>
         </ul>
       </div>
     </section>
@@ -245,8 +245,16 @@ async function retryFailed(){busy.value=true;stage.value='importing';message.val
                 <td>{{ row.shippingWeight ?? '—' }}</td>
                 <td>{{ row.isNew ? 'Yes' : 'No' }}</td>
                 <td class="variants-cell">
+                  <p v-for="fact in row.specifications" :key="fact.id">Product · {{ fact.name }}: {{ fact.value }}</p>
                   <ul>
-                    <li v-for="variant in row.variants" :key="variant.name">{{ variant.name }} · {{ variant.sellingPrice === null ? 'No selling price' : `LKR ${variant.sellingPrice}` }} · {{ variant.stock === null ? 'No opening stock' : `Stock ${variant.stock}` }} · Reorder {{ variant.reorderQuantity }} · Location {{ variant.stockLocation || '—' }}{{ variant.quickbooksItemCode ? ` · QB ${variant.quickbooksItemCode}` : '' }}</li>
+                    <li v-for="variant in row.variants" :key="variant.name">{{ variant.name }} · {{ variant.sellingPrice === null ? 'No selling price' : `LKR ${variant.sellingPrice}` }} · {{ variant.stock === null ? 'No opening stock' : `Stock ${variant.stock}` }} · Reorder {{ variant.reorderQuantity }} · Location {{ variant.stockLocation || '—' }}{{ variant.quickbooksItemCode ? ` · QB ${variant.quickbooksItemCode}` : '' }}
+                      <span v-for="colour in variant.colors" :key="colour.hex_code" class="variant-colour">
+                        <i aria-hidden="true" :style="{ backgroundColor: colour.hex_code }"></i>{{ colour.color_name }} {{ colour.hex_code }}
+                      </span>
+                      <ul v-if="variant.specifications?.length">
+                        <li v-for="fact in variant.specifications" :key="fact.id">{{ fact.name }}: {{ fact.value }}</li>
+                      </ul>
+                    </li>
                   </ul>
                 </td>
                 <td>
@@ -280,7 +288,7 @@ async function retryFailed(){busy.value=true;stage.value='importing';message.val
 
             <p v-else>
               Everything looks good. Confirm to add the products, variants, prices, and opening stock.
-              Add variant specifications afterward in product administration.
+              The listed specifications will be saved with their product or variant.
             </p>
           </div>
 
@@ -781,6 +789,9 @@ tbody tr:last-child td {
 .problem {
   color: var(--color-danger);
 }
+
+.variant-colour { display: inline-flex; align-items: center; gap: .3rem; margin-left: .5rem; }
+.variant-colour i { width: .85rem; height: .85rem; border-radius: 50%; border: 1px solid #888; }
 
 .variants-cell {
   min-width: 280px;

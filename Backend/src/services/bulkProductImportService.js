@@ -2,13 +2,16 @@
 
 const { labelChanges } = require('../utils/itemNewLabel');
 const ExcelJS = require('exceljs');
-const { Op } = require('sequelize');
+const colors = require('./bulkVariantColors');
+const specs = require('./bulkSpecificationImport');
+const { HEADERS: SPEC_HEADERS, typeLabel, addSpecificationLists } = require('./bulkSpecificationWorkbook');
+const db = require('../models');
 const { randomUUID } = require('crypto');
 const {
   sequelize, Item, Brand, Category, ItemType, ItemVariant, Unit, Warranty,
   ItemPrice, ItemPaymentPrice, InventoryStock,
   InventoryStockMovement, InventoryLocation,
-} = require('../models');
+} = db;
 const { generateItemCode } = require('./itemCodeService');
 const { recordAuditLog } = require('./auditLogService');
 const { generateVariantSku } = require('../controllers/itemVariantController');
@@ -21,7 +24,8 @@ async function auditImportedRecord(options) {
 
 const LIMIT_ROWS = 500;
 const PRODUCT_HEADERS = ['Product Name','Category','Brand','Item Type','Unit of Measure','Warranty','Condition','Shipping Weight (kg)','Description','Active Status','Mark as New'];
-const VARIANT_HEADERS = ['Product Name','Variant Name','Cost Price','Selling Price','Cash Price','Card Price','Koko Price','Mintpay Price','Stock Quantity','Reorder Quantity','Stock Location','Default Variant','QuickBooks Item Code'];
+const LEGACY_VARIANT_HEADERS = ['Product Name','Variant Name','Cost Price','Selling Price','Cash Price','Card Price','Koko Price','Mintpay Price','Stock Quantity','Reorder Quantity','Stock Location','Default Variant','QuickBooks Item Code'];
+const VARIANT_HEADERS = [...LEGACY_VARIANT_HEADERS, ...colors.headers];
 const str = value => String(value ?? '').trim();
 const key = value => str(value).toLocaleLowerCase();
 const isActive = value => value === true || value === 1 || value === '1';
@@ -46,7 +50,7 @@ function readRows(sheet, sheetName, headers) {
   const rows=[];
   for(let n=2;n<=sheet.rowCount;n++) {
     const values={}; let nonEmpty=false;
-    headers.forEach((header,index)=>{const value=cellValue(sheet.getRow(n).getCell(index+1));values[header]=value;if(value!==''&&value!==null&&value!==undefined)nonEmpty=true;});
+    headers.forEach((header,index)=>{const cell=sheet.getRow(n).getCell(index+1);const value=colors.headers.includes(header)?cell.value:cellValue(cell);values[header]=value;if(value!==''&&value!==null&&value!==undefined)nonEmpty=true;});
     if(nonEmpty)rows.push({rowNumber:n,values});
   }
   return rows;
@@ -90,15 +94,21 @@ function shippingWeight(value){
 async function parseAndValidate(buffer){
   const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(buffer);
   const productRows=readRows(workbook.getWorksheet('Products'),'Products',PRODUCT_HEADERS);
-  const variantRows=readRows(workbook.getWorksheet('Variants'),'Variants',VARIANT_HEADERS);
+  const variantSheet = workbook.getWorksheet('Variants');
+  const colored = variantSheet && colors.hasColumns(variantSheet, LEGACY_VARIANT_HEADERS.length);
+  const variantRows = readRows(variantSheet, 'Variants', colored ? VARIANT_HEADERS : LEGACY_VARIANT_HEADERS);
   if(workbook.getWorksheet('Variant Specifications'))throw new Error('The Variant Specifications sheet is no longer supported. Import the products and variants, then edit variant specifications in product administration.');
   if(productRows.length+variantRows.length>LIMIT_ROWS)throw new Error(`Workbook exceeds ${LIMIT_ROWS} total data rows.`);
+  const specificationRows = specs.specificationRows(workbook.getWorksheet('Specifications'), LIMIT_ROWS);
   const refs=await references();
   const productNames=new Map();const products=[];const problems=[];
   for(const row of productRows){const v=row.values,errors=[];const name=str(v['Product Name']);if(!name)errors.push('Product Name is required.');if(name.length>255)errors.push('Product Name must be 255 characters or fewer.');
     const category=refs.categories.find(x=>key(x.name)===key(v.Category));if(!category)errors.push('Choose an active category from the Reference Lists sheet.');
     const brand=refs.brands.find(x=>key(x.name)===key(v.Brand));if(!brand)errors.push('Choose an active brand from the Reference Lists sheet.');
-    const typeName=str(v['Item Type']);const itemType=typeName?refs.itemTypes.find(x=>key(x.name)===key(typeName)):null;if(typeName&&!itemType)errors.push('Choose an active item type from the Reference Lists sheet.');
+    const typeName = typeLabel(v['Item Type']);
+    const matchingTypes = typeName ? refs.itemTypes.filter(t => key(typeLabel(t.name)) === key(typeName)) : [];
+    const itemType = matchingTypes.length === 1 ? matchingTypes[0] : null;
+    if (typeName && !itemType) errors.push('Choose an active, unambiguous item type from the Reference Lists sheet.');
     const unitName=str(v['Unit of Measure']);const unit=unitName?refs.units.find(x=>key(x.name)===key(unitName)||key(x.code)===key(unitName)):null;if(unitName&&!unit)errors.push('Choose an active Unit of Measure from the Reference Lists sheet.');
     const warrantyName=str(v.Warranty);const warranty=warrantyName?refs.warranties.find(x=>key(x.name)===key(warrantyName)||key(x.code)===key(warrantyName)):null;if(warrantyName&&!warranty)errors.push('Choose an active Warranty from the Reference Lists sheet.');
     const conditionLabel=str(v.Condition);const condition=CONDITION_OPTIONS.find(x=>key(x.label)===key(conditionLabel)||x.value===key(conditionLabel));if(!condition)errors.push('Condition must be New, Used, Refurbished, Open Box, or Damaged.');
@@ -109,6 +119,7 @@ async function parseAndValidate(buffer){
     products.push(product);if(name){const normalized=key(name);if(productNames.has(normalized)){errors.push('Product Name is duplicated. Give each product a unique name so its variants can be linked safely.');productNames.get(normalized).errors.push('Product Name is duplicated. Give each product a unique name so its variants can be linked safely.');}else productNames.set(normalized,product);}
   }
   // Variants for the same product may appear in any order on the Variants sheet.
+  const palettes = new Map();
   for(const row of variantRows){const v=row.values,errors=[];const productKey=key(v['Product Name']);const parent=productNames.get(productKey);if(!parent)errors.push('Product Name must exactly match one product on the Products sheet.');
     const name=str(v['Variant Name']);if(!name)errors.push('Variant Name is required.');if(name.length>255)errors.push('Variant Name must be 255 characters or fewer.');
     const prices={cost:price(v['Cost Price'],'Cost Price',errors),selling:price(v['Selling Price'],'Selling Price',errors,{required:true}),cash:price(v['Cash Price'],'Cash Price',errors,{required:true}),card:price(v['Card Price'],'Card Price',errors,{required:true}),koko:price(v['Koko Price'],'Koko Price',errors,{required:true}),mintpay:price(v['Mintpay Price'],'Mintpay Price',errors,{required:true})};
@@ -119,26 +130,40 @@ async function parseAndValidate(buffer){
     const defaultValue=bool(v['Default Variant']);if(v['Default Variant']!==''&&v['Default Variant']!==null&&v['Default Variant']!==undefined&&defaultValue===null)errors.push('Default Variant must be Yes or No.');
     const quickbooksItemCode=v['QuickBooks Item Code']===''||v['QuickBooks Item Code']===null||v['QuickBooks Item Code']===undefined?'':String(v['QuickBooks Item Code']).trim();
     if(quickbooksItemCode.length>100)errors.push('QuickBooks Item Code must be 100 characters or fewer.');
-    const variant={rowNumber:row.rowNumber,parent,name,prices,stock,reorderQuantity,locationName,location,isDefault:defaultValue??false,quickbooksItemCode,attributes:{},errors};
+    if (!palettes.has(productKey)) palettes.set(productKey, new Map());
+    const variantColors = colors.readColors(v, palettes.get(productKey), errors);
+    const variant={colors:variantColors,rowNumber:row.rowNumber,parent,name,prices,stock,reorderQuantity,locationName,location,isDefault:defaultValue??false,quickbooksItemCode,attributes:{},errors};
     if(stock>0&&parent&&!parent.active)errors.push('Opening stock cannot be recorded for an inactive product variant.');
     if(parent){if(parent.variants.some(existing=>key(existing.name)===key(name)))errors.push('Variant Name is repeated within this product. Use a distinct variant name.');parent.variants.push(variant);if(errors.length)parent.errors.push(...errors.map(message=>`Variants row ${row.rowNumber}: ${message}`));}
     else problems.push({sheet:'Variants',rowNumber:row.rowNumber,errors});
   }
   for(const product of products){if(!product.variants.length)product.errors.push('Add at least one variant for this product on the Variants sheet.');const defaults=product.variants.filter(v=>v.isDefault);if(defaults.length>1){product.errors.push('Only one variant can be marked as the default.');for(const v of defaults)v.errors.push('Only one variant can be marked as the default.');}if(product.variants.length&&defaults.length===0)product.variants[0].isDefault=true;}
-  for(const product of products){const generated=new Map();for(const variant of product.variants){try{const candidate=generateVariantSku('SW-000001',variant.name).toLowerCase();if(generated.has(candidate)){const error='This variant name would generate the same SKU as another variant. Use a more distinct name.';variant.errors.push(error);product.errors.push(error);generated.get(candidate).errors.push(error);}else generated.set(candidate,variant);}catch(error){variant.errors.push(error.message);product.errors.push(error.message);}}}
+  for(const product of products){const generated=new Map();for(const variant of product.variants){try{const candidate=generateVariantSku('SW-000001',variant.name,colors.skuSuffix(variant.colors)).toLowerCase();if(generated.has(candidate)){const error='This variant name would generate the same SKU as another variant. Use a more distinct name.';variant.errors.push(error);product.errors.push(error);generated.get(candidate).errors.push(error);}else generated.set(candidate,variant);}catch(error){variant.errors.push(error.message);product.errors.push(error.message);}}}
   for(const product of products){for(const variant of product.variants)if(variant.errors.length&&!product.errors.some(e=>e.startsWith(`Variants row ${variant.rowNumber}:`)))product.errors.push(...variant.errors.map(e=>`Variants row ${variant.rowNumber}: ${e}`));}
-  const counts={products:products.length,variants:variantRows.length,valid:products.filter(p=>!p.errors.length).length,invalid:products.filter(p=>p.errors.length).length,duplicates:products.filter(p=>p.errors.some(e=>/duplicat/i.test(e))).length,withVariants:products.filter(p=>p.variants.length).length};
-  return {products,refs,problems,counts};
+  const definitions = specificationRows.length ? await specs.assignments(db, [...new Set(products.filter(p => p.itemType).map(p => p.itemType.id))]) : [];
+  const specificationIssues = specs.mapRows(specificationRows, products, definitions);
+  for (const issue of specificationIssues.filter(i => !i.productRow)) problems.push({sheet:issue.sheet,rowNumber:issue.rowNumber,errors:[issue.error]});
+  const counts={specifications:specificationRows.length,products:products.length,variants:variantRows.length,valid:products.filter(p=>!p.errors.length).length,invalid:products.filter(p=>p.errors.length).length,duplicates:products.filter(p=>p.errors.some(e=>/duplicat/i.test(e))).length,withVariants:products.filter(p=>p.variants.length).length};
+  return {products,refs,problems,counts,specificationIssues};
 }
-function columnFor(message,sheet){const text=message.toLowerCase();for(const [column,label] of [['product name','Product Name'],['category','Category'],['brand','Brand'],['item type','Item Type'],['unit of measure','Unit of Measure'],['warranty','Warranty'],['condition','Condition'],['shipping weight','Shipping Weight (kg)'],['active status','Active Status'],['mark as new','Mark as New'],['variant name','Variant Name'],['quickbooks item code','QuickBooks Item Code'],['cost price','Cost Price'],['selling price','Selling Price'],['cash price','Cash Price'],['card price','Card Price'],['koko price','Koko Price'],['mintpay price','Mintpay Price'],['stock quantity','Stock Quantity'],['reorder quantity','Reorder Quantity'],['stock location','Stock Location'],['default variant','Default Variant']])if(text.includes(column))return label;return sheet==='Variant Specifications'?'Specification':sheet==='Variants'?'Variant Name':'Product Name';}
-function validationIssues(data){const issues=[];for(const product of data.products)for(const original of product.errors){let sheet='Products',rowNumber=product.rowNumber,error=original;const prefix=original.match(/^(Variants|Variant Specifications) row (\d+):\s*/);if(prefix){sheet=prefix[1];rowNumber=Number(prefix[2]);error=original.slice(prefix[0].length);}issues.push({sheet,rowNumber,column:columnFor(error,sheet),error,suggestion:'Check this field and correct the value using the choices or format shown in the workbook.'});}for(const problem of data.problems)for(const error of problem.errors)issues.push({sheet:problem.sheet,rowNumber:problem.rowNumber,column:columnFor(error,problem.sheet),error,suggestion:'Check the matching product and variant names, then correct this row.'});const unique=new Map(issues.map(issue=>[`${issue.sheet}:${issue.rowNumber}:${issue.column}:${issue.error}`,issue]));return [...unique.values()];}
-function summary(data){return {counts:data.counts,rows:data.products.map(p=>({rowNumber:p.rowNumber,name:p.name,category:p.category?.name||'',brand:p.brand?.name||'',unitOfMeasure:p.unit?.name||'',warranty:p.warranty?.name||'',condition:p.condition||'',shippingWeight:p.shippingWeight,isNew:p.isNew,variants:p.variants.map(v=>({name:v.name,quickbooksItemCode:v.quickbooksItemCode,sellingPrice:v.prices.selling,stock:v.stock,reorderQuantity:v.reorderQuantity,stockLocation:v.locationName})),status:p.errors.length?'Invalid':'Valid',errors:p.errors})),workbookErrors:validationIssues(data)};}
+function columnFor(message,sheet){const colorColumn=colors.headers.find(h=>message.startsWith(h+' '));if(colorColumn)return colorColumn;const text=message.toLowerCase();for(const [column,label] of [['product name','Product Name'],['category','Category'],['brand','Brand'],['item type','Item Type'],['unit of measure','Unit of Measure'],['warranty','Warranty'],['condition','Condition'],['shipping weight','Shipping Weight (kg)'],['active status','Active Status'],['mark as new','Mark as New'],['variant name','Variant Name'],['quickbooks item code','QuickBooks Item Code'],['cost price','Cost Price'],['selling price','Selling Price'],['cash price','Cash Price'],['card price','Card Price'],['koko price','Koko Price'],['mintpay price','Mintpay Price'],['stock quantity','Stock Quantity'],['reorder quantity','Reorder Quantity'],['stock location','Stock Location'],['default variant','Default Variant']])if(text.includes(column))return label;return sheet==='Variant Specifications'?'Specification':sheet==='Variants'?'Variant Name':'Product Name';}
+function validationIssues(data){const issues=[...data.specificationIssues];for(const product of data.products)for(const original of product.errors){if(original.startsWith('Specifications row '))continue;let sheet='Products',rowNumber=product.rowNumber,error=original;const prefix=original.match(/^(Variants|Variant Specifications) row (\d+):\s*/);if(prefix){sheet=prefix[1];rowNumber=Number(prefix[2]);error=original.slice(prefix[0].length);}issues.push({sheet,rowNumber,column:columnFor(error,sheet),error,suggestion:'Check this field and correct the value using the choices or format shown in the workbook.'});}for(const problem of data.problems.filter(p=>p.sheet!=='Specifications'))for(const error of problem.errors)issues.push({sheet:problem.sheet,rowNumber:problem.rowNumber,column:columnFor(error,problem.sheet),error,suggestion:'Check the matching product and variant names, then correct this row.'});const unique=new Map(issues.map(issue=>[`${issue.sheet}:${issue.rowNumber}:${issue.column}:${issue.error}`,issue]));return [...unique.values()];}
+function summary(data){return {counts:data.counts,rows:data.products.map(p=>({rowNumber:p.rowNumber,name:p.name,category:p.category?.name||'',brand:p.brand?.name||'',unitOfMeasure:p.unit?.name||'',warranty:p.warranty?.name||'',condition:p.condition||'',shippingWeight:p.shippingWeight,isNew:p.isNew,specifications:p.specifications||[],variants:p.variants.map(v=>({name:v.name,colors:v.colors,specifications:v.specifications||[],quickbooksItemCode:v.quickbooksItemCode,sellingPrice:v.prices.selling,stock:v.stock,reorderQuantity:v.reorderQuantity,stockLocation:v.locationName})),status:p.errors.length?'Invalid':'Valid',errors:p.errors})),workbookErrors:validationIssues(data)};}
 
 async function template(refsArg){
   const refs=refsArg||await references();const wb=new ExcelJS.Workbook();wb.creator='South West Admin';wb.calcProperties={calcMode:'auto',fullCalcOnLoad:true,forceFullCalc:true};
   const add=(name,headers,rows=[])=>{const sheet=wb.addWorksheet(name);sheet.addRow(headers);sheet.views=[{state:'frozen',ySplit:1}];sheet.autoFilter={from:{row:1,column:1},to:{row:1,column:headers.length}};sheet.columns=headers.map(h=>({header:h,width:Math.max(18,h.length+4)}));const header=sheet.getRow(1);header.font={bold:true,color:{argb:'FFFFFFFF'}};header.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF17365D'}};rows.forEach(r=>sheet.addRow(r));return sheet;};
   const products=add('Products',PRODUCT_HEADERS,[['Example product',refs.categories[0]?.name||'',refs.brands[0]?.name||'',refs.itemTypes[0]?.name||'',refs.units[0]?.name||'','',CONDITION_OPTIONS[0].label,1,'Replace this example description','Active','No']]);
   const variants=add('Variants',VARIANT_HEADERS,[['Example product','Standard',100,150,150,155,160,160,0,0,'','Yes','']]);
+  const specifications=add('Specifications',SPEC_HEADERS);
+
+  specifications.columns=[
+    {width:35},
+    {width:25},
+    {width:35},
+    {width:35}
+  ];
+
   const validation=wb.addWorksheet('_Validation');validation.state='veryHidden';
   const defined=[];
   const lists=[
@@ -161,6 +186,20 @@ async function template(refsArg){
   const define=(name,range)=>wb.definedNames.add(range,name);
   for(const [name,range] of defined)define(name,range);
   define('ProductNames',"'Products'!$A$2:$A$501");
+  for(let row=2;row<=501;row++){
+    specifications.getCell(row,1).dataValidation={
+      type:'list',
+      formulae:['=ProductNames'],
+      allowBlank:true,
+      showErrorMessage:true,
+      errorTitle:'Invalid product',
+      error:'Choose a product from the Products worksheet.'
+    };
+    specifications.getCell(row,4).numFmt='@';
+  }
+
+  const assignments = refsArg ? refs.assignments || [] : await specs.assignments(db, refs.itemTypes.map(t => t.id));
+  addSpecificationLists(wb, validation, specifications, { ...refs, assignments }, LIMIT_ROWS);
   const productLists=[[2,'CategoryList'],[3,'BrandList'],[4,'ItemTypeList'],[5,'UnitList'],[6,'WarrantyList'],[7,'ConditionList']];
   for(let row=2;row<=501;row++){
     for(const [column,name] of productLists)products.getCell(row,column).dataValidation={type:'list',formulae:[`=${name}`],allowBlank:column===6,showErrorMessage:true};
@@ -178,6 +217,7 @@ async function template(refsArg){
     variants.getCell(row,11).dataValidation={type:'list',formulae:['=LocationList'],allowBlank:true};
     variants.getCell(row,12).dataValidation={type:'list',formulae:['"Yes,No"'],allowBlank:false};
     variants.getCell(row,13).numFmt='@';
+    variants.getCell(row,15).numFmt=variants.getCell(row,17).numFmt='@';
   }
   const instructions=add('Instructions',['Step','What to do'],[
     ['1. Products','Add one row per product. Product Name must be unique in this workbook. Choose Category, Brand, and Item Type from the lists. Mark as New is optional and defaults to No. This badge setting does not make a never-stocked product visible in the storefront.'],
@@ -185,13 +225,15 @@ async function template(refsArg){
     ['3. Stock','Enter a non-negative Stock Quantity and Reorder Quantity for each variant. Reorder Quantity accepts zero or a positive quantity with up to three decimal places. Choose an active Stock Location when either quantity is positive. Leave Stock Quantity blank or enter 0 if there is no opening stock.'],
     ['4. Default','Mark one variant Yes as the default. If none is marked Yes, the first variant for that product will be used.'],
     ['5. Upload','Save as .xlsx, upload, review all messages and correct blocking errors, then confirm the import. The system creates product codes and variant SKUs automatically.'],
-    ['6. Add specifications','After the import completes, open Products > Variants in admin and edit each variant to enter its configured specifications. Required specification values are managed on the variant after import. Shipping Weight is entered in kilograms.']
+    ['Optional variant colours','No colours: leave the four colour cells blank. One colour: enter Black and #000000 in the first pair. Two colours: add White and #FFFFFF in the second pair. Use Reference Lists for examples or type a custom name and six-digit HEX code. Reuse the same name and code for a shared swatch.'],
+    ['6. Add specifications','On Specifications, choose Product Name. Leave Variant Name blank for a shared product fact or select a variant for a version-specific fact. Choose a specification available for the product’s Item Type. Choose an approved Select value or Yes/No, or type text, a number or a date (YYYY-MM-DD). Recheck later choices after changing a parent. This sheet is optional. You can still edit each variant to enter its configured specifications in Products > Variants.']
   ]);instructions.getColumn(1).width=22;instructions.getColumn(2).width=105;
   const refsSheet=add('Reference Lists',['Categories','Brands','Item Types','Units of Measure','Warranties','Conditions','Stock Locations']);
   const max=Math.max(refs.categories.length,refs.brands.length,refs.itemTypes.length,refs.units.length,refs.warranties.length,refs.locations.length,1);
   for(let i=0;i<max;i++)refsSheet.addRow([refs.categories[i]?.name||'',refs.brands[i]?.name||'',refs.itemTypes[i]?.name||'',refs.units[i]?.name||'',refs.warranties[i]?.name||'',CONDITION_OPTIONS[i]?.label||'',refs.locations[i]?.name||'']);
   for(const column of [1,2,3,4,5,7,8,10])products.getRow(1).getCell(column).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFC65911'}};
   for(const column of [1,2,4,5,6,7,8,11,12])variants.getRow(1).getCell(column).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFC65911'}};
+  colors.addReferenceTable(refsSheet);
   return wb.xlsx.writeBuffer();
 }
 async function report(buffer){const parsed=await parseAndValidate(buffer);const wb=new ExcelJS.Workbook();await wb.xlsx.load(buffer);let reportName='Import Error Report',suffix=2;while(wb.getWorksheet(reportName))reportName=`Import Error Report ${suffix++}`;const sheet=wb.addWorksheet(reportName);sheet.addRow(['Worksheet','Excel Row','Column','Problem','Suggested correction']);for(const issue of validationIssues(parsed))sheet.addRow([issue.sheet,issue.rowNumber,issue.column,issue.error,issue.suggestion]);sheet.columns=[{width:30},{width:14},{width:24},{width:90},{width:75}];sheet.views=[{state:'frozen',ySplit:1}];sheet.autoFilter={from:{row:1,column:1},to:{row:1,column:5}};return wb.xlsx.writeBuffer();}
@@ -199,9 +241,15 @@ async function report(buffer){const parsed=await parseAndValidate(buffer);const 
 async function importProducts(buffer,userId,reqMeta={},rowFilter=null){
   const parsed=await parseAndValidate(buffer);const selected=rowFilter?parsed.products.filter(p=>rowFilter.includes(p.rowNumber)):parsed.products;if(selected.some(p=>p.errors.length)||parsed.problems.length)throw new Error('The workbook has validation issues. Correct the workbook and upload it again before importing.');const eligible=selected;const rejected=[];const results=[];
   for(const p of eligible){const transaction=await sequelize.transaction();try{
+    await specs.checkBeforeWrite(db, p, transaction);
     const itemCode=await generateItemCode(transaction);const slug=slugify(p.name);let finalSlug=slug,suffix=2;while(await Item.findOne({where:{slug:finalSlug},transaction,attributes:['id']}))finalSlug=`${slug.slice(0,180-String(suffix).length)}-${suffix++}`;
     const item=await Item.create({item_code:itemCode,public_id:randomUUID(),slug:finalSlug,qb_item_code:null,item_name:p.name,category_id:p.category.id,brand_id:p.brand.id,unit_id:p.unit?.id||null,item_type_id:p.itemType?.id||null,warranty_id:p.warranty?.id||null,description:p.description||null,shipping_weight:p.shippingWeight,shipping_weight_unit:'kg',condition:p.condition,is_active:p.active,...labelChanges(null, { is_new: p.isNew })},{transaction});
-    for(const v of p.variants){const sku=generateVariantSku(item.item_code,v.name);const variant=await ItemVariant.create({item_id:item.id,variant_sku:sku,variant_name:v.name,attributes:v.attributes,qb_item_code:v.quickbooksItemCode||null,is_default:v.isDefault,is_active:p.active},{transaction});
+    for (const fact of p.specifications || []) {
+      await db.ItemSpecificationValue.create({ item_id: item.id, specification_id: fact.id, value: fact.value }, { transaction });
+    }
+    const createdColors = new Map();
+    for(const v of p.variants){const sku=generateVariantSku(item.item_code,v.name,colors.skuSuffix(v.colors));const variant=await ItemVariant.create({item_id:item.id,variant_sku:sku,variant_name:v.name,attributes:v.attributes,qb_item_code:v.quickbooksItemCode||null,is_default:v.isDefault,is_active:p.active},{transaction});
+      await colors.linkColors(db, item.id, variant.id, v.colors, createdColors, transaction);
       await auditImportedRecord({userId,action:'ITEM_VARIANT_CREATED',module:'items',entityType:'item_variant',entityId:variant.id,description:`Variant ${variant.variant_sku} created through bulk import`,newValues:{item_id:item.id,variant_sku:variant.variant_sku,variant_name:variant.variant_name,qb_item_code:variant.qb_item_code,is_default:variant.is_default,is_active:variant.is_active},...reqMeta,transaction});
       for(const [priceType,amount] of [['cost',v.prices.cost],['selling',v.prices.selling]])if(amount!==null){const priceRecord=await ItemPrice.create({item_id:item.id,variant_id:variant.id,price_type:priceType,price:amount,currency:'LKR',is_active:p.active},{transaction});await auditImportedRecord({userId,action:'ITEM_PRICE_CREATED',module:'inventory',entityType:'item_price',entityId:priceRecord.id,description:`${priceType} price created for imported variant ${variant.variant_sku}`,newValues:{item_id:item.id,variant_id:variant.id,price_type:priceType,price:amount,currency:'LKR',is_active:p.active},...reqMeta,transaction});}
       for(const method of ['cash','card','koko','mintpay']){const paymentPrice=await ItemPaymentPrice.create({item_id:item.id,variant_id:variant.id,payment_method:method,price:v.prices[method],currency:'LKR',is_active:p.active},{transaction});await auditImportedRecord({userId,action:'ITEM_PAYMENT_PRICE_CREATED',module:'inventory',entityType:'item_payment_price',entityId:paymentPrice.id,description:`${method} payment price created for imported variant ${variant.variant_sku}`,newValues:{item_id:item.id,variant_id:variant.id,payment_method:method,price:v.prices[method],currency:'LKR',is_active:p.active},...reqMeta,transaction});}

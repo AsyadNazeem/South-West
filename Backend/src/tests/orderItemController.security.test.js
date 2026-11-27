@@ -1,13 +1,18 @@
-
 'use strict';
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const proxyquire = require('proxyquire').noCallThru();
+const auditEvents = [];
+
 const {
     updateOrderItem,
     deleteOrderItem
-} = require('../controllers/orderItemController');
+} = proxyquire('../controllers/orderItemController', {
+    '../models': {},
+    '../services/auditLogService': { recordAuditLog: async event => auditEvents.push(event) }
+});
 
 test('blocks all order-item updates until reconciliation is implemented', async () => {
     const requests = [
@@ -48,6 +53,7 @@ test('blocks all order-item updates until reconciliation is implemented', async 
 
         await updateOrderItem(req, res);
 
+        assert.equal(auditEvents.pop()?.action, 'ORDER_ITEM_UPDATE_REJECTED');
         assert.equal(res.statusCode, 409);
         assert.match(
             res.payload.message,
@@ -82,6 +88,7 @@ test('blocks order-item deletion until reconciliation is implemented', async () 
     };
 
     await deleteOrderItem(req, res);
+    assert.equal(auditEvents.pop()?.action, 'ORDER_ITEM_DELETE_REJECTED');
 
     assert.equal(res.statusCode, 409);
     assert.match(

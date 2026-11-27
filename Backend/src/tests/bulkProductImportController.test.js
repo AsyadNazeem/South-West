@@ -15,7 +15,10 @@ test('confirmation is user-bound, locked while processing, and idempotent after 
     importProducts:async()=>{calls++;await pending;return {imported:1,failed:0,results:[{rowNumber:2,name:'Cable',status:'Imported',itemCode:'SW-1'}]}},
     template:async()=>Buffer.from(''),report:async()=>Buffer.from('')
   };
-  const controller=proxyquire('../controllers/bulkProductImportController',{'../services/bulkProductImportService':service});
+  const controller = proxyquire('../controllers/bulkProductImportController', {
+    '../services/bulkProductImportService': service,
+    '../services/auditLogService': { recordAuditLog: async () => {} }
+  });
   const uploadRes=response();await controller.upload({file:{buffer:await workbookBuffer(),size:100,originalname:'items.xlsx',mimetype:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},user:{id:17}},uploadRes);
   const id=uploadRes.body.importId;assert.ok(id);
   const otherUserRes=response();await controller.confirm({params:{id},body:{confirm:true},user:{id:18}},otherUserRes);assert.equal(otherUserRes.statusCode,404);

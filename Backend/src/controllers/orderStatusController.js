@@ -129,10 +129,8 @@ async function auditEmailFailure(order, status, error) {
 exports.updateOrderStatus = async (req, res) => {
     let transaction;
     let committed = false;
-    let emailPayload = null;
     let trackingEmail = false;
     let orderSnapshot = null;
-    let notificationId = null;
 
     try {
         const { id } = req.params;

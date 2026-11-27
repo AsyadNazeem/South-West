@@ -26,7 +26,6 @@ function parsePlacement(value) {
 
     return placement;
 }
-const BANNER_LOCK_NAME = 'south_west_homepage_banners_limit';
 
 class BannerError extends Error {
     constructor(message, status = 400) {
