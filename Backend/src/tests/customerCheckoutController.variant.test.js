@@ -9,7 +9,8 @@ function createHarness(options = {}) {
         priceQueries: [],
         orderItems: [],
         stockMovements: [],
-        orderCreated: false
+        orderCreated: false,
+        transactionsStarted: 0
     };
 
     const transaction = {
@@ -68,6 +69,7 @@ function createHarness(options = {}) {
     const models = {
         sequelize: {
             async transaction() {
+                calls.transactionsStarted += 1;
                 return transaction;
             }
         },
@@ -622,8 +624,13 @@ for (const method of ['online', 'card', 'koko', 'mintpay']) {
             assert.equal(h.calls.orderCreated, false);
 assert.equal(
     h.transaction.finished,
-    method === 'online' ? undefined : 'rollback'
+    method === 'card' ? 'rollback' : undefined
 );
+
+            assert.equal(
+                h.calls.transactionsStarted,
+                method === 'card' ? 1 : 0
+            );
         }
     );
 }

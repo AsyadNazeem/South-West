@@ -123,6 +123,51 @@ function closeMenu() {
   hoveredCategoryId.value = null
 }
 
+// Allow vertical mouse wheel input to scroll categories horizontally.
+function handleCategoryWheel(event) {
+  const container = event.currentTarget
+
+  if (!container || event.ctrlKey || event.defaultPrevented) return
+
+  // Preserve native horizontal wheel and trackpad gestures.
+  if (event.shiftKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return
+
+  if (!event.cancelable) return
+
+  const maxScroll = container.scrollWidth - container.clientWidth
+
+  // Allow normal page scrolling when categories fit within the row.
+  if (maxScroll <= 1) return
+
+  let delta = event.deltaY
+
+  // Normalize mouse wheel units across browsers.
+  if (event.deltaMode === 1) {
+    delta *= 16
+  } else if (event.deltaMode === 2) {
+    delta *= container.clientWidth
+  }
+
+  if (!delta) return
+
+  const current = Math.max(0, Math.min(maxScroll, container.scrollLeft))
+
+  // Release scrolling back to the page at either boundary.
+  if (delta < 0 && current <= 1) return
+  if (delta > 0 && current >= maxScroll - 1) return
+
+  const next = Math.max(
+    0,
+    Math.min(maxScroll, current + delta)
+  )
+
+  event.preventDefault()
+
+  closeMenu()
+
+  container.scrollLeft = next
+}
+
 /* ---------- Pointer handling ---------- */
 function trackPointer(event) {
   lastPointerType.value = event.pointerType || 'mouse'
@@ -215,7 +260,11 @@ onUnmounted(() => {
       @keydown="trackKeyboard"
       @pointerleave="onNavLeave"
   >
-    <div class="category-inner" @scroll.passive="closeMenu">
+    <div
+        class="category-inner"
+        @scroll.passive="closeMenu"
+        @wheel="handleCategoryWheel"
+    >
       <button
           type="button"
           class="category-button"

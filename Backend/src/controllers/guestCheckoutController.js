@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { isPaymentMethodEnabled } = require('../config/paymentAvailability');
 const { findPaymentPrice } = require('../services/checkoutPaymentPrice');
 const {
     sendOrderConfirmationEmail,
@@ -955,7 +956,7 @@ async function quoteGuestCheckout(req, res) {
             ? 'cash'
             : requestedPaymentMethod;
 
-        if (!['cash', 'card', 'koko', 'mintpay'].includes(paymentMethod)) {
+        if (!isPaymentMethodEnabled(paymentMethod)) {
             return res.status(400).json({
                 message: 'Invalid payment method.'
             });
@@ -1342,7 +1343,7 @@ async function checkoutGuest(req, res) {
             ? 'cash'
             : requestedPaymentMethod;
 
-        if (!['cash', 'card', 'koko', 'mintpay'].includes(paymentMethod)) {
+        if (!isPaymentMethodEnabled(paymentMethod)) {
             return res.status(400).json({
                 message: 'Invalid payment method.'
             });

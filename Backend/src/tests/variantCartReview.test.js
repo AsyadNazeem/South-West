@@ -57,11 +57,28 @@ test('two SKUs keep independent cart lines, quantities, stock and signed-in quot
     await call(customerCart.updateItem, { quantity: 2 }, { id: 2 });
     await call(customerCart.updateItem, { quantity: 3 }, { id: 2 }, 409);
     assert.deepEqual(rows.map(r => [r.variant_id, r.quantity, r.unit_price]), [[182, 1, 4000], [206, 2, 4300]]);
-    for (const method of ['cash', 'card', 'koko', 'mintpay']) {
+    for (const method of ['cash', 'card']) {
         const { quote } = await call(checkout.quote, { cart_id: 4, address_id: 1, payment_method: method });
         assert.deepEqual(quote.items.map(r => [r.variant_id, r.quantity, r.unit_price]),
             [[182, 1, methodPrice(182, method)], [206, 2, methodPrice(206, method)]]);
         assert.equal(quote.subtotal, methodPrice(182, method) + 2 * methodPrice(206, method));
+    }
+
+    // Disabled providers must not return a checkout quote.
+    for (const method of ['koko', 'mintpay']) {
+        const response = await call(
+            checkout.quote,
+            {
+                cart_id: 4,
+                address_id: 1,
+                payment_method: method
+            },
+            {},
+            400
+        );
+
+        assert.match(response.message, /invalid payment method/i);
+        assert.equal(response.quote, undefined);
     }
 });
 
@@ -114,6 +131,15 @@ test('guest cart, method-specific quotes and simulated order agree for two SKUs 
         const res = { status(code) { this.code = code; return this; }, json(value) { this.body = value; } };
         await handler({ body, get: () => 'a'.repeat(64) }, res);
         assert.equal(res.code, expected, JSON.stringify(res.body));
+
+        if (expected === 400) {
+            assert.match(
+                res.body.message,
+                /invalid payment method/i
+            );
+            assert.equal(res.body.data, undefined);
+        }
+
         return res.body.data;
     }
     const address = { recipient_name: 'Fixture', customer_email: 'fixture@example.invalid', phone: '123',
@@ -122,21 +148,41 @@ test('guest cart, method-specific quotes and simulated order agree for two SKUs 
     await call(guest.updateGuestCartItem, { item_id: 166, variant_id: 206, quantity: 2 });
     await call(guest.updateGuestCartItem, { item_id: 166, variant_id: 206, quantity: 3 }, 409);
     let lastQuote;
-    for (const [payment_method, price] of Object.entries(prices)) {
+    for (const payment_method of ['cash', 'card']) {
+        const price = prices[payment_method];
         lastQuote = await call(guest.quoteGuestCheckout, { ...address, payment_method });
         assert.deepEqual(lastQuote.items.map(row => [row.variant_id, row.unit_price, row.quantity]),
             [[182, price, 1], [206, price + 300, 2]]);
         assert.equal(lastQuote.total_amount, (price + 2 * (price + 300)) * 0.9);
     }
+    // Disabled providers must be rejected for both
+    // quotation and order creation.
+    for (const payment_method of ['koko', 'mintpay']) {
+        await call(
+            guest.quoteGuestCheckout,
+            { ...address, payment_method },
+            400
+        );
+
+        await call(
+            guest.checkoutGuest,
+            { ...address, payment_method },
+            400
+        );
+
+        assert.equal(orderLines.length, 0);
+    }
+
+    // Preserve missing payment-price validation using Card.
     missing = true;
-    await call(guest.quoteGuestCheckout, { ...address, payment_method: 'mintpay' }, 409);
-    await call(guest.checkoutGuest, { ...address, payment_method: 'mintpay' }, 409);
+    await call(guest.quoteGuestCheckout, { ...address, payment_method: 'card' }, 409);
+    await call(guest.checkoutGuest, { ...address, payment_method: 'card' }, 409);
     assert.equal(orderLines.length, 0);
     const cashFallback = await call(guest.quoteGuestCheckout, { ...address, payment_method: 'cod' });
     assert.deepEqual(cashFallback.items.map(row => row.unit_price), [4000, 4300]);
     missing = false;
-    const result = await call(guest.checkoutGuest, { ...address, payment_method: 'mintpay' }, 201);
-    assert.deepEqual(orderLines.map(row => [row.variant_id, row.unit_price, row.quantity]), [[182, 4780, 1], [206, 5080, 2]]);
+    const result = await call(guest.checkoutGuest, { ...address, payment_method: 'card' }, 201);
+    assert.deepEqual(orderLines.map(row => [row.variant_id, row.unit_price, row.quantity]), [[182, 4120, 1], [206, 4420, 2]]);
     assert.equal(result.order.total_amount, lastQuote.total_amount);
     assert.equal(result.payment.amount, lastQuote.total_amount);
 });

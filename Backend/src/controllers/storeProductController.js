@@ -20,6 +20,7 @@ const {
 } = require('../utils/storeProductListingQuery');
 const { getAllProductsWithValidImages, getProductsWithValidImages } = require('../utils/productStockHistory');
 const { getEligibleCustomerVariantIds, hasCustomerVisibleProduct } = require('../utils/customerProductEligibility');
+const { isPaymentMethodEnabled } = require('../config/paymentAvailability');
 const {
     Item,
     ItemVariant,
@@ -1042,12 +1043,16 @@ for (const paymentPrice of paymentPrices) {
     ] = Number(paymentPrice.price);
 }
 
-const payment_prices = {
-    cash: paymentPricesByMethod.cash ?? null,
-    card: paymentPricesByMethod.card ?? null,
-    koko: paymentPricesByMethod.koko ?? null,
-    mintpay: paymentPricesByMethod.mintpay ?? null,
-};
+// Expose only enabled payment methods to storefront customers.
+// Disabled provider prices remain stored for future reactivation.
+const payment_prices = Object.fromEntries(
+    ['cash', 'card', 'koko', 'mintpay']
+        .filter(method => isPaymentMethodEnabled(method))
+        .map(method => [
+            method,
+            paymentPricesByMethod[method] ?? null
+        ])
+);
 
                 // Current effective LKR selling price for this variant.
                 const currentPrice = await ItemPrice.findOne({

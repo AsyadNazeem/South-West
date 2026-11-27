@@ -103,15 +103,15 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateColumnCount))
         <p>Shop your favourite brands</p>
       </div>
       <button
-        v-if="brands.length > columnCount * 2 && !showAll"
+        v-if="!loading && brands.length > columnCount * 2"
         type="button"
         class="view-all-brands"
         aria-controls="homepage-brand-grid"
         :aria-expanded="showAll"
-        @click="showAll = true"
+        @click="showAll = !showAll"
       >
-        View More
-        <span aria-hidden="true">→</span>
+        {{ showAll ? 'View Less' : 'View More' }}
+        <span aria-hidden="true">{{ showAll ? '↑' : '→' }}</span>
       </button>
     </div>
 

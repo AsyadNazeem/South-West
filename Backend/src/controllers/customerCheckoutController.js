@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { isPaymentMethodEnabled } = require('../config/paymentAvailability');
 const { findPaymentPrice } = require('../services/checkoutPaymentPrice');
 const { Op } = require('sequelize');
 const db = require('../models');
@@ -554,7 +555,7 @@ const payment_method =
         ? 'cash'
         : requestedPaymentMethod || 'cash';
 
-if (!['cash', 'card', 'koko', 'mintpay'].includes(payment_method)) {
+if (!isPaymentMethodEnabled(payment_method)) {
     return res.status(400).json({
         message: 'Invalid payment method.'
     });
@@ -1041,7 +1042,7 @@ if (directPurchase) {
         });
     }
 
-if (!['cash', 'card', 'koko', 'mintpay'].includes(payment_method)) {
+if (!isPaymentMethodEnabled(payment_method)) {
     return res.status(400).json({
         message: 'Invalid payment method.'
     });

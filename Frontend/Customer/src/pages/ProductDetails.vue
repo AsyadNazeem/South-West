@@ -1,4 +1,6 @@
 <script setup>
+import { isPaymentMethodEnabled } from '../config/paymentAvailability.js'
+
 import { buildVariantChoices, choiceColors, chooseOption, isColorKey, normalizeAttributes, variantColors } from '@/utils/variantSelection.js'
 import { selectDefaultVariant } from '@/utils/productOffer.js'
 import {
@@ -664,7 +666,10 @@ const paymentPrices = computed(() => {
     { id: 'card', label: 'CARD PAYMENTS', price: card, type: 'card' },
     { id: 'koko', label: 'KOKO', price: koko, type: 'koko' },
     { id: 'mintpay', label: 'MINTPAY', price: mintpay, type: 'mintpay' }
-  ].filter(option => option.price !== null)
+  ].filter(option =>
+    isPaymentMethodEnabled(option.id) &&
+    option.price !== null
+  )
 })
 
 // --------------------------------------------------

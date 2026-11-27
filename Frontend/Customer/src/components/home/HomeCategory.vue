@@ -18,14 +18,18 @@ import {
 const failedCategoryImages = ref(new Set())
 const showAll = ref(false)
 const columnCount = ref(9)
-const initialCount = computed(() => columnCount.value === 9 ? 8 : columnCount.value * 3)
+const initialCount = computed(() => {
+  if (columnCount.value === 9) return 9
+  if (columnCount.value === 6) return 18
+  return columnCount.value * 2
+})
 const visibleCategories = computed(() => showAll.value
   ? props.categories
   : props.categories.slice(0, initialCount.value))
 
 function updateColumnCount() {
   const width = window.innerWidth
-  columnCount.value = width <= 420 ? 3 : width <= 760 ? 4 : width <= 1100 ? 6 : 9
+  columnCount.value = width <= 420 ? 3 : width <= 760 ? 5 : width <= 1100 ? 6 : 9
 }
 
 onMounted(() => {
@@ -56,6 +60,18 @@ function getCategoryImage(category) {
   >
     <div class="category-section-heading">
       <h2 id="homepage-categories-title">Categories</h2>
+
+      <button
+        v-if="!loading && props.categories.length > initialCount"
+        type="button"
+        class="view-all-categories"
+        aria-controls="homepage-category-grid"
+        :aria-expanded="showAll"
+        @click="showAll = !showAll"
+      >
+        {{ showAll ? 'View Less' : 'View More' }}
+        <span aria-hidden="true">{{ showAll ? '↑' : '→' }}</span>
+      </button>
     </div>
 
     <div v-if="loading" class="category-grid" aria-hidden="true">
@@ -77,7 +93,7 @@ function getCategoryImage(category) {
             v-if="getCategoryImage(category).src && !failedCategoryImages.has(String(category.id))"
             :src="getCategoryImage(category).src"
             :srcset="getCategoryImage(category).srcset || undefined"
-            sizes="(max-width: 420px) 28vw, 112px"
+            sizes="(max-width: 420px) 28vw, (max-width: 760px) 18vw, 112px"
             alt=""
             loading="lazy"
             decoding="async"
@@ -91,17 +107,7 @@ function getCategoryImage(category) {
         <span class="category-name">{{ category.name }}</span>
       </button>
 
-      <button
-        v-if="!showAll && props.categories.length > initialCount"
-        type="button"
-        class="category-card view-more-card"
-        aria-controls="homepage-category-grid"
-        :aria-expanded="showAll"
-        @click="showAll = true"
-      >
-        <span class="view-more-icon" aria-hidden="true">＋</span>
-        <span class="category-name">View More</span>
-      </button>
+
     </div>
   </section>
 </template>
@@ -112,6 +118,10 @@ function getCategoryImage(category) {
 }
 
 .category-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
   margin-bottom: var(--space-3);
 }
 
@@ -154,8 +164,21 @@ function getCategoryImage(category) {
   background: var(--color-surface-muted);
 }
 
-.view-more-card { justify-content: center; color: var(--color-primary); }
-.view-more-icon { display: grid; place-items: center; width: 44%; max-width: 56px; aspect-ratio: 1; border: 1px solid var(--color-border); border-radius: 50%; font-size: 28px; line-height: 1; }
+.view-all-categories {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  gap: 8px;
+  margin: 0 0 var(--space-1);
+  padding: 9px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
 
 .category-image-wrap {
   display: grid;
@@ -201,7 +224,7 @@ function getCategoryImage(category) {
 
 @media (max-width: 760px) {
   .category-grid {
-    --category-columns: 4;
+    --category-columns: 5;
   }
 
    .category-card {

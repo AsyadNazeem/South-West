@@ -55,7 +55,7 @@ test('built product selects connector, resets quantity and sends its SKU on all 
     assert.ok(await page.getByRole('button', { name: 'Increase quantity' }).isDisabled())
     assert.match(await page.locator('.stock-line').innerText(), /1 available/)
     assert.deepEqual(await page.locator('.payment-amount').allTextContents().then(a => a.map(s => Number(s.replace(/[^0-9.]/g, '').replace(/^\./, '')))),
-      [4000, 3990, 4200, 4815, 4765])
+      [4000, 3990, 4200])
     for (const [button, suffix] of [
       ['Add to Cart', signedIn ? '/customer-cart/items' : '/guest-checkout/session'],
       ['Add to Cart', signedIn ? '/customer-cart/items' : '/guest-checkout/session/items'],
@@ -125,7 +125,19 @@ test('guest checkout review switches both SKU line totals to the selected paymen
     return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: { data } })
   })
   await page.goto(origin + '/checkout/' + token)
-  for (const [id, amount] of [['card', '4,200'], ['koko', '4,815'], ['mintpay', '4,765']]) {
+  await page.locator('input[value="card"]').waitFor({
+    state: 'attached'
+  })
+
+  // Disabled payment providers must not be selectable.
+  for (const method of ['koko', 'mintpay']) {
+    assert.equal(
+      await page.locator('input[value="' + method + '"]').count(),
+      0
+    )
+  }
+
+  for (const [id, amount] of [['card', '4,200']]) {
     await page.locator('label.choice').filter({ has: page.locator('input[value="' + id + '"]') }).click()
     const usb = page.locator('.summary-item').filter({ hasText: 'H01 USB' })
     await usb.locator('.summary-item-total').filter({ hasText: amount }).waitFor()

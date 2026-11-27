@@ -1,4 +1,6 @@
 <script setup>
+import { isPaymentMethodEnabled } from '../config/paymentAvailability.js'
+
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
@@ -145,7 +147,8 @@ const PAYMENT_METHODS = [
     logo: '/mintpay-logo.png',
     available: true,
   },
-]
+].filter(method => isPaymentMethodEnabled(method.value))
+
 const paymentGroups = [...new Set(PAYMENT_METHODS.map(method => method.group))]
   .map(title => ({
     title,
