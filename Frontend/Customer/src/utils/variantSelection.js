@@ -8,7 +8,7 @@ export function normalizeAttributes(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
-export function variantColors(variant) {
+function rawVariantColors(variant) {
   const rawColors = Array.isArray(variant?.colors)
     ? variant.colors
     : []
@@ -42,10 +42,12 @@ export function variantColors(variant) {
       .filter(Boolean)
 
     if (names.length > 1) {
-      return [{
-        name: names.join(' + '),
-        hex: ''
-      }]
+      return names.map(name => ({
+        name,
+        hex: entries.find(entry =>
+          normalized(entry.name) === normalized(name)
+        )?.hex || ''
+      }))
     }
   }
 
@@ -68,6 +70,39 @@ export function variantColors(variant) {
       name: value,
       hex: variant?.color?.hex_code || variant?.color?.hex || ''
     }))
+}
+
+export function variantColors(variant) {
+  const entries = rawVariantColors(variant)
+  const unique = new Map()
+
+  for (const entry of entries) {
+    const names = entry.name
+      .split(/\s*[+,/]\s*/)
+      .map(name => name.trim())
+      .filter(name =>
+        name && normalized(name) !== 'default'
+      )
+
+    for (const name of names) {
+      const key = normalized(name)
+      const hex = names.length === 1 ? entry.hex : ''
+
+      if (!unique.has(key) || hex) {
+        unique.set(key, { name, hex })
+      }
+    }
+  }
+
+  const parts = [...unique.values()]
+
+  if (parts.length <= 1) return parts
+
+  return [{
+    name: parts.map(part => part.name).join('/'),
+    hex: '',
+    parts
+  }]
 }
 
 // Partition actual SKUs. Never synthesize a cartesian product of attribute values.

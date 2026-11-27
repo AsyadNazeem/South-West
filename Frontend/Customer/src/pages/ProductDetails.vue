@@ -587,14 +587,24 @@ function selectAvailableColor(color) {
 }
 
 function getColorSwatchStyle(color) {
-  const parts = color.name
-    .split(/\s*\+\s*/)
-    .map(name => name.trim())
-    .filter(Boolean)
+  const parts = Array.isArray(color.parts) && color.parts.length
+    ? color.parts
+    : String(color.name || '')
+        .split(/\s*[+,/]\s*/)
+        .filter(Boolean)
+        .map(name => ({ name, hex: '' }))
 
-  if (parts.length === 2) {
+  if (parts.length > 1) {
+    const stops = parts.map((part, index) => {
+      const hex = getColorHex(part.name, part.hex)
+      const start = index * 100 / parts.length
+      const end = (index + 1) * 100 / parts.length
+
+      return `${hex} ${start}% ${end}%`
+    })
+
     return {
-      background: `linear-gradient(135deg, ${getColorHex(parts[0])} 0%, ${getColorHex(parts[0])} 50%, ${getColorHex(parts[1])} 50%, ${getColorHex(parts[1])} 100%)`
+      background: `linear-gradient(90deg, ${stops.join(', ')})`
     }
   }
 
