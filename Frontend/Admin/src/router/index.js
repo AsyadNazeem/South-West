@@ -71,6 +71,7 @@ const HomepageBanners = () => import('@/pages/website/HomepageBanners.vue')
 const HomepageSections = () => import('@/pages/website/HomepageSections.vue')
 const Faqs = () => import('@/pages/website/Faqs.vue')
 const ContactInformation = () => import('@/pages/website/ContactInformation.vue')
+const StockConfirmation = () => import('@/pages/website/StockConfirmation.vue')
 const DiscountCampaigns = () => import('@/pages/marketing/DiscountCampaigns.vue')
 const CreateHomePage = () => import('@/pages/website/CreateHomepageBanners.vue')
 const CreateDiscountCampaigns = () => import('@/pages/marketing/DiscountCampaignForm.vue')
@@ -711,6 +712,12 @@ const routes = [
                 name: 'ContactInformation',
                 component: ContactInformation,
                 meta: { permission: 'contact_information.view' }
+            },
+            {
+                path: 'website-management/stock-confirmation',
+                name: 'StockConfirmation',
+                component: StockConfirmation,
+                meta: { permission: 'stock_confirmation.view' }
             },
             {
                 path: 'marketing/promotion-items/edit/:id',

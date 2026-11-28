@@ -1,5 +1,12 @@
 'use strict';
 
+const {
+    buildStockConfirmation,
+    requireStockConfirmation
+} = require('../services/stockConfirmationService');
+
+
+
 const crypto = require('crypto');
 const { isPaymentMethodEnabled } = require('../config/paymentAvailability');
 const { findPaymentPrice } = require('../services/checkoutPaymentPrice');
@@ -1124,6 +1131,8 @@ async function quoteGuestCheckout(req, res) {
             );
 
             return {
+                stock_confirmation:
+                    await buildStockConfirmation(items, { transaction }),
                 items,
                 currency: CURRENCY,
                 subtotal,
@@ -1720,6 +1729,12 @@ async function checkoutGuest(req, res) {
             order_id: null
         }, { transaction });
 
+        await requireStockConfirmation(
+            preparedItems,
+            req.body?.stock_confirmation,
+            { transaction }
+        );
+
         const orderNumber = generateReference('SWO');
         const invoiceNumber = generateReference('SWI');
         const paymentReference = generateReference('SWP');
@@ -1971,6 +1986,10 @@ async function checkoutGuest(req, res) {
         return res.status(error.statusCode || 500).json({
             message: error.message ||
                 'Unable to complete guest checkout.',
+            ...(error.stock_confirmation ? {
+                code: error.code,
+                stock_confirmation: error.stock_confirmation
+            } : {}),
             ...(error.requires_variant_selection
                 ? { requires_variant_selection: true }
                 : {})

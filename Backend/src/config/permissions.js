@@ -95,6 +95,16 @@ const permissionCatalog = [
     { name: 'faqs.update', module: 'faqs', description: 'Update FAQs' },
     { name: 'faqs.delete', module: 'faqs', description: 'Delete FAQs' },
 
+    {
+        name: 'stock_confirmation.view',
+        module: 'stock_confirmation',
+        description: 'View stock confirmation settings'
+    },
+    {
+        name: 'stock_confirmation.update',
+        module: 'stock_confirmation',
+        description: 'Update stock confirmation settings'
+    },
     { name: 'contact_information.view', module: 'contact_information', description: 'View contact information settings' },
     { name: 'contact_information.update', module: 'contact_information', description: 'Update contact information settings' },
 

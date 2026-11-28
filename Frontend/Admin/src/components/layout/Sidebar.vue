@@ -117,6 +117,7 @@ const menuDefinitions = [
       { label: 'Homepage Banners', to: '/admin/marketing/homepage-banners', permissions: ['homepage_banners.view']},
       { label: 'FAQs', to: '/admin/marketing/faqs', permissions: ['faqs.view'] },
       { label: 'Contact Information', to: '/admin/website-management/contact-information', permissions: ['contact_information.view'] },
+      { label: 'Stock Confirmation', to: '/admin/website-management/stock-confirmation', permissions: ['stock_confirmation.view'] },
       { label: 'Website Themes', to: '/admin/marketing/website-themes', permissions: ['website_themes.view']},
     ]
   },

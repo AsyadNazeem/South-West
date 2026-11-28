@@ -80,6 +80,7 @@ const publicHomepageSectionRoutes = require('./routes/publicHomepageSectionRoute
 const publicFaqRoutes = require('./routes/publicFaqRoutes');
 const faqRoutes = require('./routes/faqRoutes');
 const contactInformationRoutes = require('./routes/contactInformationRoutes');
+const stockConfirmationRoutes = require('./routes/stockConfirmationRoutes');
 const publicContactInformationRoutes = require('./routes/publicContactInformationRoutes');
 const customerProductReviewRoutes = require('./routes/customerProductReviewRoutes');
 
@@ -243,6 +244,7 @@ app.use('/api/store/faqs', publicFaqRoutes);
 app.use('/api/faqs', faqRoutes);
 app.use('/api/store/contact-information', publicContactInformationRoutes);
 app.use('/api/contact-information', contactInformationRoutes);
+app.use('/api/stock-confirmation', stockConfirmationRoutes);
 app.use('/api/discount-campaigns', discountCampaignRoutes);
 app.use('/api/campaign-frames', campaignFrameRoutes);
 app.use('/api/store/website-theme', websiteThemeRoutes);

@@ -1,5 +1,12 @@
 'use strict';
 
+const {
+    buildStockConfirmation,
+    requireStockConfirmation
+} = require('../services/stockConfirmationService');
+
+
+
 const crypto = require('crypto');
 const { isPaymentMethodEnabled } = require('../config/paymentAvailability');
 const { findPaymentPrice } = require('../services/checkoutPaymentPrice');
@@ -947,11 +954,15 @@ const totalAmount = money(
     subtotal - combinedDiscountAmount + shippingAmount
 );
 
+        const stockConfirmation =
+            await buildStockConfirmation(items, { transaction });
+
         await transaction.commit();
 
         return res.status(200).json({
             message: 'Checkout quote calculated.',
             quote: {
+                stock_confirmation: stockConfirmation,
                 currency: CURRENCY,
                 address_id: Number(address_id),
                 area_id: area.id,
@@ -1507,6 +1518,12 @@ const stocks = stocksByVariant.get(String(entry.variantId)) || [];
             }
         }
 
+        await requireStockConfirmation(
+            preparedItems,
+            req.body?.stock_confirmation,
+            { transaction }
+        );
+
         const orderNumber = generateReference('SWO');
         const invoiceNumber = generateReference('SWI');
         const paymentReference = generateReference('SWP');
@@ -1874,7 +1891,11 @@ quantity: directPurchase && checkoutSession
 
         if (error.statusCode) {
             return res.status(error.statusCode).json({
-                message: error.message
+                message: error.message,
+                ...(error.stock_confirmation ? {
+                    code: error.code,
+                    stock_confirmation: error.stock_confirmation
+                } : {})
             });
         }
 

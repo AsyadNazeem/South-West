@@ -298,3 +298,15 @@ input {
   :root[data-website-theme="new-year"] .category-rail .rail-prev { left: -4px; }
   :root[data-website-theme="new-year"] .category-rail .rail-next { right: -4px; }
 }
+
+/* Hide the main page scrollbar while preserving scrolling */
+html,
+body {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}

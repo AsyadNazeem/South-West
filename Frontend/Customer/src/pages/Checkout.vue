@@ -6,12 +6,14 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { analyticsItem, trackEventOncePerSession, trackPurchaseOnce } from '@/services/analytics'
 import CheckoutAddressForm from '@/components/CheckoutAddressForm.vue'
+import StockConfirmationDialog from '@/components/StockConfirmationDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
 
 const loading = ref(true)
 const submitting = ref(false)
+const showStockConfirmation = ref(false)
 const error = ref('')
 const notice = ref('')
 
@@ -218,6 +220,31 @@ const cartItems = computed(() => {
 })
 
 const summaryItems = computed(() => quote.value?.items?.length ? quote.value.items : cartItems.value)
+
+const stockConfirmationPolicy = computed(() =>
+  quote.value?.stock_confirmation || null
+)
+
+const stockConfirmationItems = computed(() =>
+  stockConfirmationPolicy.value?.items || []
+)
+
+const stockConfirmationKey = computed(() =>
+  stockConfirmationPolicy.value?.confirmation_key || ''
+)
+
+const stockDialogKey = ref('')
+
+function cancelStockConfirmation() {
+  showStockConfirmation.value = false
+  stockDialogKey.value = ''
+}
+
+function confirmStockAvailability() {
+  const confirmedKey = stockDialogKey.value
+  cancelStockConfirmation()
+  placeOrder(confirmedKey)
+}
 
 function getCheckoutAnalyticsItems() {
   return summaryItems.value.map(line => {
@@ -778,7 +805,7 @@ async function loadCheckout() {
 }
 
 
-async function placeOrder() {
+async function placeOrder(confirmedStockKey = '') {
   error.value = ''
   notice.value = ''
 
@@ -857,6 +884,18 @@ async function placeOrder() {
   }
 }
 
+  if (
+    stockConfirmationPolicy.value?.required &&
+    (
+      !confirmedStockKey ||
+      confirmedStockKey !== stockConfirmationKey.value
+    )
+  ) {
+    stockDialogKey.value = stockConfirmationKey.value
+    showStockConfirmation.value = true
+    return
+  }
+
   submitting.value = true
 
   try {
@@ -913,6 +952,13 @@ billing_address: billingSameAsShipping.value
 
       }
 
+      if (confirmedStockKey) {
+        payload.stock_confirmation = {
+          acknowledged: true,
+          confirmation_key: confirmedStockKey
+        }
+      }
+
       response = await api.post('/guest-checkout', payload, {
         ...guestHeaders(),
         headers: {
@@ -948,6 +994,13 @@ const payload = {
         payload.checkout_token = checkoutToken.value
       } else {
         payload.cart_id = Number(cart.value.id)
+      }
+
+      if (confirmedStockKey) {
+        payload.stock_confirmation = {
+          acknowledged: true,
+          confirmation_key: confirmedStockKey
+        }
       }
 
       response = await api.post('/customer-checkout', payload, {
@@ -1033,6 +1086,23 @@ const payload = {
       cart.value = { ...cart.value, items: [] }
     }
   } catch (err) {
+    const responseData = err.response?.data
+
+    if (
+      responseData?.code === 'STOCK_CONFIRMATION_REQUIRED' &&
+      responseData.stock_confirmation &&
+      quote.value
+    ) {
+      quote.value = {
+        ...quote.value,
+        stock_confirmation: responseData.stock_confirmation
+      }
+
+      stockDialogKey.value = stockConfirmationKey.value
+      showStockConfirmation.value = true
+      return
+    }
+
     error.value =
       err.response?.data?.message ||
       err.message ||
@@ -1671,7 +1741,7 @@ onMounted(loadCheckout)
             type="button"
             class="primary-button place-order"
             :disabled="!canPlaceOrder"
-            @click="placeOrder"
+            @click="placeOrder()"
           >
             {{ submitting ? 'Placing order...' : 'Place order' }}
           </button>
@@ -1698,6 +1768,14 @@ onMounted(loadCheckout)
         </aside>
       </div>
     </div>
+    <StockConfirmationDialog
+      v-if="showStockConfirmation"
+      :key="stockConfirmationKey"
+      :items="stockConfirmationItems"
+      :settings="stockConfirmationPolicy"
+      @cancel="cancelStockConfirmation"
+      @confirm="confirmStockAvailability"
+    />
   </main>
 </template>
 

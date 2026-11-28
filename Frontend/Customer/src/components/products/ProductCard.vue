@@ -412,7 +412,7 @@ onBeforeUnmount(() => {
           v-if="activeImage.src && !imageFailed"
           :src="activeImage.src"
           :srcset="activeImage.srcset || undefined"
-          :sizes="'auto, ' + imageSizes"
+          :sizes="imageSizes"
           alt=""
           loading="lazy"
           decoding="async"
@@ -459,7 +459,9 @@ onBeforeUnmount(() => {
     :aria-label="`Show image ${dot.index + 1} of ${imageSlides.length}`"
     :aria-pressed="currentImageIndex === dot.index"
     @click.stop.prevent="selectImage(dot.index)"
-  ></button>
+  >
+    <span class="indicator-dot" aria-hidden="true"></span>
+  </button>
 </div>
       </template>
 
@@ -616,7 +618,6 @@ onBeforeUnmount(() => {
 /* ---------- Image ---------- */
 /* The photo fills the tile; only a thin inset keeps it off the card edge. */
 .image-wrap {
-  container-type: inline-size;
   position: relative;
   aspect-ratio: 1 / 1;
   margin: 6px 6px 0;
@@ -635,8 +636,11 @@ onBeforeUnmount(() => {
 }
 
 .image-link img {
+  display: block;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   object-fit: contain;
   /* White product photos blend into the tile background */
   mix-blend-mode: multiply;
@@ -741,9 +745,7 @@ onBeforeUnmount(() => {
   align-items: center;
   padding: 0 3px;
   border-radius: var(--radius-pill);
-  background: rgb(0 0 0 / 45%);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.55);
 }
 
 .product-card.is-list .image-indicators {
@@ -755,46 +757,36 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 14px;
-  height: 16px;
+  flex: 0 0 24px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
+  border-radius: 0;
   background: transparent;
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: flex-basis var(--transition-fast);
 }
 
-/* Invisible, larger tap area: the dot stays small */
-.image-indicator::before {
-  position: absolute;
-  inset: -10px 0;
-  content: '';
-}
-
-.image-indicator::after {
+.indicator-dot {
   display: block;
   flex: none;
   width: 6px;
   height: 6px;
-  border-radius: var(--radius-pill);
-  background: rgb(255 255 255 / 85%);
-  content: '';
-  transition: width var(--transition-fast), height var(--transition-fast), background var(--transition-fast);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  pointer-events: none;
 }
 
-.image-indicator.faded::after {
+.image-indicator.faded .indicator-dot {
   width: 4px;
   height: 4px;
 }
 
-.image-indicator.active {
-  flex-basis: 22px;
-}
-
-.image-indicator.active::after {
+.image-indicator.active .indicator-dot {
   width: 14px;
   background: #fff;
 }
@@ -802,13 +794,6 @@ onBeforeUnmount(() => {
 .image-indicator:focus-visible {
   outline: 2px solid #fff;
   outline-offset: -2px;
-}
-
-/* Touch screens: wider and taller tap area, same small dots */
-@media (pointer: coarse) {
-  .image-indicator { flex-basis: 20px; height: 20px; }
-  .image-indicator.active { flex-basis: 26px; }
-  .image-indicator::before { inset: -12px 0; }
 }
 
 /* ---------- Uploaded campaign frame overlays ---------- */
@@ -1197,6 +1182,19 @@ onBeforeUnmount(() => {
 
 .product-card.is-list .price-row {
   margin-top: var(--space-2);
+}
+
+/* Touch-device image rendering compatibility */
+@media (hover: none) and (pointer: coarse) {
+  .image-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .image-link img {
+    mix-blend-mode: normal;
+  }
 }
 
 /* ---------- Phones ---------- */
